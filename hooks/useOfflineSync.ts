@@ -12,7 +12,8 @@ export function useOfflineSync() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     pending: 0,
     failed: 0,
-    isOnline: navigator.onLine
+    // Avoid touching navigator during SSR/prerender (Node has no navigator).
+    isOnline: true,
   })
   const [isSyncing, setIsSyncing] = useState(false)
 
@@ -20,7 +21,7 @@ export function useOfflineSync() {
     // Initialize offline storage
     offlineStorage.init()
 
-    // Set initial online status
+    // Set initial online status (client-only)
     setSyncStatus(prev => ({ ...prev, isOnline: navigator.onLine }))
 
     // Listen for online/offline events
