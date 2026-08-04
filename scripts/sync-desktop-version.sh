@@ -56,5 +56,5 @@ if n != 1:
     raise SystemExit(f"failed to update version in {cargo_path}")
 cargo_path.write_text(cargo_new, encoding="utf-8")
 
-print(f"Updated package.json, tauri.conf.json, Cargo.toml → {version}")
+print(f"Updated package.json, tauri.conf.json, Cargo.toml -> {version}")
 PY
