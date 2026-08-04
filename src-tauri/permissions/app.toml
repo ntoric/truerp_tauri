@@ -29,6 +29,16 @@ description = "Allow printing a PDF document"
 commands.allow = ["print_pdf"]
 
 [[permission]]
+identifier = "allow-print-thermal"
+description = "Allow silent ESC/POS thermal printing"
+commands.allow = ["print_thermal"]
+
+[[permission]]
+identifier = "allow-print-raw-base64"
+description = "Allow silent raw printer byte jobs"
+commands.allow = ["print_raw_base64"]
+
+[[permission]]
 identifier = "allow-app-version"
 description = "Allow reading the TruERP desktop app version"
 commands.allow = ["app_version"]

@@ -9,11 +9,27 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2 } from 'lucide-react'
 import JSZip from 'jszip'
 import { notifyError } from '@/lib/notify'
+import { printPurchaseBill } from '@/lib/printDocument'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import {
+  BARCODE_LABEL_SIZE_OPTIONS,
+  type BarcodeLabelSize,
+} from '@/lib/printSizes'
+
+const THERMAL_LABEL_DIMENSIONS: Record<BarcodeLabelSize, { width: number; height: number }> = {
+  '1inch': { width: 25.4, height: 15 },
+  '1.5inch': { width: 38.1, height: 25 },
+  '2inch': { width: 50.8, height: 30 },
+  '3inch': { width: 76.2, height: 50 },
+}
+
+function isThermalLabelSize(size: string): size is BarcodeLabelSize {
+  return size === '1inch' || size === '1.5inch' || size === '2inch' || size === '3inch'
+}
 
 interface PurchaseBill {
   id: string
@@ -52,6 +68,7 @@ export default function PurchaseInvoicesPage() {
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<any>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [labelModal, setLabelModal] = useState<string | null>(null)
   const [labelConfig, setLabelConfig] = useState({
     paperSize: 'a4',
@@ -66,14 +83,21 @@ export default function PurchaseInvoicesPage() {
     a4: { width: 210, height: 297 },
     letter: { width: 216, height: 279 },
     a5: { width: 148, height: 210 },
+    ...THERMAL_LABEL_DIMENSIONS,
   }
 
   const autoCalculateLabelSize = (paperSize: string, cols: number, rows: number, margin: number) => {
+    if (isThermalLabelSize(paperSize)) {
+      const dims = THERMAL_LABEL_DIMENSIONS[paperSize]
+      return { labelWidth: dims.width, labelHeight: dims.height }
+    }
     const paper = paperDimensions[paperSize] || paperDimensions.a4
     const labelWidth = Math.max(10, (paper.width - 2 * margin) / cols)
     const labelHeight = Math.max(10, (paper.height - 2 * margin) / rows)
     return { labelWidth: Math.round(labelWidth * 100) / 100, labelHeight: Math.round(labelHeight * 100) / 100 }
   }
+
+  const isThermalSelected = isThermalLabelSize(labelConfig.paperSize)
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
 
   useEffect(() => {
@@ -238,6 +262,20 @@ export default function PurchaseInvoicesPage() {
     setPreviewData(null)
   }
 
+  const handlePrintPreview = async () => {
+    if (!previewId || printing) return
+    setPrinting(true)
+    try {
+      await printPurchaseBill(previewId, {
+        billNumber: previewData?.bill_number,
+      })
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Print failed')
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   const toggleSelectBill = (id: string) => {
     setSelectedBills(prev => {
       const next = new Set(prev)
@@ -355,6 +393,7 @@ export default function PurchaseInvoicesPage() {
     if (!labelModal) return
 
     try {
+      const thermal = isThermalLabelSize(labelConfig.paperSize)
       const res = await apiFetch('/purchase/bills/labels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -362,9 +401,14 @@ export default function PurchaseInvoicesPage() {
           bill_id: labelModal,
           item_quantities: itemQuantities,
           config: {
-            ...labelConfig,
-            margin_top: labelConfig.margin,
-            margin_left: labelConfig.margin,
+            paper_size: labelConfig.paperSize,
+            label_width: labelConfig.labelWidth,
+            label_height: labelConfig.labelHeight,
+            cols: thermal ? 1 : labelConfig.cols,
+            rows: thermal ? 1 : labelConfig.rows,
+            margin: thermal ? 0 : labelConfig.margin,
+            margin_top: thermal ? 0 : labelConfig.margin,
+            margin_left: thermal ? 0 : labelConfig.margin,
           },
         }),
       })
@@ -629,13 +673,19 @@ export default function PurchaseInvoicesPage() {
                   {previewData?.bill_number || 'Purchase Invoice Preview'}
                 </h2>
                 <div className="flex items-center gap-2">
-                  <Link
-                    href={`/purchase-invoices/${previewId}/pdf`}
-                    target="_blank"
-                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  <button
+                    type="button"
+                    onClick={() => void handlePrintPreview()}
+                    disabled={printing}
+                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                   >
-                    <Printer className="h-4 w-4" /> Print
-                  </Link>
+                    {printing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Printer className="h-4 w-4" />
+                    )}
+                    Print
+                  </button>
                   <button
                     onClick={closePreview}
                     className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100"
@@ -787,88 +837,133 @@ export default function PurchaseInvoicesPage() {
                   value={labelConfig.paperSize}
                   onChange={(e) => {
                     const paperSize = e.target.value
-                    const { labelWidth, labelHeight } = autoCalculateLabelSize(paperSize, labelConfig.cols, labelConfig.rows, labelConfig.margin)
-                    setLabelConfig({ ...labelConfig, paperSize, labelWidth, labelHeight })
+                    if (isThermalLabelSize(paperSize)) {
+                      const dims = THERMAL_LABEL_DIMENSIONS[paperSize]
+                      setLabelConfig({
+                        ...labelConfig,
+                        paperSize,
+                        labelWidth: dims.width,
+                        labelHeight: dims.height,
+                        cols: 1,
+                        rows: 1,
+                        margin: 0,
+                      })
+                      return
+                    }
+                    const cols = labelConfig.cols || 4
+                    const rows = labelConfig.rows || 8
+                    const margin = labelConfig.margin || 10
+                    const { labelWidth, labelHeight } = autoCalculateLabelSize(paperSize, cols, rows, margin)
+                    setLabelConfig({ ...labelConfig, paperSize, labelWidth, labelHeight, cols, rows, margin })
                   }}
                   className="mt-1 w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                 >
-                  <option value="a4">A4 (210 x 297 mm)</option>
-                  <option value="letter">Letter (216 x 279 mm)</option>
-                  <option value="a5">A5 (148 x 210 mm)</option>
+                  <optgroup label="Sheet paper">
+                    <option value="a4">A4 (210 x 297 mm)</option>
+                    <option value="letter">Letter (216 x 279 mm)</option>
+                    <option value="a5">A5 (148 x 210 mm)</option>
+                  </optgroup>
+                  <optgroup label="Thermal label printer">
+                    {BARCODE_LABEL_SIZE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
+                {isThermalSelected && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {BARCODE_LABEL_SIZE_OPTIONS.find((o) => o.value === labelConfig.paperSize)?.description}
+                    {' · '}
+                    One barcode label per thermal page
+                  </p>
+                )}
               </div>
 
-              {/* Label Dimensions */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm font-medium">Label Width (mm)</Label>
-                  <Input
-                    type="number"
-                    value={labelConfig.labelWidth}
-                    onChange={(e) => setLabelConfig({ ...labelConfig, labelWidth: Number(e.target.value) })}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-sm font-medium">Label Height (mm)</Label>
-                  <Input
-                    type="number"
-                    value={labelConfig.labelHeight}
-                    onChange={(e) => setLabelConfig({ ...labelConfig, labelHeight: Number(e.target.value) })}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
+              {!isThermalSelected && (
+                <>
+                  {/* Label Dimensions */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Label Width (mm)</Label>
+                      <Input
+                        type="number"
+                        value={labelConfig.labelWidth}
+                        onChange={(e) => setLabelConfig({ ...labelConfig, labelWidth: Number(e.target.value) })}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Label Height (mm)</Label>
+                      <Input
+                        type="number"
+                        value={labelConfig.labelHeight}
+                        onChange={(e) => setLabelConfig({ ...labelConfig, labelHeight: Number(e.target.value) })}
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
 
-              {/* Grid Configuration */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm font-medium">Columns</Label>
-                  <Input
-                    type="number"
-                    value={labelConfig.cols}
-                    onChange={(e) => {
-                      const cols = Number(e.target.value)
-                      const { labelWidth, labelHeight } = autoCalculateLabelSize(labelConfig.paperSize, cols, labelConfig.rows, labelConfig.margin)
-                      setLabelConfig({ ...labelConfig, cols, labelWidth, labelHeight })
-                    }}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-sm font-medium">Rows</Label>
-                  <Input
-                    type="number"
-                    value={labelConfig.rows}
-                    onChange={(e) => {
-                      const rows = Number(e.target.value)
-                      const { labelWidth, labelHeight } = autoCalculateLabelSize(labelConfig.paperSize, labelConfig.cols, rows, labelConfig.margin)
-                      setLabelConfig({ ...labelConfig, rows, labelWidth, labelHeight })
-                    }}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
+                  {/* Grid Configuration */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Columns</Label>
+                      <Input
+                        type="number"
+                        value={labelConfig.cols}
+                        onChange={(e) => {
+                          const cols = Number(e.target.value)
+                          const { labelWidth, labelHeight } = autoCalculateLabelSize(labelConfig.paperSize, cols, labelConfig.rows, labelConfig.margin)
+                          setLabelConfig({ ...labelConfig, cols, labelWidth, labelHeight })
+                        }}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Rows</Label>
+                      <Input
+                        type="number"
+                        value={labelConfig.rows}
+                        onChange={(e) => {
+                          const rows = Number(e.target.value)
+                          const { labelWidth, labelHeight } = autoCalculateLabelSize(labelConfig.paperSize, labelConfig.cols, rows, labelConfig.margin)
+                          setLabelConfig({ ...labelConfig, rows, labelWidth, labelHeight })
+                        }}
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
 
-              {/* Margin (even on all sides) */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm font-medium">Margin (mm)</Label>
-                  <Input
-                    type="number"
-                    value={labelConfig.margin}
-                    onChange={(e) => {
-                      const margin = Number(e.target.value)
-                      const { labelWidth, labelHeight } = autoCalculateLabelSize(labelConfig.paperSize, labelConfig.cols, labelConfig.rows, margin)
-                      setLabelConfig({ ...labelConfig, margin, labelWidth, labelHeight })
-                    }}
-                    className="mt-1"
-                  />
+                  {/* Margin (even on all sides) */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Margin (mm)</Label>
+                      <Input
+                        type="number"
+                        value={labelConfig.margin}
+                        onChange={(e) => {
+                          const margin = Number(e.target.value)
+                          const { labelWidth, labelHeight } = autoCalculateLabelSize(labelConfig.paperSize, labelConfig.cols, labelConfig.rows, margin)
+                          setLabelConfig({ ...labelConfig, margin, labelWidth, labelHeight })
+                        }}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div className="flex items-end text-xs text-gray-500 pb-3">
+                      Applied evenly to top, bottom, left and right
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {isThermalSelected && (
+                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  Label size:{' '}
+                  <span className="font-medium text-foreground">
+                    {labelConfig.labelWidth} × {labelConfig.labelHeight} mm
+                  </span>
                 </div>
-                <div className="flex items-end text-xs text-gray-500 pb-3">
-                  Applied evenly to top, bottom, left and right
-                </div>
-              </div>
+              )}
 
               {/* Item Quantities */}
               <div>

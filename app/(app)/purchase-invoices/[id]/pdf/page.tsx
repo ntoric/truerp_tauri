@@ -3,32 +3,34 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
+import { printPurchaseBill } from '@/lib/printDocument'
 
 export default function PurchaseBillPDFPage() {
   const params = useParams()
   const id = params.id as string
-  const [htmlContent, setHtmlContent] = useState<string>('')
-  const [error, setError] = useState<string>('')
+  const [status, setStatus] = useState('Preparing purchase invoice…')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (!id) return
+    let cancelled = false
 
-    const fetchPDF = async () => {
+    ;(async () => {
       try {
-        const res = await apiFetch(`/purchase/bills/${id}/pdf`)
-        if (res.ok) {
-          const html = await res.text()
-          setHtmlContent(html)
-        } else {
-          setError('Failed to load purchase invoice PDF')
-        }
+        setStatus('Sending to printer…')
+        await printPurchaseBill(id)
+        if (!cancelled) setStatus('Print job sent. You can close this tab.')
       } catch (err) {
-        setError('An error occurred while loading the PDF')
-        console.error(err)
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to print purchase invoice')
+          setStatus('')
+        }
       }
-    }
+    })()
 
-    fetchPDF()
+    return () => {
+      cancelled = true
+    }
   }, [id])
 
   if (error) {
@@ -41,15 +43,10 @@ export default function PurchaseBillPDFPage() {
     )
   }
 
-  if (!htmlContent) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-      </div>
-    )
-  }
-
   return (
-    <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
+    <div className="flex h-screen flex-col items-center justify-center gap-3">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+      <p className="text-sm text-gray-600">{status}</p>
+    </div>
   )
 }

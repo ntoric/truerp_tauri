@@ -107,6 +107,8 @@ export default function POSPage() {
   const [receivedAmount, setReceivedAmount] = useState('')
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0)
+  const [editingQty, setEditingQty] = useState<{ productId: string; value: string } | null>(null)
+  const qtyEditCancelledRef = useRef(false)
   const prevLoyaltyDiscountRef = useRef(0)
   const { accounts: bankAccounts } = useBankAccounts()
   const { getDepositHint } = usePaymentMethodMappings()
@@ -431,6 +433,25 @@ export default function POSPage() {
         return item
       })
     })
+  }
+
+  const formatCartQuantity = (item: CartItem) =>
+    isWeightBasedUnit(item.product.unit)
+      ? item.quantity.toFixed(scaleSettings.decimal_places)
+      : String(item.quantity)
+
+  const commitQuantityEdit = (productId: string, raw: string, unit: string) => {
+    const parsed = parseFloat(raw)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setEditingQty(null)
+      removeFromCart(productId)
+      return
+    }
+    const quantity = isWeightBasedUnit(unit)
+      ? Math.round(parsed * Math.pow(10, scaleSettings.decimal_places)) / Math.pow(10, scaleSettings.decimal_places)
+      : Math.round(parsed * 1000) / 1000
+    updateQuantity(productId, quantity)
+    setEditingQty(null)
   }
 
   const removeFromCart = (productId: string) => {
@@ -1172,16 +1193,53 @@ export default function POSPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                    onClick={() => {
+                      setEditingQty(null)
+                      updateQuantity(item.product.id, item.quantity - 1)
+                    }}
                     className="h-6 w-6 p-0"
                   >
                     <Minus className="h-3 w-3" />
                   </Button>
-                  <span className="w-10 text-center text-xs font-medium tabular-nums">
-                    {isWeightBasedUnit(item.product.unit)
-                      ? item.quantity.toFixed(scaleSettings.decimal_places)
-                      : item.quantity}
-                  </span>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0.001}
+                    step={isWeightBasedUnit(item.product.unit) ? Math.pow(10, -scaleSettings.decimal_places) : 1}
+                    value={
+                      editingQty?.productId === item.product.id
+                        ? editingQty.value
+                        : formatCartQuantity(item)
+                    }
+                    onFocus={(e) => {
+                      setEditingQty({ productId: item.product.id, value: formatCartQuantity(item) })
+                      e.target.select()
+                    }}
+                    onChange={(e) => {
+                      setEditingQty({ productId: item.product.id, value: e.target.value })
+                    }}
+                    onBlur={() => {
+                      if (qtyEditCancelledRef.current) {
+                        qtyEditCancelledRef.current = false
+                        setEditingQty(null)
+                        return
+                      }
+                      if (editingQty?.productId === item.product.id) {
+                        commitQuantityEdit(item.product.id, editingQty.value, item.product.unit)
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.currentTarget.blur()
+                      } else if (e.key === 'Escape') {
+                        qtyEditCancelledRef.current = true
+                        setEditingQty(null)
+                        e.currentTarget.blur()
+                      }
+                    }}
+                    className="h-6 w-14 px-1 text-center text-xs font-medium tabular-nums"
+                    aria-label={`Quantity for ${item.product.name}`}
+                  />
                   {isWeightBasedUnit(item.product.unit) && scaleSettings.enabled && (
                     <Button
                       size="sm"
@@ -1196,7 +1254,10 @@ export default function POSPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                    onClick={() => {
+                      setEditingQty(null)
+                      updateQuantity(item.product.id, item.quantity + 1)
+                    }}
                     className="h-6 w-6 p-0"
                   >
                     <Plus className="h-3 w-3" />

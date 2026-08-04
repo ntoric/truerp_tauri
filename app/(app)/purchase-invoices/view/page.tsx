@@ -8,8 +8,9 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, Download, Printer } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Printer } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
+import { printPurchaseBill } from '@/lib/printDocument'
 
 interface PurchaseBillItem {
   id: string
@@ -43,6 +44,7 @@ function PurchaseBillViewContent() {
   const id = searchParams.get('id')
   const [bill, setBill] = useState<PurchaseBill | null>(null)
   const [loading, setLoading] = useState(true)
+  const [printing, setPrinting] = useState(false)
 
   useEffect(() => {
     if (id) fetchBill()
@@ -56,6 +58,18 @@ function PurchaseBillViewContent() {
       console.error(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handlePrint = async () => {
+    if (!bill?.id || printing) return
+    setPrinting(true)
+    try {
+      await printPurchaseBill(bill.id, { billNumber: bill.bill_number })
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Print failed')
+    } finally {
+      setPrinting(false)
     }
   }
 
@@ -99,9 +113,14 @@ function PurchaseBillViewContent() {
             <Button variant="outline"><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button>
           </Link>
           <div className="flex gap-2">
-            <Link href={`/purchase-invoices/${bill.id}/pdf`} target="_blank">
-              <Button variant="outline"><Printer className="mr-2 h-4 w-4" /> Print</Button>
-            </Link>
+            <Button variant="outline" onClick={() => void handlePrint()} disabled={printing}>
+              {printing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Printer className="mr-2 h-4 w-4" />
+              )}
+              Print
+            </Button>
             <Button
               variant="outline"
               onClick={async () => {

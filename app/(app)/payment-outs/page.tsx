@@ -161,7 +161,8 @@ export default function PaymentOutsPage() {
       }
       const res = await apiFetch(url)
       if (res.ok) {
-        setPaymentOuts(await res.json())
+        const data = await res.json()
+        setPaymentOuts(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [])
       } else {
         showErrorToast('Unable to load payment outs', 'Load failed')
       }

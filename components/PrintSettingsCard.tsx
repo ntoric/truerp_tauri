@@ -406,7 +406,12 @@ export default function PrintSettingsCard() {
                     <p className="text-xs text-muted-foreground">
                       No printers detected. Install a printer in system settings, then refresh.
                     </p>
-                  ) : null}
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Thermal jobs print silently via ESC/POS (no Windows print dialog). Set Thermal
+                      printer for instant Checkout &amp; Print.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed px-4 py-3 text-xs text-muted-foreground">

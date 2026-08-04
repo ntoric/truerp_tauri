@@ -18,7 +18,8 @@ import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
-import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Printer, Upload } from 'lucide-react'
+import { printDocument } from '@/lib/printDocument'
+import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Printer, Upload, Loader2 } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 
@@ -73,6 +74,7 @@ export default function InvoicesPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [previewId, setPreviewId] = useState<string | null>(null)
+  const [printing, setPrinting] = useState(false)
   const [previewData, setPreviewData] = useState<any>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [showImportDialog, setShowImportDialog] = useState(false)
@@ -292,6 +294,21 @@ export default function InvoicesPage() {
   const closePreview = () => {
     setPreviewId(null)
     setPreviewData(null)
+  }
+
+  const handlePrintPreview = async () => {
+    if (!previewId || printing) return
+    setPrinting(true)
+    try {
+      await printDocument({
+        documentType: 'invoice',
+        documentId: previewId,
+      })
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Print failed')
+    } finally {
+      setPrinting(false)
+    }
   }
 
   const toggleSelectInvoice = (id: string) => {
@@ -600,13 +617,19 @@ export default function InvoicesPage() {
                   {previewData?.invoice_number || 'Invoice Preview'}
                 </h2>
                 <div className="flex items-center gap-2">
-                  <Link
-                    href={`/invoices/${previewId}/pdf`}
-                    target="_blank"
-                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  <button
+                    type="button"
+                    onClick={() => void handlePrintPreview()}
+                    disabled={printing}
+                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                   >
-                    <Printer className="h-4 w-4" /> Print
-                  </Link>
+                    {printing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Printer className="h-4 w-4" />
+                    )}
+                    Print
+                  </button>
                   <button
                     onClick={closePreview}
                     className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100"

@@ -1,6 +1,7 @@
 import { apiFetch } from '@/hooks/useAuth'
 import {
   desktopPrintPDF,
+  desktopPrintThermal,
   hasNativePrinting,
   isDesktopApp,
 } from '@/lib/desktopBridge'
@@ -88,58 +89,184 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('Failed to read PDF'))
+    reader.readAsDataURL(blob)
+  })
+  const comma = dataUrl.indexOf(',')
+  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
+}
+
 function pdfBlobUrl(pdfBase64: string): string {
   const bytes = base64ToUint8Array(pdfBase64)
   const blob = new Blob([bytes], { type: 'application/pdf' })
   return URL.createObjectURL(blob)
 }
 
-/** Open/print a PDF page in the browser (proper PDF viewer, not HTML). */
-function printPdfInBrowser(pdfBase64: string): void {
+/**
+ * Print a PDF from inside the current webview.
+ * Never uses window.open — in Tauri that would launch the system browser.
+ */
+function printPdfInApp(pdfBase64: string): void {
   const url = pdfBlobUrl(pdfBase64)
-  const win = window.open(url, '_blank')
-  if (!win) {
-    // Popup blocked — fall back to embedded iframe print.
-    const iframe = document.createElement('iframe')
-    iframe.style.position = 'fixed'
-    iframe.style.right = '0'
-    iframe.style.bottom = '0'
-    iframe.style.width = '0'
-    iframe.style.height = '0'
-    iframe.style.border = '0'
-    iframe.src = url
-    document.body.appendChild(iframe)
-    iframe.onload = () => {
-      try {
-        iframe.contentWindow?.focus()
-        iframe.contentWindow?.print()
-      } finally {
-        setTimeout(() => {
-          if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
-          URL.revokeObjectURL(url)
-        }, 60_000)
-      }
-    }
-    return
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('title', 'TruERP Print')
+  iframe.style.position = 'fixed'
+  iframe.style.right = '0'
+  iframe.style.bottom = '0'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  iframe.style.border = '0'
+  iframe.style.opacity = '0'
+  iframe.style.pointerEvents = 'none'
+  iframe.src = url
+  document.body.appendChild(iframe)
+
+  const cleanup = () => {
+    if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
+    URL.revokeObjectURL(url)
   }
-  const revokeLater = () => {
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  }
-  win.addEventListener('load', () => {
+
+  iframe.onload = () => {
     try {
-      win.focus()
-      win.print()
-    } catch {
-      /* user can print from PDF viewer */
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+    } catch (err) {
+      console.warn('In-app PDF print failed:', err)
+    } finally {
+      setTimeout(cleanup, 60_000)
     }
-    revokeLater()
-  })
-  revokeLater()
+  }
+}
+
+/** Browser fallback: print thermal text via a hidden preformatted iframe (no PDF blank space). */
+function printThermalTextInApp(content: string, widthMm = 58): void {
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('title', 'TruERP Thermal Print')
+  iframe.style.position = 'fixed'
+  iframe.style.right = '0'
+  iframe.style.bottom = '0'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  iframe.style.border = '0'
+  document.body.appendChild(iframe)
+  const doc = iframe.contentDocument || iframe.contentWindow?.document
+  if (!doc) {
+    iframe.remove()
+    throw new Error('Unable to open print frame')
+  }
+  const pageWidth = Math.max(40, Math.min(100, widthMm))
+  doc.open()
+  doc.write(`<!DOCTYPE html><html><head><title>Receipt</title>
+<style>
+  @page { size: ${pageWidth}mm auto; margin: 2mm; }
+  html, body { margin: 0; padding: 0; }
+  body { width: ${pageWidth}mm; }
+  pre {
+    margin: 0;
+    padding: 0;
+    font-family: "Courier New", Courier, monospace;
+    font-size: ${pageWidth <= 42 ? 9 : pageWidth <= 60 ? 11 : 12}px;
+    line-height: 1.25;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+</style></head><body><pre>${escapeHtml(content)}</pre></body></html>`)
+  doc.close()
+  const cleanup = () => {
+    if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
+  }
+  setTimeout(() => {
+    try {
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+    } finally {
+      setTimeout(cleanup, 60_000)
+    }
+  }, 50)
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/** Send PDF to OS printer (desktop) or in-app print dialog (browser/fallback). */
+export async function printPdfBase64(
+  pdfBase64: string,
+  options?: {
+    title?: string
+    printerName?: string
+    paperWidthMm?: number | null
+    paperSize?: string | null
+    preferNative?: boolean
+  }
+): Promise<void> {
+  if (!pdfBase64) {
+    throw new Error('Print service did not return a PDF page')
+  }
+
+  const preferNative = options?.preferNative !== false
+  if (preferNative && isDesktopApp() && (await hasNativePrinting())) {
+    try {
+      const ok = await desktopPrintPDF(
+        pdfBase64,
+        options?.printerName || '',
+        options?.title || 'TruERP Document',
+        options?.paperWidthMm,
+        options?.paperSize
+      )
+      if (ok) return
+    } catch (err) {
+      console.warn('Native PDF print failed, using in-app print dialog:', err)
+    }
+  }
+
+  printPdfInApp(pdfBase64)
 }
 
 /**
- * Print an invoice/expense as a proper PDF page (thermal or A4).
- * Desktop uses OS print of the PDF; browser opens the PDF viewer.
+ * Print thermal receipt: desktop uses silent ESC/POS; browser uses compact text print.
+ */
+export async function printThermalContent(options: {
+  content: string
+  printerName?: string
+  paperWidthMm?: number
+  title?: string
+  preferNative?: boolean
+}): Promise<void> {
+  const content = options.content?.trim()
+  if (!content) {
+    throw new Error('Thermal receipt content was empty')
+  }
+  const widthMm = options.paperWidthMm && options.paperWidthMm > 0 ? options.paperWidthMm : 58
+  const preferNative = options.preferNative !== false
+
+  if (preferNative && isDesktopApp() && (await hasNativePrinting())) {
+    try {
+      const ok = await desktopPrintThermal(
+        content,
+        options.printerName || '',
+        widthMm,
+        options.title || 'TruERP Receipt'
+      )
+      if (ok) return
+    } catch (err) {
+      console.warn('Native thermal print failed, using in-app text print:', err)
+    }
+  }
+
+  printThermalTextInApp(content, widthMm)
+}
+
+/**
+ * Print an invoice/expense (thermal ESC/POS on desktop, or A4 PDF).
  */
 export async function printDocument(options: {
   documentType: 'invoice' | 'expense'
@@ -149,12 +276,27 @@ export async function printDocument(options: {
   preferNative?: boolean
 }): Promise<DocumentPrintResult> {
   const payload = await fetchDocumentPrint(options)
+
+  if (payload.mode === 'thermal') {
+    const content = payload.content?.trim()
+    if (content) {
+      await printThermalContent({
+        content,
+        printerName: payload.printer_name || '',
+        paperWidthMm: typeof payload.width === 'number' ? payload.width : 58,
+        title: payload.title,
+        preferNative: options.preferNative,
+      })
+      return payload
+    }
+    if (!payload.pdf_base64) {
+      throw new Error('Print service did not return thermal content')
+    }
+  }
+
   if (!payload.pdf_base64) {
     throw new Error('Print service did not return a PDF page')
   }
-
-  const preferNative = options.preferNative !== false
-  const printerName = payload.printer_name || ''
 
   let paperSize: string | undefined
   let paperWidthMm: number | undefined
@@ -171,26 +313,47 @@ export async function printDocument(options: {
     }
   }
 
-  if (preferNative && isDesktopApp() && (await hasNativePrinting())) {
-    try {
-      const ok = await desktopPrintPDF(
-        payload.pdf_base64,
-        printerName,
-        payload.title,
-        paperWidthMm,
-        paperSize
-      )
-      if (ok) return payload
-    } catch (err) {
-      console.warn('Native PDF print failed, opening PDF viewer:', err)
-    }
-  }
-
-  printPdfInBrowser(payload.pdf_base64)
+  await printPdfBase64(payload.pdf_base64, {
+    title: payload.title,
+    printerName: payload.printer_name || '',
+    paperWidthMm,
+    paperSize,
+    preferNative: options.preferNative,
+  })
   return payload
 }
 
-/** Open A4 invoice as a real PDF page. */
+/** Print a purchase invoice PDF via desktop native print (or in-app dialog). */
+export async function printPurchaseBill(
+  billId: string,
+  options?: { billNumber?: string; preferNative?: boolean }
+): Promise<void> {
+  const [settings, res] = await Promise.all([
+    fetchPrintSettings(),
+    apiFetch(`/purchase/bills/${billId}/download-pdf`),
+  ])
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to prepare purchase invoice PDF')
+  }
+  const blob = await res.blob()
+  if (!blob.size) {
+    throw new Error('Purchase invoice PDF was empty')
+  }
+  const pdfBase64 = await blobToBase64(blob)
+  const title = options?.billNumber
+    ? `Purchase Invoice ${options.billNumber}`
+    : 'Purchase Invoice'
+  await printPdfBase64(pdfBase64, {
+    title,
+    printerName: settings.document_printer_name || '',
+    paperSize: settings.paper_size || 'a4',
+    preferNative: options?.preferNative,
+  })
+}
+
+/** Open A4 invoice PDF in the current app window (no new browser tab). */
 export function openInvoicePdfPage(invoiceId: string): void {
-  window.open(`/invoices/${invoiceId}/pdf`, '_blank')
+  // In Tauri, window.open(_blank) launches the system browser with the app URL.
+  window.location.assign(`/invoices/${invoiceId}/pdf`)
 }

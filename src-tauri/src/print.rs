@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::thermal;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrinterInfo {
     pub name: String,
@@ -18,7 +20,15 @@ pub fn has_native_printing() -> bool {
 
 #[tauri::command]
 pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
-    list_system_printers()
+    // Prefer Winspool/CUPS helpers (no PowerShell flash on Windows).
+    let printers = thermal::list_printers()?;
+    Ok(printers
+        .into_iter()
+        .map(|p| PrinterInfo {
+            name: p.name,
+            is_default: p.is_default,
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -109,46 +119,6 @@ fn sanitize_file_stem(s: &str) -> String {
 }
 
 #[cfg(target_os = "macos")]
-fn list_system_printers() -> Result<Vec<PrinterInfo>, String> {
-    let output = Command::new("lpstat")
-        .args(["-p", "-d"])
-        .output()
-        .map_err(|e| format!("lpstat: {e}"))?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    let err = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() {
-        if err.contains("no destinations") || text.contains("no destinations") {
-            return Ok(vec![]);
-        }
-        return Err(format!("lpstat failed: {}", err.trim()));
-    }
-
-    let mut default_name = String::new();
-    let mut printers = Vec::new();
-    for line in text.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix("system default destination:") {
-            default_name = rest.trim().to_string();
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("printer ") {
-            if let Some(name) = rest.split_whitespace().next() {
-                printers.push(PrinterInfo {
-                    name: name.to_string(),
-                    is_default: false,
-                });
-            }
-        }
-    }
-    for p in &mut printers {
-        if p.name == default_name {
-            p.is_default = true;
-        }
-    }
-    Ok(printers)
-}
-
-#[cfg(target_os = "macos")]
 fn print_pdf_file(
     path: &std::path::Path,
     printer_name: &str,
@@ -175,7 +145,6 @@ fn print_pdf_file(
         .output()
         .map_err(|e| format!("lp: {e}"))?;
     if !output.status.success() {
-        // Retry without custom media if the driver rejects it.
         if media.is_some() {
             return print_pdf_file(path, printer_name, title, None);
         }
@@ -188,62 +157,35 @@ fn print_pdf_file(
 }
 
 #[cfg(target_os = "windows")]
-fn list_system_printers() -> Result<Vec<PrinterInfo>, String> {
-    let ps = r#"
-$ErrorActionPreference = 'Stop'
-$default = (Get-CimInstance -ClassName Win32_Printer | Where-Object { $_.Default }).Name
-Get-CimInstance -ClassName Win32_Printer | ForEach-Object {
-  [PSCustomObject]@{ name = $_.Name; is_default = ($_.Name -eq $default) }
-} | ConvertTo-Json -Compress
-"#;
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-Command", ps])
-        .output()
-        .map_err(|e| format!("powershell Get-Printer: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "powershell Get-Printer: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    let trimmed = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if trimmed.is_empty() || trimmed == "null" {
-        return Ok(vec![]);
-    }
-    if trimmed.starts_with('{') {
-        let one: PrinterInfo =
-            serde_json::from_str(&trimmed).map_err(|e| format!("parse printer: {e}"))?;
-        return Ok(vec![one]);
-    }
-    serde_json::from_str(&trimmed).map_err(|e| format!("parse printers: {e}"))
-}
-
-#[cfg(target_os = "windows")]
 fn print_pdf_file(
     path: &std::path::Path,
     printer_name: &str,
     _title: &str,
     _media: Option<&str>,
 ) -> Result<(), String> {
+    // A4/document PDF path. Thermal receipts use print_thermal (ESC/POS + Winspool) instead.
+    // CREATE_NO_WINDOW avoids the PowerShell console flash.
     let path_s = path.display().to_string().replace('\'', "''");
-    if !printer_name.is_empty() {
+    let ps = if !printer_name.is_empty() {
         let printer = printer_name.replace('\'', "''");
-        let ps = format!(
-            "$ErrorActionPreference = 'Stop'\nStart-Process -FilePath '{path_s}' -Verb PrintTo -ArgumentList '{printer}' -WindowStyle Hidden\nStart-Sleep -Seconds 2\n"
-        );
-        let output = Command::new("powershell")
-            .args(["-NoProfile", "-Command", &ps])
-            .output()
-            .map_err(|e| format!("print pdf: {e}"))?;
-        if output.status.success() {
-            return Ok(());
-        }
-    }
-    let ps = format!(
-        "$ErrorActionPreference = 'Stop'\nStart-Process -FilePath '{path_s}' -Verb Print -WindowStyle Hidden\nStart-Sleep -Seconds 2\n"
-    );
+        format!(
+            "Start-Process -FilePath '{path_s}' -Verb PrintTo -ArgumentList '{printer}' -WindowStyle Hidden; Start-Sleep -Milliseconds 800"
+        )
+    } else {
+        format!(
+            "Start-Process -FilePath '{path_s}' -Verb Print -WindowStyle Hidden; Start-Sleep -Milliseconds 800"
+        )
+    };
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-Command", &ps])
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &ps,
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("print pdf: {e}"))?;
     if !output.status.success() {
@@ -255,10 +197,10 @@ fn print_pdf_file(
     Ok(())
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn list_system_printers() -> Result<Vec<PrinterInfo>, String> {
-    Ok(vec![])
-}
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn print_pdf_file(
@@ -267,5 +209,5 @@ fn print_pdf_file(
     _title: &str,
     _media: Option<&str>,
 ) -> Result<(), String> {
-    Err("native printing is not supported on this platform".into())
+    Err("native PDF printing is not supported on this platform".into())
 }

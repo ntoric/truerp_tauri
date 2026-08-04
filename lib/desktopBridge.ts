@@ -21,6 +21,12 @@ type DesktopAppBridge = {
     paperWidthMm?: number | null,
     paperSize?: string | null
   ) => Promise<void>
+  PrintThermal?: (
+    content: string,
+    printerName: string,
+    paperWidthMm?: number | null,
+    jobTitle?: string
+  ) => Promise<void>
   AppVersion?: () => Promise<string>
   CheckForUpdates?: () => Promise<DesktopUpdateCheckResult>
   DownloadAndInstallUpdate?: () => Promise<void>
@@ -55,6 +61,13 @@ function getDesktopApp(): DesktopAppBridge | null {
         jobTitle,
         paperWidthMm: paperWidthMm ?? null,
         paperSize: paperSize ?? null,
+      }) as Promise<void>,
+    PrintThermal: (content, printerName, paperWidthMm, jobTitle) =>
+      invoke('print_thermal', {
+        content,
+        printerName: printerName || '',
+        paperWidthMm: paperWidthMm ?? null,
+        jobTitle: jobTitle || 'TruERP Receipt',
       }) as Promise<void>,
     AppVersion: () => invoke('app_version') as Promise<string>,
     CheckForUpdates: () => invoke('check_for_updates') as Promise<DesktopUpdateCheckResult>,
@@ -102,6 +115,19 @@ export async function desktopPrintPDF(
   const app = getDesktopApp()
   if (!app?.PrintPDF) return false
   await app.PrintPDF(pdfBase64, printerName, jobTitle, paperWidthMm, paperSize)
+  return true
+}
+
+/** Silent ESC/POS thermal print via desktop Winspool/CUPS (no print dialog). */
+export async function desktopPrintThermal(
+  content: string,
+  printerName = '',
+  paperWidthMm?: number | null,
+  jobTitle = 'TruERP Receipt'
+): Promise<boolean> {
+  const app = getDesktopApp()
+  if (!app?.PrintThermal) return false
+  await app.PrintThermal(content, printerName, paperWidthMm, jobTitle)
   return true
 }
 

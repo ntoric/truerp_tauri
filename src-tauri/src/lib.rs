@@ -2,6 +2,7 @@ mod paths;
 mod print;
 mod processes;
 mod proxy;
+mod thermal;
 #[cfg(desktop)]
 mod updater;
 
@@ -51,6 +52,14 @@ const BRIDGE_JS: &str = r#"
         paperSize: paperSize || null
       });
     },
+    PrintThermal: function (content, printerName, paperWidthMm, jobTitle) {
+      return invoke('print_thermal', {
+        content: content || '',
+        printerName: printerName || '',
+        paperWidthMm: paperWidthMm == null ? null : paperWidthMm,
+        jobTitle: jobTitle || 'TruERP Receipt'
+      });
+    },
     FrontendReady: function () { return invoke('frontend_ready'); },
     DataDirectory: function () { return invoke('data_directory'); },
     APIStatus: function () { return Promise.resolve('running'); },
@@ -83,6 +92,8 @@ pub fn run() {
             print::has_native_printing,
             print::list_printers,
             print::print_pdf,
+            thermal::print_thermal,
+            thermal::print_raw_base64,
             #[cfg(desktop)]
             updater::app_version,
             #[cfg(desktop)]
@@ -95,11 +106,10 @@ pub fn run() {
                 let _ = window.eval(BRIDGE_JS);
             }
 
-            let data_root = processes::configure_data_dirs()
-                .unwrap_or_else(|e| {
-                    log::warn!("configure data dirs: {e}");
-                    std::env::temp_dir().join("TruERP")
-                });
+            let data_root = processes::configure_data_dirs().unwrap_or_else(|e| {
+                log::warn!("configure data dirs: {e}");
+                std::env::temp_dir().join("TruERP")
+            });
             let runtime = Arc::new(RuntimeProcesses::new(data_root));
 
             let proxy_flag = Arc::clone(&runtime.frontend_ready);
