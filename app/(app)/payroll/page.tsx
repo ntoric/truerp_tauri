@@ -757,7 +757,7 @@ export default function PayrollPage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Net salary will be deducted from this account and recorded as a Salary expense.
+                  Net salary will be deducted from this account and recorded as a Payroll expense.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-4">

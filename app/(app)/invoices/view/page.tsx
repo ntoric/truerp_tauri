@@ -8,7 +8,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, Download, Loader2, Printer, Printer as ThermalPrinter } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter } from 'lucide-react'
 import ThermalPrintModal from '@/components/ThermalPrintModal'
 import InvoiceAttachments from '@/components/InvoiceAttachments'
 import InvoiceStatusTracker from '@/components/InvoiceStatusTracker'
@@ -17,7 +17,7 @@ import InvoiceCustomFieldsForm, {
   displayCustomFields,
   parseCustomFieldsFromInvoice,
 } from '@/components/InvoiceCustomFieldsForm'
-import { openInvoicePdfPage, printDocument } from '@/lib/printDocument'
+import { downloadInvoicePdf } from '@/lib/printDocument'
 import { notifyError } from '@/lib/notify'
 
 interface InvoiceItem {
@@ -79,7 +79,7 @@ function InvoiceViewContent() {
   const [fieldDefs, setFieldDefs] = useState<InvoiceCustomFieldDefinition[]>([])
   const [loading, setLoading] = useState(true)
   const [thermalPrintOpen, setThermalPrintOpen] = useState(false)
-  const [printing, setPrinting] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -104,24 +104,15 @@ function InvoiceViewContent() {
     }
   }
 
-  const openPdf = () => {
-    if (!invoice?.id) return
-    openInvoicePdfPage(invoice.id)
-  }
-
-  const handlePrint = async () => {
-    if (!invoice?.id) return
-    setPrinting(true)
+  const handleDownloadPdf = async () => {
+    if (!invoice?.id || downloading) return
+    setDownloading(true)
     try {
-      // Uses Settings → invoice_print_mode (thermal or A4)
-      await printDocument({
-        documentType: 'invoice',
-        documentId: invoice.id,
-      })
+      await downloadInvoicePdf(invoice.id, { invoiceNumber: invoice.invoice_number })
     } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Print failed')
+      notifyError(err instanceof Error ? err.message : 'Failed to download PDF')
     } finally {
-      setPrinting(false)
+      setDownloading(false)
     }
   }
 
@@ -171,19 +162,16 @@ function InvoiceViewContent() {
             <Button variant="outline"><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button>
           </Link>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => void handlePrint()} disabled={printing}>
-              {printing ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Printer className="mr-2 h-4 w-4" />
-              )}
-              Print
-            </Button>
             <Button variant="outline" onClick={() => setThermalPrintOpen(true)}>
               <ThermalPrinter className="mr-2 h-4 w-4" /> Thermal
             </Button>
-            <Button variant="outline" onClick={openPdf}>
-              <Download className="mr-2 h-4 w-4" /> PDF
+            <Button variant="outline" onClick={() => void handleDownloadPdf()} disabled={downloading}>
+              {downloading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
+              Download PDF
             </Button>
           </div>
         </div>

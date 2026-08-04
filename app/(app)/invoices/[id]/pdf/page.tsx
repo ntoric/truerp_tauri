@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
-import { fetchPrintSettings, printPdfBase64 } from '@/lib/printDocument'
+import { Button } from '@/components/ui/button'
+import { Download, Loader2 } from 'lucide-react'
 
 export default function InvoicePDFPage() {
   const params = useParams()
@@ -11,6 +12,7 @@ export default function InvoicePDFPage() {
   const [pdfUrl, setPdfUrl] = useState('')
   const [error, setError] = useState('')
   const [status, setStatus] = useState('Loading invoice…')
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -25,27 +27,10 @@ export default function InvoicePDFPage() {
         if (cancelled) return
         objectUrl = URL.createObjectURL(blob)
         setPdfUrl(objectUrl)
-
-        setStatus('Sending to printer…')
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(String(reader.result || ''))
-          reader.onerror = () => reject(reader.error || new Error('Failed to read PDF'))
-          reader.readAsDataURL(blob)
-        })
-        const comma = dataUrl.indexOf(',')
-        const pdfBase64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
-        const settings = await fetchPrintSettings()
-        if (cancelled) return
-        await printPdfBase64(pdfBase64, {
-          title: 'Sales Invoice',
-          printerName: settings.document_printer_name || '',
-          paperSize: settings.paper_size || 'a4',
-        })
-        if (!cancelled) setStatus('Print job sent')
+        setStatus('')
       } catch {
         if (!cancelled) {
-          setError('Failed to load or print invoice')
+          setError('Failed to load invoice PDF')
           setStatus('')
         }
       }
@@ -56,6 +41,21 @@ export default function InvoicePDFPage() {
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
   }, [id])
+
+  const handleDownload = async () => {
+    if (!pdfUrl || downloading) return
+    setDownloading(true)
+    try {
+      const a = document.createElement('a')
+      a.href = pdfUrl
+      a.download = `Invoice_${id}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   if (error) {
     return (
@@ -75,12 +75,17 @@ export default function InvoicePDFPage() {
 
   return (
     <div className="relative h-screen w-screen">
+      <div className="absolute right-4 top-4 z-10">
+        <Button variant="outline" size="sm" onClick={() => void handleDownload()} disabled={downloading}>
+          {downloading ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="mr-2 h-4 w-4" />
+          )}
+          Download PDF
+        </Button>
+      </div>
       <iframe title="Invoice PDF" src={pdfUrl} className="h-full w-full border-0" />
-      {status ? (
-        <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-black/70 px-3 py-1.5 text-xs text-white">
-          {status}
-        </div>
-      ) : null}
     </div>
   )
 }

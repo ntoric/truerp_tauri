@@ -15,18 +15,17 @@ export const THERMAL_PRINT_SIZE_OPTIONS: {
   { value: '3inch', label: '3 Inch (80mm)', description: '80 mm wide receipt printer', widthMM: 80 },
 ]
 
-export const BARCODE_LABEL_SIZE_OPTIONS = THERMAL_PRINT_SIZE_OPTIONS.map((o) => ({
-  value: o.value as BarcodeLabelSize,
-  label: o.label,
-  description:
-    o.value === '1inch'
-      ? '25.4 × 15 mm compact sticker'
-      : o.value === '1.5inch'
-        ? '38.1 × 25 mm shelf tag'
-        : o.value === '2inch'
-          ? '50.8 × 30 mm standard label'
-          : '76.2 × 50 mm large label',
-}))
+/** Thermal sticker / label roll sizes (distinct from receipt widths). */
+export const BARCODE_LABEL_SIZE_OPTIONS: {
+  value: BarcodeLabelSize
+  label: string
+  description: string
+}[] = [
+  { value: '1inch', label: '1 Inch (25mm)', description: '25.4 × 15 mm compact sticker' },
+  { value: '1.5inch', label: '1.5 Inch (38mm)', description: '38.1 × 25 mm shelf tag' },
+  { value: '2inch', label: '2 Inch (51mm)', description: '50.8 × 30 mm standard label' },
+  { value: '3inch', label: '3 Inch (76mm)', description: '76.2 × 50 mm large label' },
+]
 
 export function normalizeThermalPrintSize(value: unknown): ThermalPrintSize {
   if (value === '1inch' || value === '1.5inch' || value === '2inch' || value === '3inch') {

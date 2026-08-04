@@ -256,7 +256,7 @@ export default function PrintSettingsCard() {
   ]
 
   const printerSelectValue = (name: string) => (name ? name : '__default__')
-  const onPrinterChange = (key: 'thermal_printer_name' | 'document_printer_name', value: string) => {
+  const onPrinterChange = (key: 'thermal_printer_name', value: string) => {
     update(key, value === '__default__' ? '' : value)
   }
 
@@ -337,8 +337,8 @@ export default function PrintSettingsCard() {
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <ThemeOption
-                    label="A4 / Normal printer"
-                    description="Full tax invoice on A4, Letter, or Legal paper"
+                    label="A4 / PDF"
+                    description="Download full tax invoice as PDF (A4, Letter, or Legal)"
                     selected={settings.invoice_print_mode === 'a4'}
                     onSelect={() => update('invoice_print_mode', 'a4')}
                   />
@@ -371,7 +371,7 @@ export default function PrintSettingsCard() {
                 <p className="text-xs text-muted-foreground">
                   {settings.invoice_print_mode === 'thermal'
                     ? `POS & invoice bills print on ${thermalWidthLabel} thermal paper.`
-                    : 'POS & invoice bills print as a full tax invoice on the selected sheet size.'}
+                    : 'POS & invoice actions download a full tax invoice PDF in the selected sheet size.'}
                 </p>
               </div>
 
@@ -379,7 +379,7 @@ export default function PrintSettingsCard() {
                 <div>
                   <Label htmlFor="auto_print_on_pos">Auto-print after POS sale</Label>
                   <p className="text-xs text-muted-foreground">
-                    Uses the printer type and paper size above when a sale completes
+                    Thermal prints the receipt; A4 / PDF downloads the invoice PDF
                   </p>
                 </div>
                 <Switch
@@ -412,43 +412,23 @@ export default function PrintSettingsCard() {
                       )}
                     </Button>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Thermal printer</Label>
-                      <Select
-                        value={printerSelectValue(settings.thermal_printer_name)}
-                        onValueChange={(v) => onPrinterChange('thermal_printer_name', v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="System default" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {printerOptions.map((p) => (
-                            <SelectItem key={p.value} value={p.value}>
-                              {p.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>A4 / document printer</Label>
-                      <Select
-                        value={printerSelectValue(settings.document_printer_name)}
-                        onValueChange={(v) => onPrinterChange('document_printer_name', v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="System default" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {printerOptions.map((p) => (
-                            <SelectItem key={p.value} value={p.value}>
-                              {p.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="space-y-2">
+                    <Label>Thermal printer</Label>
+                    <Select
+                      value={printerSelectValue(settings.thermal_printer_name)}
+                      onValueChange={(v) => onPrinterChange('thermal_printer_name', v)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="System default" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {printerOptions.map((p) => (
+                          <SelectItem key={p.value} value={p.value}>
+                            {p.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   {printers.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
@@ -457,14 +437,16 @@ export default function PrintSettingsCard() {
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       Thermal jobs print silently via ESC/POS (no Windows print dialog). Set Thermal
-                      printer for instant Checkout &amp; Print.
+                      printer for instant Checkout &amp; Print. A4 invoices are downloaded as PDF
+                      only.
                     </p>
                   )}
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed px-4 py-3 text-xs text-muted-foreground">
-                  Running in browser: print uses the system print dialog. In the TruERP desktop app you
-                  can pick specific thermal and A4 printers here.
+                  Running in browser: thermal print uses the system print dialog. In the TruERP
+                  desktop app you can pick a specific thermal printer here. A4 invoices are
+                  downloaded as PDF only.
                 </div>
               )}
             </TabsContent>
@@ -533,9 +515,8 @@ export default function PrintSettingsCard() {
 
             <TabsContent value="document" className="mt-0 space-y-4">
               <p className="text-sm text-muted-foreground">
-                Paper size, margins, and header/footer apply when printing invoices on a normal A4
-                printer or saving as PDF. For POS thermal bills, pick a thermal size under Invoice
-                Printer or Thermal.
+                Paper size, margins, and header/footer apply when downloading invoices as PDF. For
+                POS thermal bills, pick a thermal size under Invoice Printer or Thermal.
               </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
@@ -557,8 +538,8 @@ export default function PrintSettingsCard() {
                   </Select>
                   {settings.invoice_print_mode === 'thermal' ? (
                     <p className="text-xs text-muted-foreground">
-                      Thermal · {thermalWidthLabel} selected. Margins below apply only to A4/PDF
-                      prints.
+                      Thermal · {thermalWidthLabel} selected. Margins below apply only to A4 PDF
+                      downloads.
                     </p>
                   ) : null}
                 </div>

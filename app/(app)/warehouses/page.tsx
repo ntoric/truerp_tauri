@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { useFormErrors } from '@/hooks/useFormErrors'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -46,8 +47,10 @@ export default function WarehousesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, loading: authLoading } = useAuth()
+  const { showSuccessToast, showErrorToast } = useFormErrors()
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([])
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [stateFilter, setStateFilter] = useState('all')
@@ -231,11 +234,20 @@ export default function WarehousesPage() {
   }
 
   const handleCreateWarehouse = async () => {
+    if (!newWarehouse.name.trim() || !newWarehouse.code.trim()) {
+      showErrorToast('Warehouse name and code are required')
+      return
+    }
+    setSaving(true)
     try {
       const res = await apiFetch('/warehouses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newWarehouse)
+        body: JSON.stringify({
+          ...newWarehouse,
+          name: newWarehouse.name.trim(),
+          code: newWarehouse.code.trim().toUpperCase(),
+        }),
       })
       if (res.ok) {
         setShowCreateModal(false)
@@ -252,18 +264,36 @@ export default function WarehousesPage() {
           is_default: false,
           notes: ''
         })
+        showSuccessToast('Warehouse created')
         fetchWarehouses()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        showErrorToast(err.error || 'Failed to create warehouse')
       }
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      console.error(err)
+      showErrorToast('Failed to create warehouse')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleUpdateWarehouse = async () => {
     if (!editingWarehouse) return
+    if (!newWarehouse.name.trim() || !newWarehouse.code.trim()) {
+      showErrorToast('Warehouse name and code are required')
+      return
+    }
+    setSaving(true)
     try {
       const res = await apiFetch(`/warehouses/${editingWarehouse.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newWarehouse)
+        body: JSON.stringify({
+          ...newWarehouse,
+          name: newWarehouse.name.trim(),
+          code: newWarehouse.code.trim().toUpperCase(),
+        }),
       })
       if (res.ok) {
         setShowEditModal(false)
@@ -281,9 +311,18 @@ export default function WarehousesPage() {
           is_default: false,
           notes: ''
         })
+        showSuccessToast('Warehouse updated')
         fetchWarehouses()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        showErrorToast(err.error || 'Failed to update warehouse')
       }
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      console.error(err)
+      showErrorToast('Failed to update warehouse')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleDeleteWarehouse = async (id: string) => {
@@ -291,9 +330,16 @@ export default function WarehousesPage() {
     try {
       const res = await apiFetch(`/warehouses/${id}`, { method: 'DELETE' })
       if (res.ok) {
+        showSuccessToast('Warehouse deleted')
         fetchWarehouses()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        showErrorToast(err.error || 'Failed to delete warehouse')
       }
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      console.error(err)
+      showErrorToast('Failed to delete warehouse')
+    }
   }
 
   const handleEditClick = (warehouse: WarehouseData) => {
@@ -465,7 +511,9 @@ export default function WarehousesPage() {
                   <Label htmlFor="is_default">Set as Default Warehouse</Label>
                 </div>
 
-                <Button onClick={handleCreateWarehouse} className="w-full">Create Warehouse</Button>
+                <Button onClick={handleCreateWarehouse} className="w-full" disabled={saving}>
+                  {saving ? 'Creating...' : 'Create Warehouse'}
+                </Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -757,7 +805,9 @@ export default function WarehousesPage() {
                 <Label htmlFor="edit_is_default">Set as Default Warehouse</Label>
               </div>
 
-              <Button onClick={handleUpdateWarehouse} className="w-full">Update Warehouse</Button>
+              <Button onClick={handleUpdateWarehouse} className="w-full" disabled={saving}>
+                {saving ? 'Updating...' : 'Update Warehouse'}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

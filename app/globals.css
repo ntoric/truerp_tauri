@@ -55,5 +55,17 @@
   }
   body {
     @apply bg-background text-foreground;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Suppress browser default blue focus border that appears on click */
+  *:focus {
+    outline: none !important;
+  }
+
+  /* Hide Tailwind focus rings for pointer-driven focus; keyboard still uses :focus-visible */
+  *:focus:not(:focus-visible) {
+    --tw-ring-shadow: 0 0 #0000 !important;
+    --tw-ring-offset-shadow: 0 0 #0000 !important;
   }
 }

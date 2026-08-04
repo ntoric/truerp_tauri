@@ -30,6 +30,7 @@ import {
   BARCODE_LABEL_SIZE_OPTIONS,
   type BarcodeLabelSize,
 } from '@/components/PrintSettingsCard'
+import { printHtmlDocument } from '@/lib/printDocument'
 
 interface Category {
   id: string
@@ -594,11 +595,11 @@ export default function ProductsPage() {
       })
       if (res.ok) {
         const html = await res.text()
-        const printWindow = window.open('', '_blank')
-        if (printWindow) {
-          printWindow.document.write(html)
-          printWindow.document.close()
+        if (!html.trim()) {
+          notifyError('Label print returned empty content')
+          return
         }
+        printHtmlDocument(html, { title: 'Product Labels' })
         setShowPrintDialog(false)
       } else {
         const data = await res.json().catch(() => ({}))

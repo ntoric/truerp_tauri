@@ -15,7 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Edit, Trash2, MoreVertical, Eye, CheckCircle, Printer } from 'lucide-react'
+import { Plus, Edit, Trash2, MoreVertical, Eye, CheckCircle } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -292,12 +292,6 @@ export default function PurchasesPage() {
                               <Link href={`/purchase-invoices/view?id=${b.id}`} className="flex items-center">
                                 <Eye className="mr-2 h-4 w-4" />
                                 View
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link href={`/purchase-invoices/view?id=${b.id}`} className="flex items-center">
-                                <Printer className="mr-2 h-4 w-4" />
-                                View & Print
                               </Link>
                             </DropdownMenuItem>
                             <DropdownMenuItem asChild>

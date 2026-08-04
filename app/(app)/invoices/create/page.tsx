@@ -11,8 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn, formatCurrency } from '@/lib/utils'
 import { exclusiveUnitPrice, limitDecimalInput, parseItemNumber, parseMoney } from '@/lib/numbers'
-import { Plus, Trash2, Loader2, Save, Search, Barcode, X, Edit2, Package, FileText, Gift, Scale, Printer } from 'lucide-react'
-import BarcodeScanner from '@/components/ui/BarcodeScanner'
+import { Plus, Trash2, Loader2, Save, Search, X, Edit2, Package, FileText, Gift, Scale, Printer } from 'lucide-react'
+import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
 import { FieldError } from '@/components/ui/field-error'
@@ -124,7 +124,7 @@ export default function CreateInvoicePage() {
   const [saving, setSaving] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
   const [showCreateProduct, setShowCreateProduct] = useState(false)
-  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
+  const [barcodeScannerEnabled, setBarcodeScannerEnabled] = useState(false)
   const [productSearch, setProductSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [showAddParty, setShowAddParty] = useState(false)
@@ -711,7 +711,7 @@ export default function CreateInvoicePage() {
       })
     } catch (printErr) {
       console.warn('Invoice print failed:', printErr)
-      notifyError('Invoice saved, but printing failed. Check Print Settings.')
+      notifyError('Invoice saved, but print/PDF failed. Check Print Settings.')
     }
   }
 
@@ -976,13 +976,21 @@ export default function CreateInvoicePage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Items</CardTitle>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={() => setShowProductModal(true)}>
                     <Package className="mr-2 h-4 w-4" /> Add Item to Bill
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setShowBarcodeScanner(true)}>
-                    <Barcode className="mr-2 h-4 w-4" /> Scan item code
-                  </Button>
+                  <BarcodeScannerInput
+                    showToggle
+                    enabled={barcodeScannerEnabled}
+                    onEnabledChange={setBarcodeScannerEnabled}
+                    onScan={handleItemCodeScan}
+                    placeholder={
+                      scaleSettings.enabled && scaleSettings.barcode_scan_enabled
+                        ? 'Scan scale or product barcode…'
+                        : 'Scan product barcode…'
+                    }
+                  />
                 </div>
               </div>
             </CardHeader>
@@ -1326,7 +1334,7 @@ export default function CreateInvoicePage() {
                     onClick={() => saveInvoice(true)}
                   >
                     {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-                    Save and Print
+                    Save & Print / PDF
                   </Button>
                 </div>
               </CardContent>
@@ -1630,14 +1638,6 @@ export default function CreateInvoicePage() {
           </div>
         )}
 
-        <BarcodeScanner
-          open={showBarcodeScanner}
-          onOpenChange={setShowBarcodeScanner}
-          onScan={(code) => {
-            handleItemCodeScan(code)
-            setShowBarcodeScanner(false)
-          }}
-        />
       </div>
     </DashboardLayout>
   )

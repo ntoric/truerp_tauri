@@ -12,11 +12,12 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2 } from 'lucide-react'
 import JSZip from 'jszip'
 import { notifyError } from '@/lib/notify'
-import { printPurchaseBill } from '@/lib/printDocument'
+import { downloadPurchaseBillPdf, printHtmlDocument } from '@/lib/printDocument'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
   BARCODE_LABEL_SIZE_OPTIONS,
+  normalizeThermalPrintSize,
   type BarcodeLabelSize,
 } from '@/lib/printSizes'
 
@@ -37,6 +38,7 @@ interface PurchaseBill {
   party: { name: string }
   total_amount: number
   status: string
+  stock_status?: string
   bill_date: string
   due_date?: string
   balance_due: number
@@ -68,16 +70,17 @@ export default function PurchaseInvoicesPage() {
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<any>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
-  const [printing, setPrinting] = useState(false)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [labelModal, setLabelModal] = useState<string | null>(null)
   const [labelConfig, setLabelConfig] = useState({
-    paperSize: 'a4',
-    labelWidth: 47.5,
-    labelHeight: 34.625,
-    cols: 4,
-    rows: 8,
-    margin: 10,
+    paperSize: '2inch' as string,
+    labelWidth: 50.8,
+    labelHeight: 30,
+    cols: 1,
+    rows: 1,
+    margin: 0,
   })
+  const [generatingLabels, setGeneratingLabels] = useState(false)
 
   const paperDimensions: Record<string, { width: number; height: number }> = {
     a4: { width: 210, height: 297 },
@@ -183,6 +186,29 @@ export default function PurchaseInvoicesPage() {
     return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] || 'bg-gray-100 text-gray-700'}`}>{status}</span>
   }
 
+  const getStockStatusBadge = (status?: string) => {
+    if (!status || status === 'none') {
+      return <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">No stock</span>
+    }
+    const variants: Record<string, string> = {
+      pending: 'bg-amber-100 text-amber-800',
+      approved: 'bg-green-100 text-green-700',
+      rejected: 'bg-red-100 text-red-700',
+      partial: 'bg-yellow-100 text-yellow-800',
+    }
+    const labels: Record<string, string> = {
+      pending: 'Stock pending',
+      approved: 'Stock approved',
+      rejected: 'Stock rejected',
+      partial: 'Stock partial',
+    }
+    return (
+      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] || 'bg-gray-100 text-gray-700'}`}>
+        {labels[status] || status}
+      </span>
+    )
+  }
+
   const getDueIn = (dueDate?: string) => {
     if (!dueDate) return '-'
     const due = new Date(dueDate)
@@ -262,17 +288,17 @@ export default function PurchaseInvoicesPage() {
     setPreviewData(null)
   }
 
-  const handlePrintPreview = async () => {
-    if (!previewId || printing) return
-    setPrinting(true)
+  const handleDownloadPreviewPdf = async () => {
+    if (!previewId || downloadingPdf) return
+    setDownloadingPdf(true)
     try {
-      await printPurchaseBill(previewId, {
+      await downloadPurchaseBillPdf(previewId, {
         billNumber: previewData?.bill_number,
       })
     } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Print failed')
+      notifyError(err instanceof Error ? err.message : 'Failed to download PDF')
     } finally {
-      setPrinting(false)
+      setDownloadingPdf(false)
     }
   }
 
@@ -371,15 +397,35 @@ export default function PurchaseInvoicesPage() {
   const handlePrintLabels = async (billId: string) => {
     try {
       const bill = bills.find(b => b.id === billId)
-      if (!bill || !bill.items) {
+      if (!bill || !bill.items?.length) {
         notifyError('No items found in this purchase invoice')
         return
+      }
+
+      // Prefer saved barcode label size from print settings
+      try {
+        const settingsRes = await apiFetch('/settings/print')
+        if (settingsRes.ok) {
+          const data = await settingsRes.json()
+          const size = normalizeThermalPrintSize(data.barcode_label_size)
+          const dims = THERMAL_LABEL_DIMENSIONS[size]
+          setLabelConfig({
+            paperSize: size,
+            labelWidth: dims.width,
+            labelHeight: dims.height,
+            cols: 1,
+            rows: 1,
+            margin: 0,
+          })
+        }
+      } catch {
+        /* keep current defaults */
       }
 
       // Initialize item quantities with default values from invoice
       const quantities: Record<string, number> = {}
       bill.items.forEach(item => {
-        quantities[item.id] = item.quantity
+        quantities[item.id] = Math.max(1, Math.round(Number(item.quantity) || 1))
       })
       setItemQuantities(quantities)
       setLabelModal(billId)
@@ -390,16 +436,22 @@ export default function PurchaseInvoicesPage() {
   }
 
   const handleGenerateLabels = async () => {
-    if (!labelModal) return
+    if (!labelModal || generatingLabels) return
 
+    setGeneratingLabels(true)
     try {
       const thermal = isThermalLabelSize(labelConfig.paperSize)
+      const quantities: Record<string, number> = {}
+      Object.entries(itemQuantities).forEach(([id, qty]) => {
+        quantities[id] = Math.max(0, Math.round(Number(qty) || 0))
+      })
+
       const res = await apiFetch('/purchase/bills/labels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bill_id: labelModal,
-          item_quantities: itemQuantities,
+          item_quantities: quantities,
           config: {
             paper_size: labelConfig.paperSize,
             label_width: labelConfig.labelWidth,
@@ -415,19 +467,21 @@ export default function PurchaseInvoicesPage() {
 
       if (res.ok) {
         const html = await res.text()
-        const printWindow = window.open('', '_blank')
-        if (printWindow) {
-          printWindow.document.write(html)
-          printWindow.document.close()
+        if (!html.trim()) {
+          notifyError('Label print returned empty content')
+          return
         }
+        printHtmlDocument(html, { title: 'Purchase Labels' })
         setLabelModal(null)
       } else {
-        const data = await res.json()
+        const data = await res.json().catch(() => ({}))
         notifyError(data.error || 'Failed to generate labels')
       }
     } catch (err) {
       console.error(err)
-      notifyError('An error occurred while generating labels')
+      notifyError(err instanceof Error ? err.message : 'An error occurred while generating labels')
+    } finally {
+      setGeneratingLabels(false)
     }
   }
 
@@ -552,6 +606,7 @@ export default function PurchaseInvoicesPage() {
                       <th className="pb-3 font-medium">Due In</th>
                       <th className="pb-3 font-medium">Amount</th>
                       <th className="pb-3 font-medium">Status</th>
+                      <th className="pb-3 font-medium">Stock</th>
                       <th className="pb-3 font-medium">Actions</th>
                     </tr>
                   </thead>
@@ -579,6 +634,7 @@ export default function PurchaseInvoicesPage() {
                         <td className="py-3 text-gray-500">{getDueIn(bill.due_date)}</td>
                         <td className="py-3 font-medium text-gray-900">{formatCurrency(bill.total_amount)}</td>
                         <td className="py-3">{getStatusBadge(bill.status)}</td>
+                        <td className="py-3">{getStockStatusBadge(bill.stock_status)}</td>
                         <td className="py-3">
                           <div className="relative">
                             <button
@@ -601,7 +657,7 @@ export default function PurchaseInvoicesPage() {
                                     className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
                                     onClick={() => setActionMenu(null)}
                                   >
-                                    <Printer className="h-4 w-4" /> View & Print
+                                    <Eye className="h-4 w-4" /> View
                                   </Link>
                                   <Link
                                     href={`/purchase-invoices/create?id=${bill.id}`}
@@ -675,16 +731,16 @@ export default function PurchaseInvoicesPage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => void handlePrintPreview()}
-                    disabled={printing}
+                    onClick={() => void handleDownloadPreviewPdf()}
+                    disabled={downloadingPdf}
                     className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                   >
-                    {printing ? (
+                    {downloadingPdf ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <Printer className="h-4 w-4" />
+                      <Download className="h-4 w-4" />
                     )}
-                    Print
+                    Download PDF
                   </button>
                   <button
                     onClick={closePreview}
@@ -731,10 +787,16 @@ export default function PurchaseInvoicesPage() {
                   </div>
 
                   {/* Status */}
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     {getStatusBadge(previewData.status)}
+                    {getStockStatusBadge(previewData.stock_status)}
                     {previewData.paid_amount > 0 && (
                       <span className="text-sm text-gray-500">Paid: {formatCurrency(previewData.paid_amount)}</span>
+                    )}
+                    {previewData.stock_status === 'pending' && (
+                      <Link href="/inventory" className="text-sm font-medium text-amber-700 hover:underline">
+                        Review in Inventory →
+                      </Link>
                     )}
                   </div>
 
@@ -988,11 +1050,16 @@ export default function PurchaseInvoicesPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t">
-              <Button variant="outline" onClick={() => setLabelModal(null)}>
+              <Button variant="outline" onClick={() => setLabelModal(null)} disabled={generatingLabels}>
                 Cancel
               </Button>
-              <Button onClick={handleGenerateLabels}>
-                <Printer className="mr-2 h-4 w-4" /> Generate & Print
+              <Button onClick={handleGenerateLabels} disabled={generatingLabels}>
+                {generatingLabels ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Printer className="mr-2 h-4 w-4" />
+                )}
+                Generate & Print
               </Button>
             </div>
           </div>

@@ -8,9 +8,9 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, Download, Loader2, Printer } from 'lucide-react'
+import { ArrowLeft, Download, Loader2 } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
-import { printPurchaseBill } from '@/lib/printDocument'
+import { downloadPurchaseBillPdf } from '@/lib/printDocument'
 
 interface PurchaseBillItem {
   id: string
@@ -44,7 +44,7 @@ function PurchaseBillViewContent() {
   const id = searchParams.get('id')
   const [bill, setBill] = useState<PurchaseBill | null>(null)
   const [loading, setLoading] = useState(true)
-  const [printing, setPrinting] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (id) fetchBill()
@@ -61,15 +61,15 @@ function PurchaseBillViewContent() {
     }
   }
 
-  const handlePrint = async () => {
-    if (!bill?.id || printing) return
-    setPrinting(true)
+  const handleDownloadPdf = async () => {
+    if (!bill?.id || downloading) return
+    setDownloading(true)
     try {
-      await printPurchaseBill(bill.id, { billNumber: bill.bill_number })
+      await downloadPurchaseBillPdf(bill.id, { billNumber: bill.bill_number })
     } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Print failed')
+      notifyError(err instanceof Error ? err.message : 'Failed to download PDF')
     } finally {
-      setPrinting(false)
+      setDownloading(false)
     }
   }
 
@@ -113,39 +113,13 @@ function PurchaseBillViewContent() {
             <Button variant="outline"><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button>
           </Link>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => void handlePrint()} disabled={printing}>
-              {printing ? (
+            <Button variant="outline" onClick={() => void handleDownloadPdf()} disabled={downloading}>
+              {downloading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <Printer className="mr-2 h-4 w-4" />
+                <Download className="mr-2 h-4 w-4" />
               )}
-              Print
-            </Button>
-            <Button
-              variant="outline"
-              onClick={async () => {
-                try {
-                  const res = await apiFetch(`/purchase/bills/${bill.id}/download-pdf`)
-                  if (res.ok) {
-                    const blob = await res.blob()
-                    const url = window.URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url
-                    a.download = `Purchase_Invoice_${bill.bill_number}.pdf`
-                    document.body.appendChild(a)
-                    a.click()
-                    a.remove()
-                    window.URL.revokeObjectURL(url)
-                  } else {
-                    notifyError('Failed to download PDF')
-                  }
-                } catch (err) {
-                  notifyError('Error downloading PDF')
-                  console.error(err)
-                }
-              }}
-            >
-              <Download className="mr-2 h-4 w-4" /> Download PDF
+              Download PDF
             </Button>
           </div>
         </div>

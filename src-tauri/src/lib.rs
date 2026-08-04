@@ -52,12 +52,13 @@ const BRIDGE_JS: &str = r#"
         paperSize: paperSize || null
       });
     },
-    PrintThermal: function (content, printerName, paperWidthMm, jobTitle) {
+    PrintThermal: function (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) {
       return invoke('print_thermal', {
         content: content || '',
         printerName: printerName || '',
         paperWidthMm: paperWidthMm == null ? null : paperWidthMm,
-        jobTitle: jobTitle || 'TruERP Receipt'
+        jobTitle: jobTitle || 'TruERP Receipt',
+        logoEscposBase64: logoEscposBase64 || null
       });
     },
     FrontendReady: function () { return invoke('frontend_ready'); },

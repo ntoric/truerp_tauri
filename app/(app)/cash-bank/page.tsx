@@ -381,6 +381,7 @@ export default function CashBankPage() {
       reduce: 'bg-red-100 text-red-700',
       transfer_in: 'bg-blue-100 text-blue-700',
       transfer_out: 'bg-orange-100 text-orange-700',
+      payroll: 'bg-violet-100 text-violet-700',
     }
     return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[type] || 'bg-gray-100 text-gray-700'}`}>{type.replace('_', ' ')}</span>
   }

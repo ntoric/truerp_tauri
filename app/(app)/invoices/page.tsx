@@ -18,8 +18,8 @@ import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
-import { printDocument } from '@/lib/printDocument'
-import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Printer, Upload, Loader2 } from 'lucide-react'
+import { downloadInvoicePdf } from '@/lib/printDocument'
+import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2 } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 
@@ -74,7 +74,7 @@ export default function InvoicesPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [previewId, setPreviewId] = useState<string | null>(null)
-  const [printing, setPrinting] = useState(false)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [previewData, setPreviewData] = useState<any>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [showImportDialog, setShowImportDialog] = useState(false)
@@ -296,18 +296,17 @@ export default function InvoicesPage() {
     setPreviewData(null)
   }
 
-  const handlePrintPreview = async () => {
-    if (!previewId || printing) return
-    setPrinting(true)
+  const handleDownloadPreviewPdf = async () => {
+    if (!previewId || downloadingPdf) return
+    setDownloadingPdf(true)
     try {
-      await printDocument({
-        documentType: 'invoice',
-        documentId: previewId,
+      await downloadInvoicePdf(previewId, {
+        invoiceNumber: previewData?.invoice_number,
       })
     } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Print failed')
+      notifyError(err instanceof Error ? err.message : 'Failed to download PDF')
     } finally {
-      setPrinting(false)
+      setDownloadingPdf(false)
     }
   }
 
@@ -619,16 +618,16 @@ export default function InvoicesPage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => void handlePrintPreview()}
-                    disabled={printing}
+                    onClick={() => void handleDownloadPreviewPdf()}
+                    disabled={downloadingPdf}
                     className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                   >
-                    {printing ? (
+                    {downloadingPdf ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <Printer className="h-4 w-4" />
+                      <Download className="h-4 w-4" />
                     )}
-                    Print
+                    Download PDF
                   </button>
                   <button
                     onClick={closePreview}

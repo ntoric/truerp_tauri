@@ -10,8 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn, formatCurrency } from '@/lib/utils'
 import { exclusiveUnitPrice, limitDecimalInput, parseItemNumber, parseMoney } from '@/lib/numbers'
-import BarcodeScanner from '@/components/ui/BarcodeScanner'
-import { Plus, Trash2, Loader2, Save, ArrowLeft, Search, Barcode, Package, X, Camera } from 'lucide-react'
+import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
+import { Plus, Trash2, Loader2, Save, ArrowLeft, Search, Package, X, Camera } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
@@ -41,6 +41,13 @@ interface Product {
   stock_qty: number
   category: string
   purchase_price_with_tax: boolean
+}
+
+interface Warehouse {
+  id: string
+  name: string
+  code?: string
+  is_default?: boolean
 }
 
 interface PurchaseBillItem {
@@ -81,10 +88,13 @@ export default function CreatePurchaseInvoicePage() {
     setError,
     handleApiError,
     showErrorToast,
+    showSuccessToast,
   } = useFormErrors()
   
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouseId, setWarehouseId] = useState('')
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [billNumber, setBillNumber] = useState('')
@@ -122,14 +132,10 @@ export default function CreatePurchaseInvoicePage() {
   })
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
-  const [barcodeInput, setBarcodeInput] = useState('')
-  const [isScanning, setIsScanning] = useState(false)
-  const [continuousScanning, setContinuousScanning] = useState(false)
+  const [barcodeScannerEnabled, setBarcodeScannerEnabled] = useState(false)
   const [matchingProducts, setMatchingProducts] = useState<Product[]>([])
   const [showProductSelector, setShowProductSelector] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
-  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
-  const barcodeInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchData()
@@ -217,9 +223,10 @@ export default function CreatePurchaseInvoicePage() {
 
   const fetchData = async () => {
     try {
-      const [vendorsRes, productsRes] = await Promise.all([
+      const [vendorsRes, productsRes, warehousesRes] = await Promise.all([
         apiFetch('/parties?party_type=vendor'),
         apiFetch('/products'),
+        apiFetch('/warehouses?is_active=true'),
       ])
       if (vendorsRes.ok) {
         const d = await vendorsRes.json()
@@ -230,6 +237,19 @@ export default function CreatePurchaseInvoicePage() {
         setProducts(productData)
         const cats = Array.from(new Set(productData.map((p: Product) => p.category).filter(Boolean))) as string[]
         setCategories(cats)
+      }
+      if (warehousesRes.ok) {
+        const warehouseData = await warehousesRes.json()
+        const list: Warehouse[] = Array.isArray(warehouseData)
+          ? warehouseData
+          : Array.isArray(warehouseData.data)
+            ? warehouseData.data
+            : []
+        setWarehouses(list)
+        const defaultWh = list.find((w) => w.is_default) || list[0]
+        if (defaultWh) {
+          setWarehouseId((prev) => prev || defaultWh.id)
+        }
       }
     } catch (err) {
       console.error(err)
@@ -248,6 +268,7 @@ export default function CreatePurchaseInvoicePage() {
         setVendorId(bill.vendor_id || bill.party_id || '')
         setBillDate(bill.bill_date?.split('T')[0] || '')
         setDueDate(bill.due_date?.split('T')[0] || '')
+        setWarehouseId(bill.warehouse_id || '')
         setNotes(bill.notes || '')
         setAmountPaid(bill.paid_amount || 0)
         setPaymentMode(bill.payment_mode || 'cash')
@@ -387,38 +408,30 @@ export default function CreatePurchaseInvoicePage() {
             setMatchingProducts(skuMatches)
             setShowProductSelector(true)
           }
-        } else {
-          if (continuousScanning) {
-            const stockMatch = stockMatches[0]
-            const product = products.find(p => p.id === stockMatch.product_id)
-            if (product) {
-              addProductToInvoice(product, stockMatch.item_code)
-            }
-          } else if (stockMatches.length === 1) {
-            const stockMatch = stockMatches[0]
-            const product = products.find(p => p.id === stockMatch.product_id)
-            if (product) {
-              addProductToInvoice(product, stockMatch.item_code)
-              setToast({ message: `Added: ${product.name}`, type: 'success' })
-              setTimeout(() => setToast(null), 2000)
-            }
-          } else {
-            const matchingProducts = stockMatches.map((s: any) => ({
-              id: s.product_id,
-              name: s.product_name,
-              sku: s.sku,
-              item_code: s.item_code,
-              purchase_price: s.purchase_price,
-              sale_price: s.sale_price,
-              mrp: s.mrp || 0,
-              tax_rate: s.tax_rate,
-              hsn_code: s.hsn_code,
-              unit: s.unit,
-              stock_qty: s.available_qty
-            }))
-            setMatchingProducts(matchingProducts)
-            setShowProductSelector(true)
+        } else if (stockMatches.length === 1) {
+          const stockMatch = stockMatches[0]
+          const product = products.find(p => p.id === stockMatch.product_id)
+          if (product) {
+            addProductToInvoice(product, stockMatch.item_code)
+            setToast({ message: `Added: ${product.name}`, type: 'success' })
+            setTimeout(() => setToast(null), 2000)
           }
+        } else {
+          const matchingProducts = stockMatches.map((s: any) => ({
+            id: s.product_id,
+            name: s.product_name,
+            sku: s.sku,
+            item_code: s.item_code,
+            purchase_price: s.purchase_price,
+            sale_price: s.sale_price,
+            mrp: s.mrp || 0,
+            tax_rate: s.tax_rate,
+            hsn_code: s.hsn_code,
+            unit: s.unit,
+            stock_qty: s.available_qty
+          }))
+          setMatchingProducts(matchingProducts)
+          setShowProductSelector(true)
         }
       } else {
         const skuMatches = products.filter(p => p.sku === code)
@@ -450,26 +463,6 @@ export default function CreatePurchaseInvoicePage() {
         setMatchingProducts(skuMatches)
         setShowProductSelector(true)
       }
-    }
-  }
-
-  const toggleScanning = () => {
-    setContinuousScanning(!continuousScanning)
-    setShowBarcodeScanner(!continuousScanning)
-  }
-
-  const handleBarcodeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    setBarcodeInput(value)
-    
-    // Barcode scanners typically send an Enter key at the end
-    // We'll handle this in the onKeyDown event
-  }
-
-  const handleBarcodeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && barcodeInput.trim()) {
-      handleItemCodeScan(barcodeInput.trim())
-      setBarcodeInput('')
     }
   }
 
@@ -606,6 +599,7 @@ export default function CreatePurchaseInvoicePage() {
           bill_number: billNumber || `PINV-${Date.now()}`,
           bill_date: new Date(billDate).toISOString(),
           due_date: dueDate ? new Date(dueDate).toISOString() : null,
+          warehouse_id: warehouseId || null,
           total_amount: totalAmount,
           paid_amount: amountPaid,
           balance_due: balance,
@@ -632,6 +626,10 @@ export default function CreatePurchaseInvoicePage() {
         }),
       })
       if (res.ok) {
+        const bill = await res.json().catch(() => null)
+        if (!asDraft && bill?.stock_status === 'pending') {
+          showSuccessToast('Purchase saved. Stock updates are pending approval in Inventory.')
+        }
         router.push('/purchase-invoices')
       } else {
         await handleApiError(res)
@@ -745,6 +743,24 @@ export default function CreatePurchaseInvoicePage() {
                 <Label>Due Date</Label>
                 <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               </div>
+              <div className="space-y-2">
+                <Label>Warehouse</Label>
+                <select
+                  value={warehouseId}
+                  onChange={(e) => setWarehouseId(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Default warehouse</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}{w.is_default ? ' (Default)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500">
+                  Linked products will create stock entries pending approval in Inventory.
+                </p>
+              </div>
             </CardContent>
           </Card>
 
@@ -752,24 +768,17 @@ export default function CreatePurchaseInvoicePage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Items</CardTitle>
-                <div className="flex gap-2 items-center">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={() => setShowProductModal(true)}>
                     <Package className="mr-2 h-4 w-4" /> Add Item to Bill
                   </Button>
-                  <Button 
-                    type="button" 
-                    variant={continuousScanning ? "default" : "outline"} 
-                    size="sm" 
-                    onClick={toggleScanning}
-                  >
-                    <Barcode className="mr-2 h-4 w-4" /> {continuousScanning ? 'Stop Scanning' : 'Scan item code'}
-                  </Button>
-                  {continuousScanning && (
-                    <span className="text-sm text-green-600 font-medium flex items-center gap-1">
-                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                      Scanning...
-                    </span>
-                  )}
+                  <BarcodeScannerInput
+                    showToggle
+                    enabled={barcodeScannerEnabled}
+                    onEnabledChange={setBarcodeScannerEnabled}
+                    onScan={handleItemCodeScan}
+                    placeholder="Scan product barcode…"
+                  />
                 </div>
               </div>
             </CardHeader>
@@ -1280,18 +1289,6 @@ export default function CreatePurchaseInvoicePage() {
           </div>
         )}
       </div>
-      
-      <BarcodeScanner
-        open={showBarcodeScanner}
-        onOpenChange={(open) => {
-          setShowBarcodeScanner(open)
-          if (!open) {
-            setContinuousScanning(false)
-          }
-        }}
-        onScan={handleItemCodeScan}
-        continuous={continuousScanning}
-      />
     </DashboardLayout>
   )
 }

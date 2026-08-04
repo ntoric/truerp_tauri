@@ -25,7 +25,8 @@ type DesktopAppBridge = {
     content: string,
     printerName: string,
     paperWidthMm?: number | null,
-    jobTitle?: string
+    jobTitle?: string,
+    logoEscposBase64?: string | null
   ) => Promise<void>
   AppVersion?: () => Promise<string>
   CheckForUpdates?: () => Promise<DesktopUpdateCheckResult>
@@ -62,12 +63,13 @@ function getDesktopApp(): DesktopAppBridge | null {
         paperWidthMm: paperWidthMm ?? null,
         paperSize: paperSize ?? null,
       }) as Promise<void>,
-    PrintThermal: (content, printerName, paperWidthMm, jobTitle) =>
+    PrintThermal: (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) =>
       invoke('print_thermal', {
         content,
         printerName: printerName || '',
         paperWidthMm: paperWidthMm ?? null,
         jobTitle: jobTitle || 'TruERP Receipt',
+        logoEscposBase64: logoEscposBase64 || null,
       }) as Promise<void>,
     AppVersion: () => invoke('app_version') as Promise<string>,
     CheckForUpdates: () => invoke('check_for_updates') as Promise<DesktopUpdateCheckResult>,
@@ -123,11 +125,12 @@ export async function desktopPrintThermal(
   content: string,
   printerName = '',
   paperWidthMm?: number | null,
-  jobTitle = 'TruERP Receipt'
+  jobTitle = 'TruERP Receipt',
+  logoEscposBase64?: string | null
 ): Promise<boolean> {
   const app = getDesktopApp()
   if (!app?.PrintThermal) return false
-  await app.PrintThermal(content, printerName, paperWidthMm, jobTitle)
+  await app.PrintThermal(content, printerName, paperWidthMm, jobTitle, logoEscposBase64)
   return true
 }
 

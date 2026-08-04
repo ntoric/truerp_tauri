@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { formatCurrency } from '@/lib/utils'
 import { offlineStorage } from '@/lib/offlineStorage'
-import { Search, Plus, Minus, Trash2, Wifi, WifiOff, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, Barcode } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, Wifi, WifiOff, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
@@ -19,7 +19,7 @@ import { useWeighingScale } from '@/hooks/useWeighingScale'
 import WeighingScalePanel from '@/components/WeighingScalePanel'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
 import { resolveScaleBarcodeForPos, looksLikeScaleBarcode } from '@/lib/weighingScaleBarcode'
-import BarcodeScanner from '@/components/ui/BarcodeScanner'
+import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/components/ui/BarcodeScannerInput'
 import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
 
 interface Product {
@@ -89,9 +89,8 @@ export default function POSPage() {
   ])
   const [activeTabId, setActiveTabId] = useState('tab-1')
   const [searchTerm, setSearchTerm] = useState('')
-  const [barcodeInput, setBarcodeInput] = useState('')
-  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
-  const barcodeInputRef = useRef<HTMLInputElement>(null)
+  const [barcodeScannerEnabled, setBarcodeScannerEnabled] = useState(true)
+  const barcodeInputRef = useRef<BarcodeScannerInputHandle>(null)
   const [session, setSession] = useState<POSSession | null>(null)
   const [openingCash, setOpeningCash] = useState('')
   const [showSessionModal, setShowSessionModal] = useState(false)
@@ -378,14 +377,14 @@ export default function POSPage() {
         if (product) {
           addToCartWithQuantity(product, scaleHit.quantity)
           notifySuccess(`${product.name} · ${scaleHit.quantity} ${product.unit}`)
-          setBarcodeInput('')
+          barcodeInputRef.current?.clear()
           barcodeInputRef.current?.focus()
           return
         }
       }
       if (looksLikeScaleBarcode(code, scaleSettings)) {
         notifyError('Scale barcode recognized but no matching product item code/SKU')
-        setBarcodeInput('')
+        barcodeInputRef.current?.clear()
         return
       }
     }
@@ -396,19 +395,19 @@ export default function POSPage() {
     if (product) {
       addToCart(product)
       notifySuccess(`Added: ${product.name}`)
-      setBarcodeInput('')
+      barcodeInputRef.current?.clear()
       barcodeInputRef.current?.focus()
       return
     }
 
     notifyError('Product not found for scanned item code')
-    setBarcodeInput('')
+    barcodeInputRef.current?.clear()
   }
 
   useEffect(() => {
-    if (!scaleSettings.enabled || !scaleSettings.barcode_scan_enabled) return
+    if (!barcodeScannerEnabled) return
     barcodeInputRef.current?.focus()
-  }, [scaleSettings.enabled, scaleSettings.barcode_scan_enabled, activeTabId])
+  }, [barcodeScannerEnabled, activeTabId])
 
   const applyScaleWeightToCartItem = (productId: string, unit: string) => {
     const qty = getQuantityForProduct(unit)
@@ -746,7 +745,7 @@ export default function POSPage() {
         })
       } catch (printErr) {
         console.warn('POS print failed:', printErr)
-        notifyError('Sale saved, but printing failed. Check Print Settings.')
+        notifyError('Sale saved, but print/PDF failed. Check Print Settings.')
       }
     }
 
@@ -968,39 +967,19 @@ export default function POSPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Barcode className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
-                  ref={barcodeInputRef}
-                  data-pos-barcode="true"
-                  placeholder={
-                    scaleSettings.enabled && scaleSettings.barcode_scan_enabled
-                      ? 'Scan scale or product item code…'
-                      : 'Scan product item code…'
-                  }
-                  className="pl-9 h-9 text-sm font-mono"
-                  value={barcodeInput}
-                  onChange={(e) => setBarcodeInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      handlePosItemCodeScan(barcodeInput)
-                    }
-                  }}
-                />
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 px-2"
-                onClick={() => setShowBarcodeScanner(true)}
-                title="Camera barcode scan"
-              >
-                <Barcode className="h-4 w-4" />
-              </Button>
-            </div>
+            <BarcodeScannerInput
+              ref={barcodeInputRef}
+              showToggle
+              enabled={barcodeScannerEnabled}
+              onEnabledChange={setBarcodeScannerEnabled}
+              onScan={handlePosItemCodeScan}
+              placeholder={
+                scaleSettings.enabled && scaleSettings.barcode_scan_enabled
+                  ? 'Scan scale or product barcode…'
+                  : 'Scan product barcode…'
+              }
+              className="w-full"
+            />
           </div>
           
           {/* Products Grid */}
@@ -1429,14 +1408,6 @@ export default function POSPage() {
         </div>
       )}
 
-      <BarcodeScanner
-        open={showBarcodeScanner}
-        onOpenChange={setShowBarcodeScanner}
-        onScan={(code) => {
-          handlePosItemCodeScan(code)
-          setShowBarcodeScanner(false)
-        }}
-      />
     </div>
   )
 }

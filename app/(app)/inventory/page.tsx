@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Label } from '@/components/ui/label'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
-import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange } from 'lucide-react'
+import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange, Check, X } from 'lucide-react'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { asArray } from '@/lib/utils'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -55,6 +55,10 @@ interface StockEntry {
   outlet_name: string
   mfg_date?: string
   exp_date?: string
+  approval_status?: string
+  reference_type?: string
+  reference_id?: string
+  approved_at?: string
 }
 
 interface StockTransfer {
@@ -176,6 +180,8 @@ export default function InventoryPage() {
   const [datePeriod, setDatePeriod] = useState<DatePeriod>('month')
   const [customFromDate, setCustomFromDate] = useState('')
   const [customToDate, setCustomToDate] = useState('')
+  const [entryApprovalFilter, setEntryApprovalFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
+  const [approvingEntryId, setApprovingEntryId] = useState<string | null>(null)
 
   const dateRange = useMemo(
     () => getDateRangeForPeriod(datePeriod, customFromDate, customToDate),
@@ -184,9 +190,19 @@ export default function InventoryPage() {
   const dateRangeLabel = useMemo(() => formatDateRangeLabel(dateRange), [dateRange])
   const isDateFilterActive = datePeriod !== 'all' && (datePeriod !== 'custom' || Boolean(customFromDate || customToDate))
 
+  const pendingEntriesCount = useMemo(
+    () => entries.filter((entry) => (entry.approval_status || 'approved') === 'pending').length,
+    [entries]
+  )
+
   const filteredEntries = useMemo(
-    () => entries.filter((entry) => isDateWithinRange(entry.entry_date, dateRange.from, dateRange.to)),
-    [entries, dateRange]
+    () => entries.filter((entry) => {
+      if (!isDateWithinRange(entry.entry_date, dateRange.from, dateRange.to)) return false
+      if (entryApprovalFilter === 'all') return true
+      const status = entry.approval_status || 'approved'
+      return status === entryApprovalFilter
+    }),
+    [entries, dateRange, entryApprovalFilter]
   )
   const filteredTransfers = useMemo(
     () => transfers.filter((transfer) => isDateWithinRange(transfer.created_at, dateRange.from, dateRange.to)),
@@ -211,7 +227,7 @@ export default function InventoryPage() {
     entriesPagination.resetPage()
     transfersPagination.resetPage()
     stocksPagination.resetPage()
-  }, [datePeriod, customFromDate, customToDate])
+  }, [datePeriod, customFromDate, customToDate, entryApprovalFilter])
 
   const fetchData = async () => {
     try {
@@ -530,6 +546,81 @@ export default function InventoryPage() {
       case 'transfer': return 'bg-blue-100 text-blue-800'
       case 'opening': return 'bg-purple-100 text-purple-800'
       default: return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getApprovalStatusColor = (status?: string) => {
+    switch (status || 'approved') {
+      case 'pending': return 'bg-amber-100 text-amber-800'
+      case 'approved': return 'bg-green-100 text-green-800'
+      case 'rejected': return 'bg-red-100 text-red-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const handleApproveEntry = async (entryId: string) => {
+    setApprovingEntryId(entryId)
+    try {
+      const res = await apiFetch(`/inventory/entries/${entryId}/approve`, { method: 'POST' })
+      if (res.ok) {
+        notifySuccess('Stock update approved')
+        fetchData()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        notifyError(err.error || 'Failed to approve stock entry')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to approve stock entry')
+    } finally {
+      setApprovingEntryId(null)
+    }
+  }
+
+  const handleRejectEntry = async (entryId: string) => {
+    setApprovingEntryId(entryId)
+    try {
+      const res = await apiFetch(`/inventory/entries/${entryId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'Rejected from inventory' }),
+      })
+      if (res.ok) {
+        notifySuccess('Stock update rejected')
+        fetchData()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        notifyError(err.error || 'Failed to reject stock entry')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to reject stock entry')
+    } finally {
+      setApprovingEntryId(null)
+    }
+  }
+
+  const handleApproveAllPending = async () => {
+    setApprovingEntryId('all')
+    try {
+      const res = await apiFetch('/inventory/entries/approve-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        notifySuccess(`Approved ${data.approved_count || 0} pending stock update${data.approved_count === 1 ? '' : 's'}`)
+        fetchData()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        notifyError(err.error || 'Failed to approve pending stock entries')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to approve pending stock entries')
+    } finally {
+      setApprovingEntryId(null)
     }
   }
 
@@ -1085,7 +1176,14 @@ export default function InventoryPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="balance">Stock Balance</TabsTrigger>
-            <TabsTrigger value="entries">Stock Entries</TabsTrigger>
+            <TabsTrigger value="entries">
+              Stock Entries
+              {pendingEntriesCount > 0 && (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                  {pendingEntriesCount}
+                </span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="transfers">Transfers</TabsTrigger>
             <TabsTrigger value="stocks">Inventory Stocks</TabsTrigger>
           </TabsList>
@@ -1142,12 +1240,47 @@ export default function InventoryPage() {
           <TabsContent value="entries">
             <Card>
               <CardHeader>
-                <CardTitle>Stock Entries</CardTitle>
-                {isDateFilterActive && (
-                  <p className="text-sm text-gray-500">
-                    Filtered by {dateRangeLabel} · {filteredEntries.length} of {entries.length} entries
-                  </p>
-                )}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle>Stock Entries</CardTitle>
+                    {isDateFilterActive && (
+                      <p className="text-sm text-gray-500">
+                        Filtered by {dateRangeLabel} · {filteredEntries.length} of {entries.length} entries
+                      </p>
+                    )}
+                    {pendingEntriesCount > 0 && (
+                      <p className="mt-1 text-sm text-amber-700">
+                        {pendingEntriesCount} purchase stock update{pendingEntriesCount === 1 ? '' : 's'} pending approval
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                      value={entryApprovalFilter}
+                      onValueChange={(v) => setEntryApprovalFilter(v as typeof entryApprovalFilter)}
+                    >
+                      <SelectTrigger className="w-[160px]">
+                        <SelectValue placeholder="Approval status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All statuses</SelectItem>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="approved">Approved</SelectItem>
+                        <SelectItem value="rejected">Rejected</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {pendingEntriesCount > 0 && (
+                      <Button
+                        size="sm"
+                        onClick={handleApproveAllPending}
+                        disabled={approvingEntryId === 'all'}
+                      >
+                        <Check className="mr-1 h-4 w-4" />
+                        Approve all pending
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -1155,6 +1288,7 @@ export default function InventoryPage() {
                     <TableRow>
                       <TableHead>Item</TableHead>
                       <TableHead>Type</TableHead>
+                      <TableHead>Approval</TableHead>
                       <TableHead>Quantity</TableHead>
                       <TableHead>Cost Price</TableHead>
                       <TableHead>Batch No</TableHead>
@@ -1168,15 +1302,18 @@ export default function InventoryPage() {
                   <TableBody>
                     {entriesPagination.paginatedItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={10} className="py-8 text-center text-gray-500">
+                        <TableCell colSpan={11} className="py-8 text-center text-gray-500">
                           {entries.length === 0
                             ? 'No stock entries found'
-                            : 'No stock entries found for the selected period'}
+                            : 'No stock entries found for the selected filters'}
                         </TableCell>
                       </TableRow>
                     ) : (
-                      entriesPagination.paginatedItems.map((entry) => (
-                        <TableRow key={entry.id}>
+                      entriesPagination.paginatedItems.map((entry) => {
+                        const approvalStatus = entry.approval_status || 'approved'
+                        const isPending = approvalStatus === 'pending'
+                        return (
+                        <TableRow key={entry.id} className={isPending ? 'bg-amber-50/60' : undefined}>
                           <TableCell className="font-medium">
                             {entry.product?.name || entry.item_name}
                             {entry.product?.sku && <span className="text-gray-500 text-xs ml-2">({entry.product.sku})</span>}
@@ -1184,6 +1321,11 @@ export default function InventoryPage() {
                           <TableCell>
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEntryTypeColor(entry.entry_type)}`}>
                               {entry.entry_type}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getApprovalStatusColor(approvalStatus)}`}>
+                              {approvalStatus}
                             </span>
                           </TableCell>
                           <TableCell className={entry.quantity < 0 ? 'text-red-600' : 'text-green-600'}>
@@ -1196,16 +1338,43 @@ export default function InventoryPage() {
                           <TableCell>{new Date(entry.entry_date).toLocaleDateString()}</TableCell>
                           <TableCell>{entry.notes || '-'}</TableCell>
                           <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditEntry(entry)}
-                            >
-                              Edit
-                            </Button>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {isPending && (
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-green-700 border-green-200 hover:bg-green-50"
+                                    disabled={approvingEntryId === entry.id}
+                                    onClick={() => handleApproveEntry(entry.id)}
+                                  >
+                                    <Check className="mr-1 h-3.5 w-3.5" />
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-red-700 border-red-200 hover:bg-red-50"
+                                    disabled={approvingEntryId === entry.id}
+                                    onClick={() => handleRejectEntry(entry.id)}
+                                  >
+                                    <X className="mr-1 h-3.5 w-3.5" />
+                                    Reject
+                                  </Button>
+                                </>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEditEntry(entry)}
+                              >
+                                Edit
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
-                      ))
+                        )
+                      })
                     )}
                   </TableBody>
                 </Table>

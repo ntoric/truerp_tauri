@@ -1,6 +1,5 @@
 import { apiFetch } from '@/hooks/useAuth'
 import {
-  desktopPrintPDF,
   desktopPrintThermal,
   hasNativePrinting,
   isDesktopApp,
@@ -9,6 +8,7 @@ import {
   normalizeThermalPrintSize,
   type ThermalPrintSize,
 } from '@/lib/printSizes'
+import { logoUrlToEscPosBase64 } from '@/lib/thermalEscPos'
 
 export type InvoicePrintMode = 'a4' | 'thermal'
 
@@ -29,6 +29,8 @@ export interface DocumentPrintResult {
   width?: number
   printer_name?: string
   title: string
+  logo_url?: string
+  logo_base64?: string
 }
 
 const DEFAULT_PRINT_SETTINGS: PrintSettingsSnapshot = {
@@ -89,61 +91,180 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes
 }
 
-async function blobToBase64(blob: Blob): Promise<string> {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(reader.error || new Error('Failed to read PDF'))
-    reader.readAsDataURL(blob)
-  })
-  const comma = dataUrl.indexOf(',')
-  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
-function pdfBlobUrl(pdfBase64: string): string {
+/** Download a PDF from base64 (A4 documents — no printer). */
+export function downloadPdfBase64(pdfBase64: string, filename: string): void {
+  if (!pdfBase64) {
+    throw new Error('PDF was empty')
+  }
   const bytes = base64ToUint8Array(pdfBase64)
   const blob = new Blob([bytes], { type: 'application/pdf' })
-  return URL.createObjectURL(blob)
+  triggerBlobDownload(blob, filename.endsWith('.pdf') ? filename : `${filename}.pdf`)
+}
+
+/** Download invoice PDF from API. */
+export async function downloadInvoicePdf(
+  invoiceId: string,
+  options?: { invoiceNumber?: string }
+): Promise<void> {
+  const res = await apiFetch(`/invoices/${invoiceId}/pdf`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to download invoice PDF')
+  }
+  const blob = await res.blob()
+  if (!blob.size) {
+    throw new Error('Invoice PDF was empty')
+  }
+  const name = options?.invoiceNumber
+    ? `Invoice_${options.invoiceNumber}.pdf`
+    : `Invoice_${invoiceId}.pdf`
+  triggerBlobDownload(blob, name)
+}
+
+/** Download purchase invoice PDF from API. */
+export async function downloadPurchaseBillPdf(
+  billId: string,
+  options?: { billNumber?: string }
+): Promise<void> {
+  const res = await apiFetch(`/purchase/bills/${billId}/download-pdf`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to download purchase invoice PDF')
+  }
+  const blob = await res.blob()
+  if (!blob.size) {
+    throw new Error('Purchase invoice PDF was empty')
+  }
+  const name = options?.billNumber
+    ? `Purchase_Invoice_${options.billNumber}.pdf`
+    : `Purchase_Invoice_${billId}.pdf`
+  triggerBlobDownload(blob, name)
+}
+
+function thermalReceiptHtml(content: string, widthMm: number, logoUrl?: string): string {
+  const pageWidth = Math.max(40, Math.min(100, widthMm))
+  const fontSize = pageWidth <= 42 ? 9 : pageWidth <= 60 ? 11 : 12
+  const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  const body = lines
+    .map((raw) => {
+      let center = false
+      let bold = false
+      let rest = raw
+      while (true) {
+        if (rest.startsWith('@C@')) {
+          center = true
+          rest = rest.slice(3)
+          continue
+        }
+        if (rest.startsWith('@B@')) {
+          bold = true
+          rest = rest.slice(3)
+          continue
+        }
+        if (rest.startsWith('@N@')) {
+          center = false
+          bold = false
+          rest = rest.slice(3)
+          continue
+        }
+        break
+      }
+      const style = [
+        center ? 'text-align:center' : 'text-align:left',
+        bold ? 'font-weight:700' : 'font-weight:400',
+      ].join(';')
+      const text = escapeHtml(rest || ' ')
+      return `<div class="line" style="${style}">${text}</div>`
+    })
+    .join('')
+
+  const logo =
+    logoUrl && logoUrl.trim()
+      ? `<div class="logo"><img src="${escapeHtml(logoUrl.trim())}" alt="" /></div>`
+      : ''
+
+  return `<!DOCTYPE html><html><head><title>Receipt</title>
+<style>
+  @page { size: ${pageWidth}mm auto; margin: 2mm; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: ${pageWidth}mm;
+    font-family: "Courier New", Courier, monospace;
+    font-size: ${fontSize}px;
+    line-height: 1.25;
+    color: #000;
+  }
+  .logo { text-align: center; margin: 0 0 4px; }
+  .logo img { max-width: 70%; max-height: ${pageWidth <= 60 ? 36 : 48}px; object-fit: contain; }
+  .line { white-space: pre-wrap; word-break: break-word; margin: 0; }
+</style></head><body>${logo}${body}</body></html>`
 }
 
 /**
- * Print a PDF from inside the current webview.
- * Never uses window.open — in Tauri that would launch the system browser.
+ * Print an HTML document from inside the current webview.
+ * Never uses window.open — in Tauri that launches the system browser and breaks label printing.
  */
-function printPdfInApp(pdfBase64: string): void {
-  const url = pdfBlobUrl(pdfBase64)
+export function printHtmlDocument(html: string, options?: { title?: string }): void {
+  if (!html?.trim()) {
+    throw new Error('Print HTML was empty')
+  }
+
   const iframe = document.createElement('iframe')
-  iframe.setAttribute('title', 'TruERP Print')
+  iframe.setAttribute('title', options?.title || 'TruERP Labels')
   iframe.style.position = 'fixed'
   iframe.style.right = '0'
   iframe.style.bottom = '0'
-  iframe.style.width = '0'
-  iframe.style.height = '0'
+  // Non-zero size helps WebViews lay out @page label dimensions before printing.
+  iframe.style.width = '1px'
+  iframe.style.height = '1px'
   iframe.style.border = '0'
   iframe.style.opacity = '0'
   iframe.style.pointerEvents = 'none'
-  iframe.src = url
   document.body.appendChild(iframe)
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document
+  if (!doc) {
+    iframe.remove()
+    throw new Error('Unable to open print frame')
+  }
+
+  doc.open()
+  doc.write(html)
+  doc.close()
 
   const cleanup = () => {
     if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
-    URL.revokeObjectURL(url)
   }
 
-  iframe.onload = () => {
+  const doPrint = () => {
     try {
       iframe.contentWindow?.focus()
       iframe.contentWindow?.print()
     } catch (err) {
-      console.warn('In-app PDF print failed:', err)
-    } finally {
-      setTimeout(cleanup, 60_000)
+      console.warn('In-app HTML print failed:', err)
+      cleanup()
+      return
     }
+    setTimeout(cleanup, 120_000)
   }
+
+  // Barcodes are embedded as PNG data URIs — short delay is enough for layout.
+  setTimeout(doPrint, 250)
 }
 
-/** Browser fallback: print thermal text via a hidden preformatted iframe (no PDF blank space). */
-function printThermalTextInApp(content: string, widthMm = 58): void {
+/** Browser fallback: print thermal receipt via a hidden iframe (no PDF blank space). */
+function printThermalTextInApp(content: string, widthMm = 58, logoUrl?: string): void {
   const iframe = document.createElement('iframe')
   iframe.setAttribute('title', 'TruERP Thermal Print')
   iframe.style.position = 'fixed'
@@ -158,35 +279,26 @@ function printThermalTextInApp(content: string, widthMm = 58): void {
     iframe.remove()
     throw new Error('Unable to open print frame')
   }
-  const pageWidth = Math.max(40, Math.min(100, widthMm))
   doc.open()
-  doc.write(`<!DOCTYPE html><html><head><title>Receipt</title>
-<style>
-  @page { size: ${pageWidth}mm auto; margin: 2mm; }
-  html, body { margin: 0; padding: 0; }
-  body { width: ${pageWidth}mm; }
-  pre {
-    margin: 0;
-    padding: 0;
-    font-family: "Courier New", Courier, monospace;
-    font-size: ${pageWidth <= 42 ? 9 : pageWidth <= 60 ? 11 : 12}px;
-    line-height: 1.25;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-</style></head><body><pre>${escapeHtml(content)}</pre></body></html>`)
+  doc.write(thermalReceiptHtml(content, widthMm, logoUrl))
   doc.close()
   const cleanup = () => {
     if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
   }
-  setTimeout(() => {
+  const doPrint = () => {
     try {
       iframe.contentWindow?.focus()
       iframe.contentWindow?.print()
     } finally {
       setTimeout(cleanup, 60_000)
     }
-  }, 50)
+  }
+  // Allow logo image to load before printing when present.
+  if (logoUrl?.trim()) {
+    setTimeout(doPrint, 350)
+  } else {
+    setTimeout(doPrint, 50)
+  }
 }
 
 function escapeHtml(s: string): string {
@@ -195,40 +307,6 @@ function escapeHtml(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-}
-
-/** Send PDF to OS printer (desktop) or in-app print dialog (browser/fallback). */
-export async function printPdfBase64(
-  pdfBase64: string,
-  options?: {
-    title?: string
-    printerName?: string
-    paperWidthMm?: number | null
-    paperSize?: string | null
-    preferNative?: boolean
-  }
-): Promise<void> {
-  if (!pdfBase64) {
-    throw new Error('Print service did not return a PDF page')
-  }
-
-  const preferNative = options?.preferNative !== false
-  if (preferNative && isDesktopApp() && (await hasNativePrinting())) {
-    try {
-      const ok = await desktopPrintPDF(
-        pdfBase64,
-        options?.printerName || '',
-        options?.title || 'TruERP Document',
-        options?.paperWidthMm,
-        options?.paperSize
-      )
-      if (ok) return
-    } catch (err) {
-      console.warn('Native PDF print failed, using in-app print dialog:', err)
-    }
-  }
-
-  printPdfInApp(pdfBase64)
 }
 
 /**
@@ -240,6 +318,8 @@ export async function printThermalContent(options: {
   paperWidthMm?: number
   title?: string
   preferNative?: boolean
+  logoUrl?: string
+  logoBase64?: string
 }): Promise<void> {
   const content = options.content?.trim()
   if (!content) {
@@ -247,6 +327,12 @@ export async function printThermalContent(options: {
   }
   const widthMm = options.paperWidthMm && options.paperWidthMm > 0 ? options.paperWidthMm : 58
   const preferNative = options.preferNative !== false
+  const logoSrc = options.logoBase64?.trim() || options.logoUrl?.trim() || ''
+
+  let logoEscpos: string | null = null
+  if (logoSrc) {
+    logoEscpos = await logoUrlToEscPosBase64(logoSrc, widthMm)
+  }
 
   if (preferNative && isDesktopApp() && (await hasNativePrinting())) {
     try {
@@ -254,7 +340,8 @@ export async function printThermalContent(options: {
         content,
         options.printerName || '',
         widthMm,
-        options.title || 'TruERP Receipt'
+        options.title || 'TruERP Receipt',
+        logoEscpos
       )
       if (ok) return
     } catch (err) {
@@ -262,11 +349,12 @@ export async function printThermalContent(options: {
     }
   }
 
-  printThermalTextInApp(content, widthMm)
+  printThermalTextInApp(content, widthMm, logoSrc || undefined)
 }
 
 /**
- * Print an invoice/expense (thermal ESC/POS on desktop, or A4 PDF).
+ * Print an invoice/expense: thermal ESC/POS when mode is thermal;
+ * otherwise download A4 PDF (no printer).
  */
 export async function printDocument(options: {
   documentType: 'invoice' | 'expense'
@@ -286,73 +374,34 @@ export async function printDocument(options: {
         paperWidthMm: typeof payload.width === 'number' ? payload.width : 58,
         title: payload.title,
         preferNative: options.preferNative,
+        logoUrl: payload.logo_url,
+        logoBase64: payload.logo_base64,
       })
       return payload
     }
-    if (!payload.pdf_base64) {
-      throw new Error('Print service did not return thermal content')
-    }
+    throw new Error('Print service did not return thermal content')
   }
 
   if (!payload.pdf_base64) {
     throw new Error('Print service did not return a PDF page')
   }
 
-  let paperSize: string | undefined
-  let paperWidthMm: number | undefined
-  if (payload.mode === 'thermal') {
-    if (typeof payload.width === 'number' && payload.width > 0) {
-      paperWidthMm = payload.width
-    }
-  } else {
-    try {
-      const settings = await fetchPrintSettings()
-      paperSize = settings.paper_size || 'a4'
-    } catch {
-      paperSize = 'a4'
-    }
-  }
-
-  await printPdfBase64(payload.pdf_base64, {
-    title: payload.title,
-    printerName: payload.printer_name || '',
-    paperWidthMm,
-    paperSize,
-    preferNative: options.preferNative,
-  })
+  const filename = payload.title?.trim()
+    ? `${payload.title.replace(/[^\w\-]+/g, '_')}.pdf`
+    : `${options.documentType}_${options.documentId}.pdf`
+  downloadPdfBase64(payload.pdf_base64, filename)
   return payload
 }
 
-/** Print a purchase invoice PDF via desktop native print (or in-app dialog). */
+/** @deprecated Use downloadPurchaseBillPdf — A4 documents are downloaded, not printed. */
 export async function printPurchaseBill(
   billId: string,
   options?: { billNumber?: string; preferNative?: boolean }
 ): Promise<void> {
-  const [settings, res] = await Promise.all([
-    fetchPrintSettings(),
-    apiFetch(`/purchase/bills/${billId}/download-pdf`),
-  ])
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || 'Failed to prepare purchase invoice PDF')
-  }
-  const blob = await res.blob()
-  if (!blob.size) {
-    throw new Error('Purchase invoice PDF was empty')
-  }
-  const pdfBase64 = await blobToBase64(blob)
-  const title = options?.billNumber
-    ? `Purchase Invoice ${options.billNumber}`
-    : 'Purchase Invoice'
-  await printPdfBase64(pdfBase64, {
-    title,
-    printerName: settings.document_printer_name || '',
-    paperSize: settings.paper_size || 'a4',
-    preferNative: options?.preferNative,
-  })
+  await downloadPurchaseBillPdf(billId, { billNumber: options?.billNumber })
 }
 
-/** Open A4 invoice PDF in the current app window (no new browser tab). */
+/** Open A4 invoice PDF in the current app window (view/download only). */
 export function openInvoicePdfPage(invoiceId: string): void {
   // In Tauri, window.open(_blank) launches the system browser with the app URL.
   window.location.assign(`/invoices/${invoiceId}/pdf`)
