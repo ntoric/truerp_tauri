@@ -37,16 +37,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macos-arm64
-            os: macos-latest
-            node_target: darwin-arm64
-            rust_targets: aarch64-apple-darwin
-            tauri_args: --target aarch64-apple-darwin
-          - name: macos-x64
-            os: macos-latest
-            node_target: darwin-x64
-            rust_targets: x86_64-apple-darwin
-            tauri_args: --target x86_64-apple-darwin
+          # - name: macos-arm64
+          #   os: macos-latest
+          #   node_target: darwin-arm64
+          #   rust_targets: aarch64-apple-darwin
+          #   tauri_args: --target aarch64-apple-darwin
+          # - name: macos-x64
+          #   os: macos-latest
+          #   node_target: darwin-x64
+          #   rust_targets: x86_64-apple-darwin
+          #   tauri_args: --target x86_64-apple-darwin
           - name: windows-x64
             os: windows-latest
             node_target: windows-x64
