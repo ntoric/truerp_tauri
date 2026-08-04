@@ -1,0 +1,51 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+.next
+.next/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Tauri desktop (lives in this frontend/ tree)
+.staging/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/resources/bin/
+src-tauri/resources/server/
+src-tauri/resources/node/
+src-tauri/resources/runtime/
+src-tauri/resources/HSN_DATASET.csv
+src-tauri/icons/android/
+src-tauri/icons/ios/
+latest.json
+*.log

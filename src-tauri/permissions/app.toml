@@ -1,0 +1,44 @@
+[[permission]]
+identifier = "allow-frontend-ready"
+description = "Allow checking whether the local Next.js UI is ready"
+commands.allow = ["frontend_ready"]
+
+[[permission]]
+identifier = "allow-app-url"
+description = "Allow reading the local reverse-proxy URL"
+commands.allow = ["app_url"]
+
+[[permission]]
+identifier = "allow-data-directory"
+description = "Allow reading the TruERP data directory path"
+commands.allow = ["data_directory"]
+
+[[permission]]
+identifier = "allow-has-native-printing"
+description = "Allow checking native printing support"
+commands.allow = ["has_native_printing"]
+
+[[permission]]
+identifier = "allow-list-printers"
+description = "Allow listing OS printers"
+commands.allow = ["list_printers"]
+
+[[permission]]
+identifier = "allow-print-pdf"
+description = "Allow printing a PDF document"
+commands.allow = ["print_pdf"]
+
+[[permission]]
+identifier = "allow-app-version"
+description = "Allow reading the TruERP desktop app version"
+commands.allow = ["app_version"]
+
+[[permission]]
+identifier = "allow-check-for-updates"
+description = "Allow checking for TruERP desktop updates"
+commands.allow = ["check_for_updates"]
+
+[[permission]]
+identifier = "allow-download-and-install-update"
+description = "Allow downloading and installing TruERP desktop updates"
+commands.allow = ["download_and_install_update"]

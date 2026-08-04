@@ -1,0 +1,312 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter, useParams } from 'next/navigation'
+import { apiFetch } from '@/hooks/useAuth'
+import DashboardLayout from '@/components/layout/DashboardLayout'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { formatCurrency } from '@/lib/utils'
+import { ArrowLeft, Loader2, Send, Trash2, Pencil } from 'lucide-react'
+import { notifyError } from '@/lib/notify'
+
+interface Party {
+  id: string
+  name: string
+  phone: string
+  email: string
+  address: string
+  city: string
+  state: string
+  gstin: string
+}
+
+interface Invoice {
+  id: string
+  invoice_number: string
+  invoice_date: string
+  total_amount: number
+  status: string
+}
+
+interface CreditNoteItem {
+  id: string
+  description: string
+  quantity: number
+  unit_price: number
+  tax_rate: number
+  total: number
+  reason: string
+}
+
+interface CreditNote {
+  id: string
+  credit_note_number: string
+  party: Party
+  invoice: Invoice
+  status: string
+  date: string
+  total_amount: number
+  reason: string
+  refund_mode: string
+  items: CreditNoteItem[]
+}
+
+export default function CreditNoteDetailPage() {
+  const router = useRouter()
+  const params = useParams()
+  const [creditNote, setCreditNote] = useState<CreditNote | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [issuing, setIssuing] = useState(false)
+
+  useEffect(() => {
+    if (params.id) {
+      fetchCreditNote()
+    }
+  }, [params.id])
+
+  const fetchCreditNote = async () => {
+    try {
+      const res = await apiFetch(`/credit-notes/${params.id}`)
+      if (res.ok) {
+        const data = await res.json()
+        setCreditNote(data)
+      } else {
+        notifyError('Failed to fetch credit note')
+        router.push('/credit-notes')
+      }
+    } catch (err) {
+      console.error(err)
+      router.push('/credit-notes')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleIssue = async () => {
+    if (!confirm('Are you sure you want to issue this credit note? This will update the linked invoice.')) return
+    setIssuing(true)
+    try {
+      const res = await apiFetch(`/credit-notes/${params.id}/issue`, { method: 'POST' })
+      if (res.ok) {
+        fetchCreditNote()
+      } else {
+        notifyError('Failed to issue credit note')
+      }
+    } catch (err) {
+      notifyError('An error occurred')
+    } finally {
+      setIssuing(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to delete this credit note?')) return
+    try {
+      const res = await apiFetch(`/credit-notes/${params.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        router.push('/credit-notes')
+      } else {
+        notifyError('Failed to delete credit note')
+      }
+    } catch (err) {
+      notifyError('An error occurred')
+    }
+  }
+
+  const getStatusBadge = (status: string) => {
+    const colors: Record<string, string> = {
+      draft: 'bg-gray-100 text-gray-700',
+      issued: 'bg-green-100 text-green-700',
+    }
+    return <span className={`px-2 py-1 rounded text-xs ${colors[status] || 'bg-gray-100'}`}>{status}</span>
+  }
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  if (!creditNote) {
+    return (
+      <DashboardLayout>
+        <div className="flex min-h-screen items-center justify-center">
+          <p className="text-gray-500">Credit note not found</p>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="max-w-5xl space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="sm" onClick={() => router.push('/credit-notes')}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">{creditNote.credit_note_number}</h1>
+              <p className="text-sm text-gray-500">Credit Note</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            {creditNote.status === 'draft' && (
+              <>
+                <Button variant="outline" onClick={() => router.push(`/credit-notes/${creditNote.id}/edit`)}>
+                  <Pencil className="mr-2 h-4 w-4" /> Edit
+                </Button>
+                <Button variant="destructive" onClick={handleDelete}>
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete
+                </Button>
+                <Button onClick={handleIssue} disabled={issuing}>
+                  {issuing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Issue Credit Note
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Credit Note Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Status</p>
+                  <p className="font-medium">{getStatusBadge(creditNote.status)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Date</p>
+                  <p className="font-medium">{new Date(creditNote.date).toLocaleDateString()}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Refund Mode</p>
+                  <p className="font-medium capitalize">{creditNote.refund_mode}</p>
+                </div>
+              </div>
+              {creditNote.reason && (
+                <div>
+                  <p className="text-sm text-gray-500">Reason</p>
+                  <p className="font-medium">{creditNote.reason}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Customer Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div>
+                <p className="text-sm text-gray-500">Name</p>
+                <p className="font-medium">{creditNote.party?.name}</p>
+              </div>
+              {creditNote.party?.phone && (
+                <div>
+                  <p className="text-sm text-gray-500">Phone</p>
+                  <p className="font-medium">{creditNote.party.phone}</p>
+                </div>
+              )}
+              {creditNote.party?.email && (
+                <div>
+                  <p className="text-sm text-gray-500">Email</p>
+                  <p className="font-medium">{creditNote.party.email}</p>
+                </div>
+              )}
+              {creditNote.party?.gstin && (
+                <div>
+                  <p className="text-sm text-gray-500">GSTIN</p>
+                  <p className="font-medium">{creditNote.party.gstin}</p>
+                </div>
+              )}
+              {creditNote.party?.address && (
+                <div>
+                  <p className="text-sm text-gray-500">Address</p>
+                  <p className="font-medium">{creditNote.party.address}, {creditNote.party.city}, {creditNote.party.state}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Linked Sales Invoice</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <p className="text-sm text-gray-500">Invoice Number</p>
+                <p className="font-medium">{creditNote.invoice?.invoice_number}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Invoice Date</p>
+                <p className="font-medium">{creditNote.invoice?.invoice_date ? new Date(creditNote.invoice.invoice_date).toLocaleDateString() : '-'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Invoice Amount</p>
+                <p className="font-medium">{creditNote.invoice ? formatCurrency(creditNote.invoice.total_amount) : '-'}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Items</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  <TableHead className="text-right">Unit Price</TableHead>
+                  <TableHead className="text-right">Tax %</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead>Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {creditNote.items.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{item.description}</TableCell>
+                    <TableCell className="text-right">{item.quantity}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
+                    <TableCell className="text-right">{item.tax_rate}%</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(item.total)}</TableCell>
+                    <TableCell>{item.reason || '-'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex justify-end">
+              <div className="w-64 space-y-2">
+                <div className="flex justify-between text-lg font-bold border-t pt-2">
+                  <span>Total Credit Amount:</span>
+                  <span>{formatCurrency(creditNote.total_amount)}</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </DashboardLayout>
+  )
+}

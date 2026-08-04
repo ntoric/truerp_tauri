@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TruERP</title>
+    <style>
+      :root {
+        --bg0: #eef2f7;
+        --bg1: #d9e2ec;
+        --ink: #102a43;
+        --muted: #486581;
+        --accent: #0b6e4f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+        color: var(--ink);
+        background:
+          radial-gradient(1200px 600px at 10% -10%, #ffffffcc, transparent 60%),
+          radial-gradient(900px 500px at 100% 0%, #b8d4c5aa, transparent 55%),
+          linear-gradient(160deg, var(--bg0), var(--bg1));
+      }
+      main {
+        width: min(28rem, calc(100vw - 2rem));
+        text-align: center;
+      }
+      .logo {
+        width: min(7.5rem, 36vw);
+        height: auto;
+        display: block;
+        margin: 0 auto 1rem;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: clamp(2.5rem, 6vw, 3.4rem);
+        letter-spacing: -0.03em;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1.5;
+      }
+      .spinner {
+        width: 2rem;
+        height: 2rem;
+        margin: 1.5rem auto 0;
+        border-radius: 999px;
+        border: 3px solid #9fb3c8;
+        border-top-color: var(--accent);
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+    <script>
+      // Poll readiness via Tauri IPC (preferred) or the local reverse proxy, then open the UI.
+      (async function waitForUI() {
+        const deadline = Date.now() + 90000;
+        const status = () => document.querySelector("[data-status]");
+        while (Date.now() < deadline) {
+          const invoke = window.__TAURI__?.core?.invoke;
+          if (invoke) {
+            try {
+              const ready = await invoke("frontend_ready");
+              if (ready) {
+                const url = await invoke("app_url");
+                window.location.replace(url);
+                return;
+              }
+            } catch (_) {}
+            // Stay on IPC while the Tauri bridge is available — avoid cross-origin fetch noise.
+            await new Promise((r) => setTimeout(r, 300));
+            continue;
+          }
+          try {
+            const res = await fetch("http://127.0.0.1:17888/__truerp/ready", {
+              cache: "no-store",
+              mode: "cors",
+            });
+            if (res.ok) {
+              window.location.replace("http://127.0.0.1:17888/");
+              return;
+            }
+          } catch (_) {}
+          await new Promise((r) => setTimeout(r, 300));
+        }
+        if (status()) {
+          status().textContent =
+            "UI server did not start. From frontend/: run npm run desktop:prepare-ui (with NEXT_PUBLIC_API_URL) and npm run desktop:prepare-bundle.";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <main>
+      <img class="logo" src="./logo.png" alt="TruERP" width="1254" height="1254" />
+      <h1>TruERP</h1>
+      <p data-status>Starting your billing workspace…</p>
+      <div class="spinner" aria-hidden="true"></div>
+    </main>
+  </body>
+</html>
