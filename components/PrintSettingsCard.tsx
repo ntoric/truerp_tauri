@@ -260,6 +260,30 @@ export default function PrintSettingsCard() {
     update(key, value === '__default__' ? '' : value)
   }
 
+  const invoicePaperSelectValue =
+    settings.invoice_print_mode === 'thermal' ? settings.thermal_print_size : settings.paper_size
+
+  const onInvoicePaperSizeChange = (value: string) => {
+    if (
+      value === '1inch' ||
+      value === '1.5inch' ||
+      value === '2inch' ||
+      value === '3inch'
+    ) {
+      setSettings((prev) => ({
+        ...prev,
+        invoice_print_mode: 'thermal',
+        thermal_print_size: value as ThermalPrintSize,
+      }))
+      return
+    }
+    setSettings((prev) => ({
+      ...prev,
+      invoice_print_mode: 'a4',
+      paper_size: value,
+    }))
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-2">
@@ -327,11 +351,35 @@ export default function PrintSettingsCard() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="invoice_paper_size">Paper Size</Label>
+                <Select value={invoicePaperSelectValue} onValueChange={onInvoicePaperSizeChange}>
+                  <SelectTrigger id="invoice_paper_size">
+                    <SelectValue placeholder="Select paper size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="a4">A4 (210 × 297 mm)</SelectItem>
+                    <SelectItem value="letter">Letter (216 × 279 mm)</SelectItem>
+                    <SelectItem value="legal">Legal (216 × 356 mm)</SelectItem>
+                    {THERMAL_PRINT_SIZE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        Thermal · {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {settings.invoice_print_mode === 'thermal'
+                    ? `POS & invoice bills print on ${thermalWidthLabel} thermal paper.`
+                    : 'POS & invoice bills print as a full tax invoice on the selected sheet size.'}
+                </p>
+              </div>
+
               <div className="flex items-center justify-between rounded-lg border px-4 py-3">
                 <div>
                   <Label htmlFor="auto_print_on_pos">Auto-print after POS sale</Label>
                   <p className="text-xs text-muted-foreground">
-                    Uses the default printer type above when a sale completes
+                    Uses the printer type and paper size above when a sale completes
                   </p>
                 </div>
                 <Switch
@@ -432,8 +480,17 @@ export default function PrintSettingsCard() {
                           key={option.value}
                           label={option.label}
                           description={option.description}
-                          selected={settings.thermal_print_size === option.value}
-                          onSelect={() => update('thermal_print_size', option.value)}
+                          selected={
+                            settings.invoice_print_mode === 'thermal' &&
+                            settings.thermal_print_size === option.value
+                          }
+                          onSelect={() =>
+                            setSettings((prev) => ({
+                              ...prev,
+                              invoice_print_mode: 'thermal',
+                              thermal_print_size: option.value,
+                            }))
+                          }
                         />
                       ))}
                     </div>
@@ -477,24 +534,33 @@ export default function PrintSettingsCard() {
             <TabsContent value="document" className="mt-0 space-y-4">
               <p className="text-sm text-muted-foreground">
                 Paper size, margins, and header/footer apply when printing invoices on a normal A4
-                printer or saving as PDF.
+                printer or saving as PDF. For POS thermal bills, pick a thermal size under Invoice
+                Printer or Thermal.
               </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="paper_size">Paper Size</Label>
-                  <Select
-                    value={settings.paper_size}
-                    onValueChange={(value) => update('paper_size', value)}
-                  >
-                    <SelectTrigger>
+                  <Select value={invoicePaperSelectValue} onValueChange={onInvoicePaperSizeChange}>
+                    <SelectTrigger id="paper_size">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="a4">A4</SelectItem>
-                      <SelectItem value="letter">Letter</SelectItem>
-                      <SelectItem value="legal">Legal</SelectItem>
+                      <SelectItem value="a4">A4 (210 × 297 mm)</SelectItem>
+                      <SelectItem value="letter">Letter (216 × 279 mm)</SelectItem>
+                      <SelectItem value="legal">Legal (216 × 356 mm)</SelectItem>
+                      {THERMAL_PRINT_SIZE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          Thermal · {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  {settings.invoice_print_mode === 'thermal' ? (
+                    <p className="text-xs text-muted-foreground">
+                      Thermal · {thermalWidthLabel} selected. Margins below apply only to A4/PDF
+                      prints.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="orientation">Orientation</Label>
