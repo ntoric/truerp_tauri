@@ -8,11 +8,14 @@ REPO_ROOT="$(cd "${ROOT_DIR}/.." && pwd)"
 STAGING="${ROOT_DIR}/.staging/desktop-ui"
 SERVER_OUT="${ROOT_DIR}/src-tauri/resources/server"
 
+# shellcheck source=_copy_tree.sh
+source "${ROOT_DIR}/scripts/_copy_tree.sh"
+
 echo "==> Staging desktop UI copy from ${ROOT_DIR}"
 rm -rf "${STAGING}"
 mkdir -p "${STAGING}"
 
-rsync -a \
+copy_tree "${ROOT_DIR}" "${STAGING}" \
   --exclude node_modules \
   --exclude .next \
   --exclude out \
@@ -22,8 +25,7 @@ rsync -a \
   --exclude splash \
   --exclude scripts \
   --exclude 'README-desktop.md' \
-  --exclude '*.tsbuildinfo' \
-  "${ROOT_DIR}/" "${STAGING}/"
+  --exclude '*.tsbuildinfo'
 
 cat > "${STAGING}/next.config.mjs" <<'EOF'
 /** @type {import('next').NextConfig} */
@@ -120,11 +122,11 @@ fi
 echo "==> Publishing standalone server to src-tauri/resources/server"
 rm -rf "${SERVER_OUT}"
 mkdir -p "${SERVER_OUT}"
-rsync -a "${STANDALONE}/" "${SERVER_OUT}/"
+copy_tree "${STANDALONE}" "${SERVER_OUT}"
 mkdir -p "${SERVER_OUT}/.next"
-rsync -a "${STAGING}/.next/static/" "${SERVER_OUT}/.next/static/"
+copy_tree "${STAGING}/.next/static" "${SERVER_OUT}/.next/static"
 if [[ -d "${STAGING}/public" ]]; then
-  rsync -a "${STAGING}/public/" "${SERVER_OUT}/public/"
+  copy_tree "${STAGING}/public" "${SERVER_OUT}/public"
 fi
 
 echo "Done. Next.js standalone server is in ${SERVER_OUT}"

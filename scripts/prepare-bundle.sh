@@ -11,6 +11,9 @@ RES_DIR="${ROOT_DIR}/src-tauri/resources"
 NODE_VERSION="${NODE_VERSION:-20.18.1}"
 TARGET="${1:-}"
 
+# shellcheck source=_copy_tree.sh
+source "${ROOT_DIR}/scripts/_copy_tree.sh"
+
 if [[ -z "${TARGET}" ]]; then
   case "$(uname -s)-$(uname -m)" in
     Darwin-arm64) TARGET="darwin-arm64" ;;
@@ -120,7 +123,7 @@ if [[ ! -f "${RES_DIR}/server/server.js" ]]; then
   if [[ -f "${REPO_ROOT}/desktop/frontend/server/server.js" ]]; then
     echo "==> Reusing existing desktop/frontend/server"
     mkdir -p "${RES_DIR}/server"
-    rsync -a "${REPO_ROOT}/desktop/frontend/server/" "${RES_DIR}/server/"
+    copy_tree "${REPO_ROOT}/desktop/frontend/server" "${RES_DIR}/server"
   else
     echo "warning: frontend server missing — run npm run desktop:prepare-ui with NEXT_PUBLIC_API_URL set"
   fi

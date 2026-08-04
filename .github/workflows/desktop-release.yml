@@ -80,14 +80,6 @@ jobs:
           workspaces: src-tauri -> target
           shared-key: desktop-${{ matrix.name }}
 
-      - name: Install rsync (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (-not (Get-Command rsync -ErrorAction SilentlyContinue)) {
-            choco install rsync -y --no-progress
-          }
-
       - name: Install npm dependencies
         run: npm ci
 
