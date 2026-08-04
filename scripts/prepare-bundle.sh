@@ -73,10 +73,18 @@ if [[ "${TARGET}" != "skip-node" ]]; then
       if command -v unzip >/dev/null 2>&1; then
         unzip -q "${TMP_DIR}/${ARCHIVE}" -d "${TMP_DIR}"
       else
-        python3 - <<PY
+        (
+          cd "${TMP_DIR}"
+          ARCHIVE_NAME="${ARCHIVE}" python3 - <<'PY'
+import os
 import zipfile
-zipfile.ZipFile("${TMP_DIR}/${ARCHIVE}").extractall("${TMP_DIR}")
+from pathlib import Path
+
+root = Path.cwd()
+archive = root / os.environ["ARCHIVE_NAME"]
+zipfile.ZipFile(archive).extractall(root)
 PY
+        )
       fi
       slim_nodejs "${TMP_DIR}/node-v${NODE_VERSION}-win-x64" windows
       ;;

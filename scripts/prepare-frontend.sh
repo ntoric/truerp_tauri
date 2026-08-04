@@ -25,8 +25,6 @@ rsync -a \
   --exclude '*.tsbuildinfo' \
   "${ROOT_DIR}/" "${STAGING}/"
 
-export STAGING
-
 cat > "${STAGING}/next.config.mjs" <<'EOF'
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -47,14 +45,17 @@ export default nextConfig;
 EOF
 
 # Staging package must not pull Tauri CLI / desktop scripts into the Next build.
-python3 - <<'PY'
+# Run Python from the staging directory so Windows-native Python gets a real cwd
+# (Git Bash /d/... absolute paths break pathlib when interpolated as strings).
+(
+  cd "${STAGING}"
+  python3 - <<'PY'
 import json
-import os
 from pathlib import Path
 
-staging = Path(os.environ["STAGING"])
-pkg_path = staging / "package.json"
-data = json.loads(pkg_path.read_text())
+root = Path.cwd()
+pkg_path = root / "package.json"
+data = json.loads(pkg_path.read_text(encoding="utf-8"))
 data["scripts"] = {
     "dev": "next dev",
     "build": "next build",
@@ -65,16 +66,17 @@ data["scripts"] = {
 dev = data.get("devDependencies") or {}
 dev.pop("@tauri-apps/cli", None)
 data["devDependencies"] = dev
-pkg_path.write_text(json.dumps(data, indent=2) + "\n")
+pkg_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-ts_path = staging / "tsconfig.json"
-ts = json.loads(ts_path.read_text())
+ts_path = root / "tsconfig.json"
+ts = json.loads(ts_path.read_text(encoding="utf-8"))
 opts = ts.setdefault("compilerOptions", {})
 opts.setdefault("target", "ES2017")
 opts["downlevelIteration"] = True
-ts_path.write_text(json.dumps(ts, indent=2) + "\n")
-print(f"Updated staging package.json + tsconfig under {staging}")
+ts_path.write_text(json.dumps(ts, indent=2) + "\n", encoding="utf-8")
+print(f"Updated staging package.json + tsconfig under {root}")
 PY
+)
 
 echo "==> Installing frontend dependencies in staging"
 cd "${STAGING}"
