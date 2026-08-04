@@ -136,6 +136,15 @@ fn start_frontend(runtime: &RuntimeProcesses, roots: &[PathBuf]) -> Result<(), S
         cmd.stdout(Stdio::null()).stderr(Stdio::null());
     }
 
+    // Node is a console subsystem binary; without this, Windows opens a visible
+    // cmd window titled "next-server (...)" in front of the Tauri app.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     let child = cmd
         .spawn()
         .map_err(|e| format!("failed to start Next.js: {e}"))?;
