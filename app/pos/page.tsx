@@ -713,6 +713,7 @@ export default function POSPage() {
       amount_paid: amountPaid,
       ...(loyaltyPointsToRedeem > 0 ? { loyalty_points_redeemed: loyaltyPointsToRedeem } : {}),
       items: activeTab.cart.map(item => ({
+        product_id: item.product.id,
         description: item.product.name,
         quantity: item.quantity,
         unit_price: item.product.sale_price,

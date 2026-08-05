@@ -21,7 +21,7 @@ import {
   validateStoreForm,
   type StoreFormValues,
 } from '@/lib/storeValidation'
-import { ExternalLink, Loader2, Plus, Store, Trash2, Users } from 'lucide-react'
+import { ExternalLink, Loader2, Plus, RotateCcw, Store, Trash2, Users } from 'lucide-react'
 
 const emptyStoreForm: StoreFormValues = {
   name: '',
@@ -70,6 +70,7 @@ export default function StoresPage() {
   } = useFormErrors()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [stores, setStores] = useState<StoreSummary[]>([])
   const [selectedStoreId, setSelectedStoreId] = useState<string>('')
   const [storeForm, setStoreForm] = useState(emptyStoreForm)
@@ -218,6 +219,36 @@ export default function StoresPage() {
     clearErrors()
     await loadStores()
     await refreshStores()
+  }
+
+  const handleResetStore = async () => {
+    if (!selectedStore) return
+    if (
+      !confirm(
+        `Reset all operational data for "${selectedStore.name}"?\n\nThis permanently deletes invoices, products, parties, inventory, payments, expenses, and related records.\n\nStore users and the business profile are kept.`
+      )
+    ) {
+      return
+    }
+    const typed = window.prompt(
+      `Type the store code "${selectedStore.code}" to confirm the reset:`
+    )
+    if (typed === null) return
+    if (typed.trim() !== selectedStore.code) {
+      showErrorToast('Store code did not match. Reset cancelled.')
+      return
+    }
+    setResetting(true)
+    try {
+      const res = await apiFetch(`/stores/${selectedStore.id}/reset`, { method: 'POST' })
+      if (!res.ok) {
+        await handleApiError(res, { toastTitle: 'Unable to reset store' })
+        return
+      }
+      notifySuccess('Store data reset')
+    } finally {
+      setResetting(false)
+    }
   }
 
   if (authLoading || loading) {
@@ -477,15 +508,38 @@ export default function StoresPage() {
                         <Switch checked={editActive} onCheckedChange={setEditActive} />
                       </div>
                       <div className="flex flex-wrap gap-2 md:col-span-2">
-                        <Button type="submit" disabled={saving}>
+                        <Button type="submit" disabled={saving || resetting}>
                           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                           Save changes
                         </Button>
-                        <Button type="button" variant="destructive" onClick={handleDeleteStore}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={saving || resetting}
+                          onClick={handleResetStore}
+                          className="border-amber-300 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+                        >
+                          {resetting ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="mr-2 h-4 w-4" />
+                          )}
+                          Reset store data
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          disabled={saving || resetting}
+                          onClick={handleDeleteStore}
+                        >
                           <Trash2 className="mr-2 h-4 w-4" />
                           Delete store
                         </Button>
                       </div>
+                      <p className="text-xs text-slate-500 md:col-span-2">
+                        Reset clears invoices, products, parties, inventory, and other operational
+                        data for this store only. Users and the business profile are kept.
+                      </p>
                     </form>
                   </CardContent>
                 </Card>
