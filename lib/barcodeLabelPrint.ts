@@ -459,15 +459,22 @@ export async function printBarcodeLabels(
     throw new Error('No labels to print')
   }
 
-  const preferNative = isDesktopApp() && (await hasNativePrinting())
-  if (preferNative) {
-    try {
-      const bytes = await buildBarcodeLabelsEscPos(payload)
-      const ok = await desktopPrintRaw(bytesToBase64(bytes), options?.printerName || '')
-      if (ok) return
-    } catch (err) {
-      console.warn('Silent barcode label print failed, falling back to HTML print:', err)
+  // Desktop: silent ESC/POS only. HTML iframe.print() opens the OS dialog and
+  // mis-renders thermal labels in Tauri WebView — never use it as a soft fallback.
+  if (isDesktopApp()) {
+    if (!(await hasNativePrinting())) {
+      throw new Error(
+        'Desktop print bridge unavailable. Restart TruERP, then pick a thermal printer in Settings → Print.'
+      )
     }
+    const bytes = await buildBarcodeLabelsEscPos(payload)
+    const ok = await desktopPrintRaw(bytesToBase64(bytes), options?.printerName || '')
+    if (!ok) {
+      throw new Error(
+        'Label print did not reach the printer. Pick a thermal printer in Settings → Print.'
+      )
+    }
+    return
   }
 
   const html = options?.htmlFallback?.trim() || buildLabelsHtmlFallback(payload)

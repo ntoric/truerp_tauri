@@ -108,6 +108,12 @@ pub fn run() {
             #[cfg(desktop)]
             updater::download_and_install_update,
         ])
+        // Re-inject after splash → http://127.0.0.1:17888 navigation and any full reload.
+        .on_page_load(|webview, payload| {
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                let _ = webview.eval(BRIDGE_JS);
+            }
+        })
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.eval(BRIDGE_JS);
@@ -138,13 +144,12 @@ pub fn run() {
                 runtime: Arc::clone(&runtime),
             });
 
+            // Keep the Wails-compatible bridge alive for the whole session (not just ~90s).
             if let Some(window) = app.get_webview_window("main") {
                 let win = window.clone();
-                std::thread::spawn(move || {
-                    for _ in 0..180 {
-                        std::thread::sleep(std::time::Duration::from_millis(500));
-                        let _ = win.eval(BRIDGE_JS);
-                    }
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    let _ = win.eval(BRIDGE_JS);
                 });
             }
 

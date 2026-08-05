@@ -45,43 +45,56 @@ function getTauriCore(): TauriCore | null {
   return tauri?.core ?? null
 }
 
+function invokeErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message
+  if (typeof err === 'string' && err.trim()) return err
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return 'Desktop print bridge error'
+  }
+}
+
+/** Prefer direct Tauri IPC; fall back to injected window.go.main.App (Wails-shaped). */
 function getDesktopApp(): DesktopAppBridge | null {
   if (typeof window === 'undefined') return null
+
+  const core = getTauriCore()
+  if (core?.invoke) {
+    const invoke = core.invoke.bind(core)
+    return {
+      HasNativePrinting: () => invoke('has_native_printing') as Promise<boolean>,
+      ListPrinters: () => invoke('list_printers') as Promise<DesktopPrinterInfo[]>,
+      PrintPDF: (pdfBase64, printerName, jobTitle, paperWidthMm, paperSize) =>
+        invoke('print_pdf', {
+          pdfBase64,
+          printerName,
+          jobTitle,
+          paperWidthMm: paperWidthMm ?? null,
+          paperSize: paperSize ?? null,
+        }) as Promise<void>,
+      PrintThermal: (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) =>
+        invoke('print_thermal', {
+          content,
+          printerName: printerName || '',
+          paperWidthMm: paperWidthMm ?? null,
+          jobTitle: jobTitle || 'TruERP Receipt',
+          logoEscposBase64: logoEscposBase64 || null,
+        }) as Promise<void>,
+      PrintRaw: (dataBase64, printerName) =>
+        invoke('print_raw_base64', {
+          dataBase64: dataBase64 || '',
+          printerName: printerName || '',
+        }) as Promise<void>,
+      AppVersion: () => invoke('app_version') as Promise<string>,
+      CheckForUpdates: () => invoke('check_for_updates') as Promise<DesktopUpdateCheckResult>,
+      DownloadAndInstallUpdate: () => invoke('download_and_install_update') as Promise<void>,
+    }
+  }
+
   const go = (window as unknown as { go?: { main?: { App?: DesktopAppBridge } } }).go
   if (go?.main?.App) return go.main.App
-
-  // Tauri desktop shell (frontend/src-tauri) — same print surface via invoke().
-  const core = getTauriCore()
-  if (!core?.invoke) return null
-  const invoke = core.invoke.bind(core)
-  return {
-    HasNativePrinting: () => invoke('has_native_printing') as Promise<boolean>,
-    ListPrinters: () => invoke('list_printers') as Promise<DesktopPrinterInfo[]>,
-    PrintPDF: (pdfBase64, printerName, jobTitle, paperWidthMm, paperSize) =>
-      invoke('print_pdf', {
-        pdfBase64,
-        printerName,
-        jobTitle,
-        paperWidthMm: paperWidthMm ?? null,
-        paperSize: paperSize ?? null,
-      }) as Promise<void>,
-    PrintThermal: (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) =>
-      invoke('print_thermal', {
-        content,
-        printerName: printerName || '',
-        paperWidthMm: paperWidthMm ?? null,
-        jobTitle: jobTitle || 'TruERP Receipt',
-        logoEscposBase64: logoEscposBase64 || null,
-      }) as Promise<void>,
-    PrintRaw: (dataBase64, printerName) =>
-      invoke('print_raw_base64', {
-        dataBase64: dataBase64 || '',
-        printerName: printerName || '',
-      }) as Promise<void>,
-    AppVersion: () => invoke('app_version') as Promise<string>,
-    CheckForUpdates: () => invoke('check_for_updates') as Promise<DesktopUpdateCheckResult>,
-    DownloadAndInstallUpdate: () => invoke('download_and_install_update') as Promise<void>,
-  }
+  return null
 }
 
 export function isDesktopApp(): boolean {
@@ -123,8 +136,12 @@ export async function desktopPrintPDF(
 ): Promise<boolean> {
   const app = getDesktopApp()
   if (!app?.PrintPDF) return false
-  await app.PrintPDF(pdfBase64, printerName, jobTitle, paperWidthMm, paperSize)
-  return true
+  try {
+    await app.PrintPDF(pdfBase64, printerName, jobTitle, paperWidthMm, paperSize)
+    return true
+  } catch (err) {
+    throw new Error(invokeErrorMessage(err))
+  }
 }
 
 /** Silent ESC/POS thermal print via desktop Winspool/CUPS (no print dialog). */
@@ -137,8 +154,12 @@ export async function desktopPrintThermal(
 ): Promise<boolean> {
   const app = getDesktopApp()
   if (!app?.PrintThermal) return false
-  await app.PrintThermal(content, printerName, paperWidthMm, jobTitle, logoEscposBase64)
-  return true
+  try {
+    await app.PrintThermal(content, printerName, paperWidthMm, jobTitle, logoEscposBase64)
+    return true
+  } catch (err) {
+    throw new Error(invokeErrorMessage(err))
+  }
 }
 
 /** Silent raw bytes (base64) to the thermal printer — no print dialog. */
@@ -149,8 +170,12 @@ export async function desktopPrintRaw(
   const app = getDesktopApp()
   if (!app?.PrintRaw) return false
   if (!dataBase64?.trim()) return false
-  await app.PrintRaw(dataBase64, printerName)
-  return true
+  try {
+    await app.PrintRaw(dataBase64, printerName)
+    return true
+  } catch (err) {
+    throw new Error(invokeErrorMessage(err))
+  }
 }
 
 export async function getDesktopAppVersion(): Promise<string | null> {

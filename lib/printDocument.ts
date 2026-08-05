@@ -371,19 +371,27 @@ export async function printThermalContent(options: {
     logoEscpos = await logoUrlToEscPosBase64(logoSrc, widthMm)
   }
 
-  if (preferNative && isDesktopApp() && (await hasNativePrinting())) {
-    try {
-      const ok = await desktopPrintThermal(
-        content,
-        options.printerName || '',
-        widthMm,
-        options.title || 'TruERP Receipt',
-        logoEscpos
+  // Desktop: silent ESC/POS only. HTML iframe.print() opens the OS dialog and
+  // does not drive thermal printers reliably in Tauri WebView.
+  if (preferNative && isDesktopApp()) {
+    if (!(await hasNativePrinting())) {
+      throw new Error(
+        'Desktop print bridge unavailable. Restart TruERP, then pick a thermal printer in Settings → Print.'
       )
-      if (ok) return
-    } catch (err) {
-      console.warn('Native thermal print failed, using in-app text print:', err)
     }
+    const ok = await desktopPrintThermal(
+      content,
+      options.printerName || '',
+      widthMm,
+      options.title || 'TruERP Receipt',
+      logoEscpos
+    )
+    if (!ok) {
+      throw new Error(
+        'Thermal print did not reach the printer. Pick a thermal printer in Settings → Print.'
+      )
+    }
+    return
   }
 
   await printThermalTextInApp(content, widthMm, logoSrc || undefined)

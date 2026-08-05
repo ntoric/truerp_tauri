@@ -642,7 +642,7 @@ export default function ProductsPage() {
       }
     } catch (err) {
       console.error(err)
-      notifyError('Failed to print label')
+      notifyError(err instanceof Error && err.message ? err.message : 'Failed to print label')
     }
   }
 

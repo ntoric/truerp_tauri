@@ -116,7 +116,11 @@ Tauri exposes the same desktop print surface the Wails app uses (via a Wails-com
 
 - `ListPrinters` / `list_printers`
 - `PrintPDF` / `print_pdf` (optional `paperWidthMm` for thermal rolls, `paperSize` for A4/Letter/Legal)
+- `PrintThermal` / `print_thermal` (POS / invoice receipts — silent ESC/POS)
+- `PrintRaw` / `print_raw_base64` (barcode labels — silent ESC/POS raster)
 - `HasNativePrinting` / `has_native_printing`
+
+Capabilities must allow the local UI origin (`http://127.0.0.1:*/*` in `src-tauri/capabilities/default.json`) so print IPC works after the splash page navigates to the reverse proxy.
 
 Configure **Settings → Print** in the app:
 
