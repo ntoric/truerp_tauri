@@ -11,11 +11,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn, formatCurrency } from '@/lib/utils'
 import { exclusiveUnitPrice, limitDecimalInput, parseItemNumber, parseMoney } from '@/lib/numbers'
 import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
+import CreateProductDialog, { type CreatedProduct } from '@/components/CreateProductDialog'
 import { Plus, Trash2, Loader2, Save, ArrowLeft, Search, Package, X, Camera } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { useBankAccounts } from '@/hooks/useBankAccounts'
-import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
+import {
+  useBankAccounts,
+  CASH_IN_HAND_ACCOUNT,
+  bankAccountIdForApi,
+  defaultBankAccountSelection,
+  resolveBankAccountSelection,
+} from '@/hooks/useBankAccounts'
 
 interface Vendor {
   id: string
@@ -113,14 +119,15 @@ export default function CreatePurchaseInvoicePage() {
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
   const [autoRoundOff, setAutoRoundOff] = useState(true)
   const [amountPaid, setAmountPaid] = useState(0)
-  const [paymentMode, setPaymentMode] = useState('cash')
-  const { accounts: bankAccounts } = useBankAccounts()
-  const { getDepositHint } = usePaymentMethodMappings()
+  const [paidFrom, setPaidFrom] = useState(CASH_IN_HAND_ACCOUNT)
+  const [pendingBillAccountId, setPendingBillAccountId] = useState<string | null | undefined>(undefined)
+  const { accounts: bankAccounts, primaryAccount } = useBankAccounts()
   const [signature, setSignature] = useState('')
   const [items, setItems] = useState<PurchaseBillItem[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
+  const [showCreateProduct, setShowCreateProduct] = useState(false)
   const [productSearch, setProductSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [showAddVendor, setShowAddVendor] = useState(false)
@@ -145,6 +152,20 @@ export default function CreatePurchaseInvoicePage() {
   useEffect(() => {
     fetchData()
   }, [])
+
+  useEffect(() => {
+    if (pendingBillAccountId !== undefined) {
+      setPaidFrom(resolveBankAccountSelection(pendingBillAccountId, bankAccounts))
+      setPendingBillAccountId(undefined)
+      return
+    }
+    setPaidFrom((prev) => {
+      if (prev !== CASH_IN_HAND_ACCOUNT && bankAccounts.some((a) => a.id === prev)) {
+        return prev
+      }
+      return defaultBankAccountSelection(bankAccounts, primaryAccount)
+    })
+  }, [bankAccounts, primaryAccount, pendingBillAccountId])
 
   useEffect(() => {
     if (billDate && paymentTerms) {
@@ -280,7 +301,7 @@ export default function CreatePurchaseInvoicePage() {
         setWarehouseId(bill.warehouse_id || '')
         setNotes(bill.notes || '')
         setAmountPaid(bill.paid_amount || 0)
-        setPaymentMode(bill.payment_mode || 'cash')
+        setPendingBillAccountId(bill.bank_account_id ?? null)
         setItems(
           (bill.items || []).map((item: any) => {
             const prod = products.find((p: Product) => p.id === item.product_id)
@@ -637,7 +658,8 @@ export default function CreatePurchaseInvoicePage() {
           total_amount: totalAmount,
           paid_amount: amountPaid,
           balance_due: balance,
-          payment_mode: paymentMode,
+          payment_mode: paidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
+          bank_account_id: bankAccountIdForApi(paidFrom),
           status,
           notes,
           terms,
@@ -969,21 +991,30 @@ export default function CreatePurchaseInvoicePage() {
                   <Input type="number" min="0" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(Number(e.target.value))} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Payment Method</Label>
+                  <Label>Paid From</Label>
                   <select
-                    value={paymentMode}
-                    onChange={(e) => setPaymentMode(e.target.value)}
+                    value={paidFrom}
+                    onChange={(e) => setPaidFrom(e.target.value)}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   >
-                    <option value="cash">Cash</option>
-                    <option value="upi">UPI</option>
-                    <option value="card">Card</option>
-                    <option value="bank_transfer">Bank Transfer</option>
-                    <option value="cheque">Cheque</option>
+                    <option value={CASH_IN_HAND_ACCOUNT}>Cash in-hand</option>
+                    {bankAccounts.filter((a) => a.is_active).map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.account_name}
+                        {account.bank_name ? ` (${account.bank_name})` : ''}
+                        {' — '}
+                        {formatCurrency(account.balance)}
+                      </option>
+                    ))}
                   </select>
                   <p className="text-xs text-muted-foreground">
-                    Amount paid is debited from: {getDepositHint(paymentMode, bankAccounts)}
-                    {' '}(configure under Cash &amp; Bank → Payment method accounts)
+                    {amountPaid > 0
+                      ? `${formatCurrency(amountPaid)} will be deducted from ${
+                          paidFrom === CASH_IN_HAND_ACCOUNT
+                            ? 'Cash in-hand'
+                            : bankAccounts.find((a) => a.id === paidFrom)?.account_name || 'the selected account'
+                        }.`
+                      : 'Select the account to pay from when recording a payment.'}
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -1176,7 +1207,14 @@ export default function CreatePurchaseInvoicePage() {
                   </table>
                 </div>
                 <div className="mt-4 flex justify-end">
-                  <Button type="button" variant="outline" onClick={() => router.push('/products/create')}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setShowProductModal(false)
+                      setShowCreateProduct(true)
+                    }}
+                  >
                     <Plus className="mr-2 h-4 w-4" /> Create New Item
                   </Button>
                 </div>
@@ -1184,6 +1222,34 @@ export default function CreatePurchaseInvoicePage() {
             </Card>
           </div>
         )}
+
+        <CreateProductDialog
+          open={showCreateProduct}
+          onOpenChange={setShowCreateProduct}
+          showDraftButton={false}
+          onCreated={(created: CreatedProduct) => {
+            const product: Product = {
+              id: created.id,
+              name: created.name,
+              sku: created.sku,
+              item_code: created.item_code,
+              hsn_code: created.hsn_code,
+              sale_price: created.sale_price,
+              purchase_price: created.purchase_price,
+              tax_rate: created.tax_rate,
+              unit: created.unit,
+              stock_qty: created.stock_qty,
+              category: created.category,
+              purchase_price_with_tax: false,
+              mrp: 0,
+            }
+            setProducts((prev) => [product, ...prev.filter((p) => p.id !== product.id)])
+            if (created.category && !categories.includes(created.category)) {
+              setCategories((prev) => [...prev, created.category].sort())
+            }
+            addProductToInvoice(product)
+          }}
+        />
 
         {/* Toast Notification */}
         {toast && (
