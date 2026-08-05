@@ -318,10 +318,10 @@ export default function WeighingScaleSettingsCard() {
               <div>
                 <p className="font-medium text-gray-900">Scale barcode (POS &amp; sales invoice)</p>
                 <p className="text-xs text-muted-foreground">
-                  Format: prefix + item code + weight — e.g. <span className="font-mono">w0000112500</span>{' '}
-                  (prefix <span className="font-mono">w</span>, item <span className="font-mono">00001</span>,
-                  weight <span className="font-mono">12500</span> g = 12.5 kg). Scan adds item with quantity
-                  automatically.
+                  Works independently of live scale connection. Format: prefix + item code + weight — e.g.{' '}
+                  <span className="font-mono">w0000112500</span> (prefix <span className="font-mono">w</span>,
+                  item <span className="font-mono">00001</span>, weight <span className="font-mono">12500</span> g
+                  = 12.5 kg). Scan adds item with quantity automatically.
                 </p>
               </div>
               <Switch
@@ -598,7 +598,7 @@ export default function WeighingScaleSettingsCard() {
             <p>2. On POS or invoice, click Connect and select your scale when prompted.</p>
             <p>3. For scales that print weight into any field, use Keyboard wedge mode.</p>
             <p>4. Download the product catalog CSV here and import it on the weighing machine.</p>
-            <p>5. Scan scale barcodes (e.g. w0000112500) on POS or sales invoice — item and weight are added automatically.</p>
+            <p>5. Enable scale barcode below (no live scale needed), then scan labels (e.g. w0000112500) on POS or sales invoice.</p>
           </div>
 
           <Button type="submit" disabled={saving}>

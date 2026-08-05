@@ -12,7 +12,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { cn, formatCurrency } from '@/lib/utils'
 import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
-import { Save, Loader2, Plus, Trash2 } from 'lucide-react'
+import {
+  CASH_IN_HAND_ACCOUNT,
+  bankAccountIdForApi,
+  defaultBankAccountSelection,
+  useBankAccounts,
+} from '@/hooks/useBankAccounts'
+import { Save, Loader2, Plus, Trash2, ArrowLeft } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 
@@ -35,13 +41,14 @@ interface ExpenseItem {
 export default function CreateExpensePage() {
   const router = useRouter()
   const { fieldErrors, clearFieldError, handleApiError, showErrorToast } = useFormErrors()
+  const { accounts: bankAccounts, primaryAccount, loading: bankAccountsLoading } = useBankAccounts()
+  const [paidFrom, setPaidFrom] = useState(CASH_IN_HAND_ACCOUNT)
   const [form, setForm] = useState({
     category: DEFAULT_CATEGORY_NAME,
     description: '',
     original_invoice_num: '',
     date: new Date().toISOString().split('T')[0],
     vendor: '',
-    payment_mode: 'cash',
     notes: '',
     with_gst: false,
     tax_rate: 18,
@@ -56,6 +63,15 @@ export default function CreateExpensePage() {
   useEffect(() => {
     fetchCategories()
   }, [])
+
+  useEffect(() => {
+    setPaidFrom((prev) => {
+      if (prev !== CASH_IN_HAND_ACCOUNT && bankAccounts.some((a) => a.id === prev)) {
+        return prev
+      }
+      return defaultBankAccountSelection(bankAccounts, primaryAccount)
+    })
+  }, [bankAccounts, primaryAccount])
 
   const fetchCategories = async () => {
     try {
@@ -127,7 +143,9 @@ export default function CreateExpensePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
+          payment_mode: paidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
           date: new Date(form.date).toISOString(),
+          bank_account_id: bankAccountIdForApi(paidFrom),
           items: items.map(item => ({
             description: item.description,
             quantity: item.quantity,
@@ -150,8 +168,13 @@ export default function CreateExpensePage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">Create Expense</h1>
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" onClick={() => router.push('/expenses')}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-2xl font-bold text-gray-900">Create Expense</h1>
+        </div>
         <form onSubmit={handleSubmit}>
           <Card>
             <CardHeader>
@@ -197,15 +220,37 @@ export default function CreateExpensePage() {
                   <FieldError message={fieldErrors.date} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="payment_mode">Payment Mode</Label>
-                  <select id="payment_mode" value={form.payment_mode} onChange={(e) => handleChange('payment_mode', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                    <option value="cash">Cash</option>
-                    <option value="upi">UPI</option>
-                    <option value="bank_transfer">Bank Transfer</option>
-                    <option value="cheque">Cheque</option>
-                    <option value="card">Card</option>
-                  </select>
+                  <Label htmlFor="paid_from">Paid From Account *</Label>
+                  {bankAccountsLoading ? (
+                    <div className="h-10 animate-pulse rounded-md bg-gray-200" />
+                  ) : (
+                    <select
+                      id="paid_from"
+                      value={paidFrom}
+                      onChange={(e) => setPaidFrom(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      required
+                    >
+                      <option value={CASH_IN_HAND_ACCOUNT}>Cash in-hand</option>
+                      {bankAccounts.filter((a) => a.is_active).map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.account_name}
+                          {account.bank_name ? ` (${account.bank_name})` : ''}
+                          {' — '}
+                          {formatCurrency(account.balance)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {total > 0
+                      ? `${formatCurrency(total)} will be deducted from ${
+                          paidFrom === CASH_IN_HAND_ACCOUNT
+                            ? 'Cash in-hand'
+                            : bankAccounts.find((a) => a.id === paidFrom)?.account_name || 'the selected account'
+                        }.`
+                      : 'Select the bank account or cash in-hand used to pay this expense.'}
+                  </p>
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="description">Description</Label>

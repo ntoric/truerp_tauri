@@ -407,7 +407,7 @@ export default function POSPage() {
     const code = raw.trim()
     if (!code) return
 
-    if (scaleSettings.enabled && scaleSettings.barcode_scan_enabled) {
+    if (scaleSettings.barcode_scan_enabled) {
       const scaleHit = resolveScaleBarcodeForPos(code, scaleSettings, products)
       if (scaleHit) {
         const product = products.find((p) => p.id === scaleHit.product.id)
@@ -760,6 +760,8 @@ export default function POSPage() {
       status: 'paid',
       payment_mode: paymentMethod,
       amount_paid: amountPaid,
+      is_pos: true,
+      ...(session ? { pos_session_id: session.id } : {}),
       ...(loyaltyPointsToRedeem > 0 ? { loyalty_points_redeemed: loyaltyPointsToRedeem } : {}),
       items: activeTab.cart.map(item => ({
         product_id: item.product.id,
@@ -1037,7 +1039,7 @@ export default function POSPage() {
               onEnabledChange={setBarcodeScannerEnabled}
               onScan={handlePosItemCodeScan}
               placeholder={
-                scaleSettings.enabled && scaleSettings.barcode_scan_enabled
+                scaleSettings.barcode_scan_enabled
                   ? 'Scan scale or product barcode…'
                   : 'Scan product barcode…'
               }

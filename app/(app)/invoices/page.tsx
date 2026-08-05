@@ -33,6 +33,7 @@ interface Invoice {
   status: string
   date: string
   due_date?: string
+  is_pos?: boolean
 }
 
 interface InvoiceStats {
@@ -156,6 +157,10 @@ export default function InvoicesPage() {
     }
     return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] || variants.draft}`}>{status}</span>
   }
+
+  const getPosBadge = () => (
+    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">POS</span>
+  )
 
   const getDueIn = (dueDate?: string) => {
     if (!dueDate) return '-'
@@ -552,12 +557,15 @@ export default function InvoicesPage() {
                         </td>
                         <td className="py-3 text-gray-500">{formatDate(inv.date)}</td>
                         <td className="py-3">
-                          <button
-                            onClick={() => setPreviewId(inv.id)}
-                            className="font-medium text-blue-600 hover:underline"
-                          >
-                            {inv.invoice_number}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setPreviewId(inv.id)}
+                              className="font-medium text-blue-600 hover:underline"
+                            >
+                              {inv.invoice_number}
+                            </button>
+                            {inv.is_pos && getPosBadge()}
+                          </div>
                         </td>
                         <td className="py-3 text-gray-600">{partyLabel(inv)}</td>
                         <td className="py-3 text-gray-500">{getDueIn(inv.due_date)}</td>

@@ -24,6 +24,15 @@ import {
   normalizeThermalPrintSize,
   type BarcodeLabelSize,
 } from '@/lib/printSizes'
+import {
+  A4_LABEL_SHEET_PRESETS,
+  labelsPerSheet,
+  layoutFromPresetKey,
+  normalizeA4SheetPreset,
+  stickerPositionToRowCol,
+  type A4LabelSheetLayout,
+  type A4LabelSheetPresetKey,
+} from '@/lib/a4LabelSheets'
 
 const THERMAL_LABEL_DIMENSIONS: Record<BarcodeLabelSize, { width: number; height: number }> = {
   '1inch': { width: 25.4, height: 15 },
@@ -78,12 +87,18 @@ export default function PurchaseInvoicesPage() {
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [labelModal, setLabelModal] = useState<string | null>(null)
   const [labelConfig, setLabelConfig] = useState({
-    paperSize: '2inch' as string,
-    labelWidth: 50.8,
-    labelHeight: 30,
-    cols: 1,
-    rows: 1,
-    margin: 0,
+    paperSize: 'a4' as string,
+    sheetPreset: '48.5x25.4' as A4LabelSheetPresetKey,
+    labelWidth: 48.5,
+    labelHeight: 25.4,
+    cols: 4,
+    rows: 11,
+    margin: 5,
+    marginTop: 8.8,
+    marginLeft: 5,
+    gapH: 2,
+    gapV: 0,
+    startPosition: 1,
   })
   const [generatingLabels, setGeneratingLabels] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -107,6 +122,8 @@ export default function PurchaseInvoicesPage() {
   }
 
   const isThermalSelected = isThermalLabelSize(labelConfig.paperSize)
+  const sheetLabelsPerPage = labelsPerSheet(labelConfig)
+  const startHint = stickerPositionToRowCol(labelConfig.startPosition, labelConfig.cols)
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
 
   useEffect(() => {
@@ -421,6 +438,23 @@ export default function PurchaseInvoicesPage() {
     }
   }
 
+  const applySheetLayout = (layout: A4LabelSheetLayout, preset: A4LabelSheetPresetKey) => {
+    setLabelConfig((prev) => ({
+      ...prev,
+      paperSize: 'a4',
+      sheetPreset: preset,
+      labelWidth: layout.labelWidthMm,
+      labelHeight: layout.labelHeightMm,
+      cols: layout.columns,
+      rows: layout.rows,
+      margin: layout.marginLeftMm,
+      marginTop: layout.marginTopMm,
+      marginLeft: layout.marginLeftMm,
+      gapH: layout.gapHMm,
+      gapV: layout.gapVMm,
+    }))
+  }
+
   const handlePrintLabels = async (billId: string) => {
     try {
       const bill = bills.find(b => b.id === billId)
@@ -429,21 +463,41 @@ export default function PurchaseInvoicesPage() {
         return
       }
 
-      // Prefer saved barcode label size from print settings
       try {
         const settingsRes = await apiFetch('/settings/print')
         if (settingsRes.ok) {
           const data = await settingsRes.json()
-          const size = normalizeThermalPrintSize(data.barcode_label_size)
-          const dims = THERMAL_LABEL_DIMENSIONS[size]
-          setLabelConfig({
-            paperSize: size,
-            labelWidth: dims.width,
-            labelHeight: dims.height,
-            cols: 1,
-            rows: 1,
-            margin: 0,
-          })
+          if (data.barcode_print_mode === 'label') {
+            const size = normalizeThermalPrintSize(data.barcode_label_size)
+            const dims = THERMAL_LABEL_DIMENSIONS[size]
+            setLabelConfig((prev) => ({
+              ...prev,
+              paperSize: size,
+              labelWidth: dims.width,
+              labelHeight: dims.height,
+              cols: 1,
+              rows: 1,
+              margin: 0,
+              startPosition: 1,
+            }))
+          } else {
+            const preset = normalizeA4SheetPreset(data.label_sheet_preset)
+            applySheetLayout(
+              {
+                paperSize: data.label_paper_size || 'A4',
+                labelWidthMm: Number(data.label_width_mm) || 48.5,
+                labelHeightMm: Number(data.label_height_mm) || 25.4,
+                columns: Number(data.label_columns) || 4,
+                rows: Number(data.label_rows) || 11,
+                marginTopMm: Number(data.label_margin_top_mm) || 8.8,
+                marginLeftMm: Number(data.label_margin_left_mm) || 5,
+                gapHMm: Number(data.label_gap_h_mm) ?? 2,
+                gapVMm: Number(data.label_gap_v_mm) ?? 0,
+              },
+              preset
+            )
+            setLabelConfig((prev) => ({ ...prev, startPosition: 1 }))
+          }
         }
       } catch {
         /* keep current defaults */
@@ -498,13 +552,17 @@ export default function PurchaseInvoicesPage() {
           format: thermal ? 'json' : 'html',
           config: {
             paper_size: labelConfig.paperSize,
+            sheet_preset: isThermal ? undefined : labelConfig.sheetPreset,
             label_width: labelConfig.labelWidth,
             label_height: labelConfig.labelHeight,
             cols: thermal ? 1 : labelConfig.cols,
             rows: thermal ? 1 : labelConfig.rows,
             margin: thermal ? 0 : labelConfig.margin,
-            margin_top: thermal ? 0 : labelConfig.margin,
-            margin_left: thermal ? 0 : labelConfig.margin,
+            margin_top: thermal ? 0 : labelConfig.marginTop,
+            margin_left: thermal ? 0 : labelConfig.marginLeft,
+            gap_h: thermal ? 0 : labelConfig.gapH,
+            gap_v: thermal ? 0 : labelConfig.gapV,
+            start_position: thermal ? 1 : labelConfig.startPosition,
           },
         }),
       })
@@ -1030,6 +1088,33 @@ export default function PurchaseInvoicesPage() {
 
               {!isThermalSelected && (
                 <>
+                  <div>
+                    <Label className="text-sm font-medium">Sticker sheet preset</Label>
+                    <select
+                      value={labelConfig.sheetPreset}
+                      onChange={(e) => {
+                        const preset = normalizeA4SheetPreset(e.target.value)
+                        if (preset === 'custom') {
+                          setLabelConfig({ ...labelConfig, sheetPreset: 'custom' })
+                          return
+                        }
+                        applySheetLayout(layoutFromPresetKey(preset), preset)
+                      }}
+                      className="mt-1 w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      {A4_LABEL_SHEET_PRESETS.map((preset) => (
+                        <option key={preset.key} value={preset.key}>
+                          {preset.label}
+                        </option>
+                      ))}
+                      <option value="custom">Custom layout</option>
+                    </select>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {A4_LABEL_SHEET_PRESETS.find((p) => p.key === labelConfig.sheetPreset)?.description ??
+                        `${sheetLabelsPerPage} labels per sheet`}
+                    </p>
+                  </div>
+
                   {/* Label Dimensions */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -1085,21 +1170,95 @@ export default function PurchaseInvoicesPage() {
                   {/* Margin (even on all sides) */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-sm font-medium">Margin (mm)</Label>
+                      <Label className="text-sm font-medium">Side margin (mm)</Label>
                       <Input
                         type="number"
-                        value={labelConfig.margin}
+                        step={0.1}
+                        value={labelConfig.marginLeft}
                         onChange={(e) => {
-                          const margin = Number(e.target.value)
-                          const { labelWidth, labelHeight } = autoCalculateLabelSize(labelConfig.paperSize, labelConfig.cols, labelConfig.rows, margin)
-                          setLabelConfig({ ...labelConfig, margin, labelWidth, labelHeight })
+                          const marginLeft = Number(e.target.value)
+                          setLabelConfig({
+                            ...labelConfig,
+                            sheetPreset: 'custom',
+                            marginLeft,
+                            margin: marginLeft,
+                          })
                         }}
                         className="mt-1"
                       />
                     </div>
-                    <div className="flex items-end text-xs text-gray-500 pb-3">
-                      Applied evenly to top, bottom, left and right
+                    <div>
+                      <Label className="text-sm font-medium">Top/bottom margin (mm)</Label>
+                      <Input
+                        type="number"
+                        step={0.1}
+                        value={labelConfig.marginTop}
+                        onChange={(e) => {
+                          setLabelConfig({
+                            ...labelConfig,
+                            sheetPreset: 'custom',
+                            marginTop: Number(e.target.value),
+                          })
+                        }}
+                        className="mt-1"
+                      />
                     </div>
+                    <div>
+                      <Label className="text-sm font-medium">Horizontal gap (mm)</Label>
+                      <Input
+                        type="number"
+                        step={0.1}
+                        value={labelConfig.gapH}
+                        onChange={(e) =>
+                          setLabelConfig({
+                            ...labelConfig,
+                            sheetPreset: 'custom',
+                            gapH: Number(e.target.value),
+                          })
+                        }
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Vertical gap (mm)</Label>
+                      <Input
+                        type="number"
+                        step={0.1}
+                        value={labelConfig.gapV}
+                        onChange={(e) =>
+                          setLabelConfig({
+                            ...labelConfig,
+                            sheetPreset: 'custom',
+                            gapV: Number(e.target.value),
+                          })
+                        }
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-sm font-medium">
+                      Starting sticker (1–{sheetLabelsPerPage})
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={sheetLabelsPerPage}
+                      value={labelConfig.startPosition}
+                      onChange={(e) => {
+                        const n = Number(e.target.value) || 1
+                        setLabelConfig({
+                          ...labelConfig,
+                          startPosition: Math.min(sheetLabelsPerPage, Math.max(1, n)),
+                        })
+                      }}
+                      className="mt-1"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      For partially used sheets — first label prints at row {startHint.row}, column{' '}
+                      {startHint.col}.
+                    </p>
                   </div>
                 </>
               )}

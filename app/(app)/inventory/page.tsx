@@ -27,6 +27,7 @@ import {
 } from '@/lib/dateFilter'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface StockBalance {
   product_id: string
@@ -81,6 +82,7 @@ interface InventoryStock {
   mfg_date?: string | null
   exp_date?: string | null
   quantity: number
+  initial_quantity: number
   reserved_qty: number
   available_qty: number
   average_cost: number
@@ -124,6 +126,7 @@ const STOCK_BULK_UPDATE_SAMPLE_ROW: (string | number)[] = [
 export default function InventoryPage() {
   const router = useRouter()
   const { user, loading: authLoading } = useAuth()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [balance, setBalance] = useState<StockBalance[]>([])
   const [entries, setEntries] = useState<StockEntry[]>([])
   const [transfers, setTransfers] = useState<StockTransfer[]>([])
@@ -211,10 +214,7 @@ export default function InventoryPage() {
     () => transfers.filter((transfer) => isDateWithinRange(transfer.created_at, dateRange.from, dateRange.to)),
     [transfers, dateRange]
   )
-  const filteredStocks = useMemo(
-    () => stocks.filter((stock) => isDateWithinRange(stock.last_updated, dateRange.from, dateRange.to)),
-    [stocks, dateRange]
-  )
+  // Inventory stocks always show current batch-level rows; date filter applies to entries/transfers only.
 
   useEffect(() => { if (!authLoading && user) fetchData() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchInventoryItems() }, [authLoading, user])
@@ -224,12 +224,11 @@ export default function InventoryPage() {
   const balancePagination = usePagination(balance)
   const entriesPagination = usePagination(filteredEntries)
   const transfersPagination = usePagination(filteredTransfers)
-  const stocksPagination = usePagination(filteredStocks)
+  const stocksPagination = usePagination(stocks)
 
   useEffect(() => {
     entriesPagination.resetPage()
     transfersPagination.resetPage()
-    stocksPagination.resetPage()
   }, [datePeriod, customFromDate, customToDate, entryApprovalFilter])
 
   const fetchData = async () => {
@@ -369,12 +368,18 @@ export default function InventoryPage() {
   }
 
   const handleAdjustStock = async () => {
+    if (!adjustStock.reason.trim()) {
+      notifyError('Please enter a reason for the stock adjustment')
+      return
+    }
+
     try {
       const res = await apiFetch('/inventory/stocks/adjust', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...adjustStock,
+          reason: adjustStock.reason.trim(),
           product_id: adjustStock.product_id || null
         })
       })
@@ -389,8 +394,12 @@ export default function InventoryPage() {
           reason: ''
         })
         fetchData()
+        notifySuccess('Stock adjusted successfully')
+      } else {
+        const err = await res.json().catch(() => ({}))
+        notifyError(err.error || 'Failed to adjust stock')
       }
-    } catch (err) { console.error(err) }
+    } catch (err) { console.error(err); notifyError('Failed to adjust stock') }
   }
 
   const handleDownloadBulkStockUpdateTemplate = () => {
@@ -503,11 +512,19 @@ export default function InventoryPage() {
   }
 
   const handleReserveStock = async () => {
+    if (!reserveStock.reason.trim()) {
+      notifyError('Please enter a reason for the stock reservation')
+      return
+    }
+
     try {
       const res = await apiFetch('/inventory/stocks/reserve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reserveStock)
+        body: JSON.stringify({
+          ...reserveStock,
+          reason: reserveStock.reason.trim(),
+        })
       })
       if (res.ok) {
         setShowReserveModal(false)
@@ -518,16 +535,28 @@ export default function InventoryPage() {
           reason: ''
         })
         fetchData()
+        notifySuccess('Stock reserved successfully')
+      } else {
+        const err = await res.json().catch(() => ({}))
+        notifyError(err.error || 'Failed to reserve stock')
       }
-    } catch (err) { console.error(err) }
+    } catch (err) { console.error(err); notifyError('Failed to reserve stock') }
   }
 
   const handleReleaseStock = async () => {
+    if (!releaseStock.reason.trim()) {
+      notifyError('Please enter a reason for the stock release')
+      return
+    }
+
     try {
       const res = await apiFetch('/inventory/stocks/release', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(releaseStock)
+        body: JSON.stringify({
+          ...releaseStock,
+          reason: releaseStock.reason.trim(),
+        })
       })
       if (res.ok) {
         setShowReleaseModal(false)
@@ -538,8 +567,12 @@ export default function InventoryPage() {
           reason: ''
         })
         fetchData()
+        notifySuccess('Stock released successfully')
+      } else {
+        const err = await res.json().catch(() => ({}))
+        notifyError(err.error || 'Failed to release stock')
       }
-    } catch (err) { console.error(err) }
+    } catch (err) { console.error(err); notifyError('Failed to release stock') }
   }
 
   const getEntryTypeColor = (type: string) => {
@@ -562,10 +595,17 @@ export default function InventoryPage() {
     }
   }
 
-  const handleApproveEntry = async (entryId: string) => {
-    setApprovingEntryId(entryId)
+  const handleApproveEntry = async (entry: StockEntry) => {
+    const itemName = entry.product?.name || entry.item_name
+    if (!(await confirm({
+      title: 'Approve stock entry?',
+      description: `Approve ${entry.entry_type} of ${entry.quantity} for "${itemName}"? This will update inventory stock.`,
+      confirmLabel: 'Approve',
+    }))) return
+
+    setApprovingEntryId(entry.id)
     try {
-      const res = await apiFetch(`/inventory/entries/${entryId}/approve`, { method: 'POST' })
+      const res = await apiFetch(`/inventory/entries/${entry.id}/approve`, { method: 'POST' })
       if (res.ok) {
         notifySuccess('Stock update approved')
         fetchData()
@@ -581,10 +621,18 @@ export default function InventoryPage() {
     }
   }
 
-  const handleRejectEntry = async (entryId: string) => {
-    setApprovingEntryId(entryId)
+  const handleRejectEntry = async (entry: StockEntry) => {
+    const itemName = entry.product?.name || entry.item_name
+    if (!(await confirm({
+      title: 'Reject stock entry?',
+      description: `Reject ${entry.entry_type} of ${entry.quantity} for "${itemName}"? This will not update inventory stock.`,
+      confirmLabel: 'Reject',
+      variant: 'destructive',
+    }))) return
+
+    setApprovingEntryId(entry.id)
     try {
-      const res = await apiFetch(`/inventory/entries/${entryId}/reject`, {
+      const res = await apiFetch(`/inventory/entries/${entry.id}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'Rejected from inventory' }),
@@ -605,6 +653,12 @@ export default function InventoryPage() {
   }
 
   const handleApproveAllPending = async () => {
+    if (!(await confirm({
+      title: 'Approve all pending stock entries?',
+      description: `Approve ${pendingEntriesCount} pending stock update${pendingEntriesCount === 1 ? '' : 's'}? This will update inventory stock for all approved entries.`,
+      confirmLabel: 'Approve all',
+    }))) return
+
     setApprovingEntryId('all')
     try {
       const res = await apiFetch('/inventory/entries/approve-all', {
@@ -668,12 +722,12 @@ export default function InventoryPage() {
                   Stock Entry
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-3xl">
                 <DialogHeader>
                   <DialogTitle>Create Stock Entry</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4">
-                  <div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
                     <Label>Item Name</Label>
                     <SearchableSelect
                       value={newEntry.selected_item_id}
@@ -761,14 +815,14 @@ export default function InventoryPage() {
                       </Button>
                     </div>
                   </div>
-                  <div>
+                  <div className="col-span-2">
                     <Label>Notes</Label>
                     <Input
                       value={newEntry.notes}
                       onChange={(e) => setNewEntry({ ...newEntry, notes: e.target.value })}
                     />
                   </div>
-                  <Button onClick={handleCreateEntry} className="w-full">Create Entry</Button>
+                  <Button onClick={handleCreateEntry} className="col-span-2 w-full">Create Entry</Button>
                 </div>
               </DialogContent>
             </Dialog>
@@ -826,11 +880,12 @@ export default function InventoryPage() {
                     />
                   </div>
                   <div>
-                    <Label>Reason</Label>
+                    <Label>Reason *</Label>
                     <Input
                       value={adjustStock.reason}
                       onChange={(e) => setAdjustStock({ ...adjustStock, reason: e.target.value })}
                       placeholder="Reason for adjustment"
+                      required
                     />
                   </div>
                   <Button onClick={handleAdjustStock} className="w-full">Adjust Stock</Button>
@@ -991,11 +1046,12 @@ export default function InventoryPage() {
                 />
               </div>
               <div>
-                <Label>Reason</Label>
+                <Label>Reason *</Label>
                 <Input
                   value={reserveStock.reason}
                   onChange={(e) => setReserveStock({ ...reserveStock, reason: e.target.value })}
                   placeholder="Reason for reservation"
+                  required
                 />
               </div>
               <Button onClick={handleReserveStock} className="w-full">Reserve Stock</Button>
@@ -1056,11 +1112,12 @@ export default function InventoryPage() {
                 />
               </div>
               <div>
-                <Label>Reason</Label>
+                <Label>Reason *</Label>
                 <Input
                   value={releaseStock.reason}
                   onChange={(e) => setReleaseStock({ ...releaseStock, reason: e.target.value })}
                   placeholder="Reason for release"
+                  required
                 />
               </div>
               <Button onClick={handleReleaseStock} className="w-full">Release Stock</Button>
@@ -1167,10 +1224,11 @@ export default function InventoryPage() {
               <div className="text-sm text-gray-500">
                 {isDateFilterActive ? (
                   <p>
-                    Showing <span className="font-medium text-gray-700">{dateRangeLabel}</span> on Stock Entries, Transfers, and Inventory Stocks.
+                    Showing <span className="font-medium text-gray-700">{dateRangeLabel}</span> on Stock Entries and Transfers.
+                    Stock Balance, Inventory Stocks, and Low Stock Alerts always show current data.
                   </p>
                 ) : (
-                  <p>Stock Balance and Low Stock Alerts always show current data.</p>
+                  <p>Stock Balance, Inventory Stocks, and Low Stock Alerts always show current data.</p>
                 )}
               </div>
             </div>
@@ -1196,6 +1254,9 @@ export default function InventoryPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Stock Balance</CardTitle>
+                <p className="text-sm text-gray-500">
+                  Totals consolidated across all batches per product and outlet.
+                </p>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -1350,7 +1411,7 @@ export default function InventoryPage() {
                                     size="sm"
                                     className="text-green-700 border-green-200 hover:bg-green-50"
                                     disabled={approvingEntryId === entry.id}
-                                    onClick={() => handleApproveEntry(entry.id)}
+                                    onClick={() => handleApproveEntry(entry)}
                                   >
                                     <Check className="mr-1 h-3.5 w-3.5" />
                                     Approve
@@ -1360,7 +1421,7 @@ export default function InventoryPage() {
                                     size="sm"
                                     className="text-red-700 border-red-200 hover:bg-red-50"
                                     disabled={approvingEntryId === entry.id}
-                                    onClick={() => handleRejectEntry(entry.id)}
+                                    onClick={() => handleRejectEntry(entry)}
                                   >
                                     <X className="mr-1 h-3.5 w-3.5" />
                                     Reject
@@ -1457,11 +1518,9 @@ export default function InventoryPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Inventory Stocks</CardTitle>
-                {isDateFilterActive && (
-                  <p className="text-sm text-gray-500">
-                    Filtered by last updated · {dateRangeLabel} · {filteredStocks.length} of {stocks.length} records
-                  </p>
-                )}
+                <p className="text-sm text-gray-500">
+                  Current stock by batch where batch tracking applies; one row per product when no batch is used.
+                </p>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -1471,6 +1530,7 @@ export default function InventoryPage() {
                       <TableHead>SKU</TableHead>
                       <TableHead>Batch</TableHead>
                       <TableHead>Expiry</TableHead>
+                      <TableHead>Initial Qty</TableHead>
                       <TableHead>Quantity</TableHead>
                       <TableHead>Reserved</TableHead>
                       <TableHead>Available</TableHead>
@@ -1482,10 +1542,8 @@ export default function InventoryPage() {
                   <TableBody>
                     {stocksPagination.paginatedItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={10} className="py-8 text-center text-gray-500">
-                          {stocks.length === 0
-                            ? 'No inventory stock records'
-                            : 'No inventory stock records updated in the selected period'}
+                        <TableCell colSpan={11} className="py-8 text-center text-gray-500">
+                          No inventory stock records
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -1499,6 +1557,7 @@ export default function InventoryPage() {
                               ? new Date(stock.exp_date).toLocaleDateString('en-IN')
                               : '-'}
                           </TableCell>
+                          <TableCell>{stock.initial_quantity ?? 0}</TableCell>
                           <TableCell>{stock.quantity}</TableCell>
                           <TableCell>{stock.reserved_qty}</TableCell>
                           <TableCell className="font-medium text-green-600">{stock.available_qty}</TableCell>
@@ -1576,6 +1635,8 @@ export default function InventoryPage() {
         onOpenChange={setShowBarcodeScanner}
         onScan={showEditEntryModal ? handleEditBarcodeScan : handleStockBarcodeScan}
       />
+
+      {confirmDialog}
     </DashboardLayout>
   )
 }

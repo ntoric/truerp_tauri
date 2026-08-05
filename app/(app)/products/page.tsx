@@ -37,6 +37,13 @@ import { printHtmlDocument } from '@/lib/printDocument'
 import { printBarcodeLabels, type BarcodeLabelsPayload } from '@/lib/barcodeLabelPrint'
 import { normalizeThermalPrintSize } from '@/lib/printSizes'
 import {
+  A4_LABEL_SHEET_PRESETS,
+  layoutFromPresetKey,
+  normalizeA4SheetPreset,
+  stickerPositionToRowCol,
+  type A4LabelSheetPresetKey,
+} from '@/lib/a4LabelSheets'
+import {
   WEIGHING_ITEM_CODE_MAX_LEN,
   isWeightBasedUnit,
   weighingItemCodeError,
@@ -140,6 +147,11 @@ export default function ProductsPage() {
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   const [printQuantity, setPrintQuantity] = useState(1)
   const [printLabelSize, setPrintLabelSize] = useState<BarcodeLabelSize>('2inch')
+  const [printBarcodeMode, setPrintBarcodeMode] = useState<'label' | 'a4'>('a4')
+  const [printSheetPreset, setPrintSheetPreset] = useState<A4LabelSheetPresetKey>('48.5x25.4')
+  const [printStartPosition, setPrintStartPosition] = useState(1)
+  const [printSheetColumns, setPrintSheetColumns] = useState(4)
+  const [printSheetRows, setPrintSheetRows] = useState(11)
   const [selectedProductForPrint, setSelectedProductForPrint] = useState<string | null>(null)
   const [showPreviewDialog, setShowPreviewDialog] = useState(false)
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null)
@@ -608,6 +620,7 @@ export default function ProductsPage() {
   const handlePrintLabel = async (productId: string) => {
     setSelectedProductForPrint(productId)
     setPrintQuantity(1)
+    setPrintStartPosition(1)
     try {
       const res = await apiFetch('/settings/print')
       if (res.ok) {
@@ -616,6 +629,12 @@ export default function ProductsPage() {
         if (size === '1inch' || size === '1.5inch' || size === '2inch' || size === '3inch') {
           setPrintLabelSize(size)
         }
+        setPrintBarcodeMode(data.barcode_print_mode === 'label' ? 'label' : 'a4')
+        const preset = normalizeA4SheetPreset(data.label_sheet_preset)
+        setPrintSheetPreset(preset)
+        const layout = layoutFromPresetKey(preset)
+        setPrintSheetColumns(Number(data.label_columns) || layout.columns)
+        setPrintSheetRows(Number(data.label_rows) || layout.rows)
       }
     } catch {
       /* use defaults */
@@ -623,8 +642,13 @@ export default function ProductsPage() {
     setShowPrintDialog(true)
   }
 
+  const printLabelsPerSheet = printSheetColumns * printSheetRows
+  const printStartHint = stickerPositionToRowCol(printStartPosition, printSheetColumns)
+
   const handlePrintConfirm = async () => {
     if (!selectedProductForPrint) return
+
+    const isThermal = printBarcodeMode === 'label'
 
     try {
       let thermalPrinterName = ''
@@ -642,12 +666,13 @@ export default function ProductsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Accept: 'application/json',
+          Accept: isThermal ? 'application/json' : 'text/html',
         },
         body: JSON.stringify({
           quantity: printQuantity,
-          label_size: printLabelSize,
-          format: 'json',
+          label_size: isThermal ? printLabelSize : undefined,
+          format: isThermal ? 'json' : 'html',
+          start_position: isThermal ? undefined : printStartPosition,
         }),
       })
       if (res.ok) {
@@ -1505,29 +1530,63 @@ export default function ProductsPage() {
                 onChange={(e) => setPrintQuantity(parseInt(e.target.value) || 1)}
               />
             </div>
-            <div className="space-y-2">
-              <Label>Thermal paper size</Label>
-              <Select
-                value={printLabelSize}
-                onValueChange={(value) => setPrintLabelSize(value as BarcodeLabelSize)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select size" />
-                </SelectTrigger>
-                <SelectContent>
-                  {BARCODE_LABEL_SIZE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {BARCODE_LABEL_SIZE_OPTIONS.find((o) => o.value === printLabelSize)?.description}
-                {' · '}
-                Default size can be saved in Settings → Print → Barcode.
-              </p>
-            </div>
+            {printBarcodeMode === 'label' ? (
+              <div className="space-y-2">
+                <Label>Thermal paper size</Label>
+                <Select
+                  value={printLabelSize}
+                  onValueChange={(value) => setPrintLabelSize(value as BarcodeLabelSize)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BARCODE_LABEL_SIZE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {BARCODE_LABEL_SIZE_OPTIONS.find((o) => o.value === printLabelSize)?.description}
+                  {' · '}
+                  Default size can be saved in Settings → Print → Barcode.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Sticker sheet</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {A4_LABEL_SHEET_PRESETS.find((p) => p.key === printSheetPreset)?.label ??
+                      `${printSheetColumns}×${printSheetRows} grid`}{' '}
+                    · {printLabelsPerSheet} labels per A4 sheet
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Layout is configured in Settings → Print → Barcode → A4 Sheet Print.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="printStartPosition">Starting sticker (1–{printLabelsPerSheet})</Label>
+                  <Input
+                    id="printStartPosition"
+                    type="number"
+                    min={1}
+                    max={printLabelsPerSheet}
+                    value={printStartPosition}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value) || 1
+                      setPrintStartPosition(Math.min(printLabelsPerSheet, Math.max(1, n)))
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Use when reusing a partially printed sheet. First label prints at row{' '}
+                    {printStartHint.row}, column {printStartHint.col} (numbered left-to-right, top-to-bottom).
+                  </p>
+                </div>
+              </>
+            )}
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setShowPrintDialog(false)}>
                 Cancel

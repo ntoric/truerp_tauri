@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
@@ -53,10 +53,19 @@ import {
 } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import {
+  isReportPeriod,
+  reportPeriodGroupingLabel,
+  reportPeriodWindowLabel,
+  REPORT_PERIOD_OPTIONS,
+  type ReportPeriod,
+} from '@/lib/reportPeriod'
 
-type Period = 'daily' | 'weekly' | 'monthly' | 'yearly'
+type Period = ReportPeriod
 
 interface ReportWidgets {
+  period?: Period
+  period_start?: string
   total_sales: number
   month_revenue: number
   outstanding_amount: number
@@ -107,6 +116,7 @@ interface RevenueReportPayload {
 }
 
 interface TaxReportPayload {
+  period?: Period
   summary: {
     total_cgst: number
     total_sgst: number
@@ -225,6 +235,7 @@ function normalizeOutstanding(raw: unknown): OutstandingPayload | null {
 }
 
 interface CustomerReportPayload {
+  period?: Period
   summary: {
     customer_count: number
     total_paid_sales: number
@@ -247,6 +258,7 @@ interface CustomerReportPayload {
 }
 
 interface ProductReportPayload {
+  period?: Period
   source: string
   summary: {
     product_count: number
@@ -263,6 +275,24 @@ interface ProductReportPayload {
     sale_price: number
     quantity_sold: number
     revenue: number
+    share_percent: number
+  }[]
+}
+
+interface CategoryReportPayload {
+  period?: Period
+  source: string
+  summary: {
+    category_count: number
+    total_revenue: number
+    total_qty_sold: number
+    avg_unit_revenue: number
+  }
+  categories: {
+    category: string
+    quantity_sold: number
+    revenue: number
+    product_count: number
     share_percent: number
   }[]
 }
@@ -369,10 +399,14 @@ function growthLabel(g: number | null | undefined) {
 
 export default function ReportsPage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<ReportTabId>(
     (searchParams.get('tab') as ReportTabId) || 'overview'
   )
-  const [period, setPeriod] = useState<Period>('monthly')
+  const initialPeriod = searchParams.get('period')
+  const [period, setPeriod] = useState<Period>(
+    isReportPeriod(initialPeriod) ? initialPeriod : 'monthly'
+  )
   const [loading, setLoading] = useState(true)
 
   const [widgets, setWidgets] = useState<ReportWidgets | null>(null)
@@ -383,6 +417,7 @@ export default function ReportsPage() {
   const [outstanding, setOutstanding] = useState<OutstandingPayload | null>(null)
   const [customerReport, setCustomerReport] = useState<CustomerReportPayload | null>(null)
   const [productReport, setProductReport] = useState<ProductReportPayload | null>(null)
+  const [categoryReport, setCategoryReport] = useState<CategoryReportPayload | null>(null)
   const [payments, setPayments] = useState<PaymentReportPayload | null>(null)
   const [inventory, setInventory] = useState<InventoryReportPayload | null>(null)
 
@@ -412,6 +447,34 @@ export default function ReportsPage() {
 
   const notifyExported = (label: string) => toast({ title: `${label} exported` })
 
+  const periodQuery = `period=${period}`
+  const periodWindow = reportPeriodWindowLabel(period)
+  const periodGrouping = reportPeriodGroupingLabel(period)
+
+  const handlePeriodChange = (next: Period) => {
+    setPeriod(next)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('period', next)
+    router.replace(`/reports?${params.toString()}`, { scroll: false })
+  }
+
+  const periodSelect = (
+    <select
+      id="reports-period"
+      value={period}
+      onChange={(e) => handlePeriodChange(e.target.value as Period)}
+      disabled={loading}
+      className="h-9 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60"
+      aria-label="Report period grouping"
+    >
+      {REPORT_PERIOD_OPTIONS.map((opt) => (
+        <option key={opt.value} value={opt.value}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
+  )
+
   const fetchCore = useCallback(async () => {
     setLoading(true)
     try {
@@ -424,18 +487,20 @@ export default function ReportsPage() {
         outstandingRes,
         customersRes,
         productsRes,
+        categoriesRes,
         paymentsRes,
         inventoryRes,
       ] = await Promise.all([
-        apiFetch('/reports/widgets'),
-        apiFetch(`/reports/sales?period=${period}`),
-        apiFetch(`/reports/revenue?period=${period}`),
-        apiFetch('/reports/tax'),
+        apiFetch(`/reports/widgets?${periodQuery}`),
+        apiFetch(`/reports/sales?${periodQuery}`),
+        apiFetch(`/reports/revenue?${periodQuery}`),
+        apiFetch(`/reports/tax?${periodQuery}`),
         apiFetch('/accounting/profit-loss'),
         apiFetch('/reports/outstanding'),
-        apiFetch('/reports/customers?limit=50'),
-        apiFetch('/reports/products?limit=50'),
-        apiFetch(`/reports/payments?period=${period}`),
+        apiFetch(`/reports/customers?limit=50&${periodQuery}`),
+        apiFetch(`/reports/products?limit=50&${periodQuery}`),
+        apiFetch(`/reports/categories?limit=50&${periodQuery}`),
+        apiFetch(`/reports/payments?${periodQuery}`),
         apiFetch('/reports/inventory'),
       ])
 
@@ -450,6 +515,7 @@ export default function ReportsPage() {
       }
       if (customersRes.ok) setCustomerReport(await customersRes.json())
       if (productsRes.ok) setProductReport(await productsRes.json())
+      if (categoriesRes.ok) setCategoryReport(await categoriesRes.json())
       if (paymentsRes.ok) {
         const normalized = normalizePayments(await paymentsRes.json())
         if (normalized) setPayments(normalized)
@@ -479,19 +545,6 @@ export default function ReportsPage() {
       setCustomLoading(false)
     }
   }
-
-  const periodSelect = (
-    <select
-      value={period}
-      onChange={(e) => setPeriod(e.target.value as Period)}
-      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-    >
-      <option value="daily">Daily</option>
-      <option value="weekly">Weekly</option>
-      <option value="monthly">Monthly</option>
-      <option value="yearly">Yearly</option>
-    </select>
-  )
 
   const spinner = (
     <div className="flex h-48 items-center justify-center">
@@ -527,6 +580,7 @@ export default function ReportsPage() {
       outstanding,
       customers: customerReport,
       products: productReport,
+      categories: categoryReport,
       payments,
       inventory,
     }),
@@ -540,6 +594,7 @@ export default function ReportsPage() {
       outstanding,
       customerReport,
       productReport,
+      categoryReport,
       payments,
       inventory,
     ]
@@ -605,10 +660,18 @@ export default function ReportsPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Reports & Analytics</h1>
             <p className="text-sm text-gray-500">
-              Detailed breakdowns by period — sales, collections, receivables, customers, stock, and tax
+              Detailed breakdowns by period — sales, collections, receivables, customers, stock, and tax.
+              Use the period control to switch between daily, weekly, monthly, and yearly views.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="reports-period" className="sr-only">
+                Period grouping
+              </Label>
+              <span className="text-sm text-gray-500">Period</span>
+              {periodSelect}
+            </div>
             <Button
               type="button"
               variant="outline"
@@ -651,9 +714,9 @@ export default function ReportsPage() {
                 <ReportStatGrid
                   stats={[
                     { label: 'Lifetime paid sales', value: formatCurrency(widgets?.total_sales || 0) },
-                    { label: 'This month revenue', value: formatCurrency(widgets?.month_revenue || 0), tone: 'success' },
+                    { label: `Revenue (${periodWindow})`, value: formatCurrency(widgets?.month_revenue || 0), tone: 'success' },
                     { label: 'Receivables', value: formatCurrency(widgets?.outstanding_amount || 0), hint: `${widgets?.outstanding_count ?? 0} open`, tone: 'danger' },
-                    { label: 'Purchase expense (month)', value: formatCurrency(widgets?.purchase_expense_month || 0), tone: 'warning' },
+                    { label: `Purchase expense (${periodWindow})`, value: formatCurrency(widgets?.purchase_expense_month || 0), tone: 'warning' },
                     {
                       label: 'Accounts payable',
                       value: formatCurrency(widgets?.accounts_payable || 0),
@@ -662,16 +725,15 @@ export default function ReportsPage() {
                     },
                     { label: 'Inventory (cost)', value: formatCurrency(widgets?.inventory_value || 0) },
                     { label: 'Net profit (ledger)', value: formatCurrency(widgets?.month_net_profit || 0) },
-                    { label: 'GST this month', value: formatCurrency(widgets?.month_tax || 0) },
-                    { label: 'Cash in (month)', value: formatCurrency(widgets?.payments_in_month || 0), tone: 'success' },
-                    { label: 'Payment out (month)', value: formatCurrency(widgets?.payments_out_month || 0), tone: 'warning' },
+                    { label: `GST (${periodWindow})`, value: formatCurrency(widgets?.month_tax || 0) },
+                    { label: `Cash in (${periodWindow})`, value: formatCurrency(widgets?.payments_in_month || 0), tone: 'success' },
+                    { label: `Payment out (${periodWindow})`, value: formatCurrency(widgets?.payments_out_month || 0), tone: 'warning' },
                   ]}
                 />
                 <div className="grid gap-6 lg:grid-cols-2">
                   <ReportPanel
                     title="Sales trend"
-                    description="Paid invoice totals for the selected period grouping."
-                    actions={periodSelect}
+                    description={`${periodGrouping} paid invoice totals for the selected window.`}
                   >
                     <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={salesSeries}>
@@ -695,8 +757,8 @@ export default function ReportsPage() {
                     </ResponsiveContainer>
                   </ReportPanel>
                 </div>
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <ReportPanel title="Top customers (by paid sales)" description="Quick view — open Customers tab for full list.">
+                <div className="grid gap-6 lg:grid-cols-3">
+                  <ReportPanel title="Top customers (by paid sales)" description={`Ranked by sales in the ${periodWindow}. Open Customers tab for full list.`}>
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -716,7 +778,7 @@ export default function ReportsPage() {
                       </TableBody>
                     </Table>
                   </ReportPanel>
-                  <ReportPanel title="Top products" description={`Source: ${productReport?.source?.replace(/_/g, ' ') || '—'}`}>
+                  <ReportPanel title="Top products" description={`${periodWindow} · source: ${productReport?.source?.replace(/_/g, ' ') || '—'}`}>
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -733,6 +795,36 @@ export default function ReportsPage() {
                             <TableCell className="text-right">{formatCurrency(p.revenue)}</TableCell>
                           </TableRow>
                         ))}
+                      </TableBody>
+                    </Table>
+                  </ReportPanel>
+                  <ReportPanel
+                    title="Top categories"
+                    description={`${periodWindow} · source: ${categoryReport?.source?.replace(/_/g, ' ') || '—'}`}
+                  >
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Category</TableHead>
+                          <TableHead className="text-right">Qty</TableHead>
+                          <TableHead className="text-right">Revenue</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(categoryReport?.categories || []).slice(0, 5).map((cat) => (
+                          <TableRow key={cat.category}>
+                            <TableCell>{cat.category}</TableCell>
+                            <TableCell className="text-right">{cat.quantity_sold}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(cat.revenue)}</TableCell>
+                          </TableRow>
+                        ))}
+                        {!categoryReport?.categories?.length && (
+                          <TableRow>
+                            <TableCell colSpan={3} className="text-center text-gray-500">
+                              No category sales data yet
+                            </TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </ReportPanel>
@@ -777,9 +869,8 @@ export default function ReportsPage() {
                 />
                 <ReportPanel
                   title="Sales by period"
-                  description="Only paid invoices are included in sales totals."
+                  description={`Only paid invoices are included. Grouped ${periodGrouping.toLowerCase()}.`}
                   icon={TrendingUp}
-                  actions={periodSelect}
                 >
                   <ResponsiveContainer width="100%" height={300}>
                     <ComposedChart data={salesSeries}>
@@ -825,7 +916,7 @@ export default function ReportsPage() {
                     onPageChange={salesSeriesPagination.setPage}
                   />
                 </ReportPanel>
-                <ReportPanel title="Invoice status mix" description="All invoices regardless of payment status.">
+                <ReportPanel title="Invoice status mix" description={`All invoices in the ${periodWindow}, regardless of payment status.`}>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -879,7 +970,7 @@ export default function ReportsPage() {
                   ]}
                   columns={3}
                 />
-                <ReportPanel title="Revenue breakdown" actions={periodSelect}>
+                <ReportPanel title={`Revenue breakdown (${periodGrouping.toLowerCase()})`}>
                   <ResponsiveContainer width="100%" height={280}>
                     <BarChart data={revenuePeriods}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -1166,7 +1257,7 @@ export default function ReportsPage() {
                     { label: 'Avg sales / customer', value: formatCurrency(customerReport?.summary.avg_sales_per_party || 0) },
                   ]}
                 />
-                <ReportPanel title="Customer-wise detail" icon={Users}>
+                <ReportPanel title="Customer-wise detail" icon={Users} description={`Sales figures reflect the ${periodWindow}. Outstanding is current balance.`}>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1236,7 +1327,7 @@ export default function ReportsPage() {
                 <ReportPanel
                   title="Product-wise performance"
                   icon={Package}
-                  description={`Data source: ${productReport?.source?.replace(/_/g, ' ') || 'sales'}`}
+                  description={`${periodWindow} · data source: ${productReport?.source?.replace(/_/g, ' ') || 'sales'}`}
                 >
                   <Table>
                     <TableHeader>
@@ -1300,7 +1391,7 @@ export default function ReportsPage() {
                   ]}
                   columns={3}
                 />
-                <ReportPanel title="Monthly GST" icon={FileBarChart}>
+                <ReportPanel title={`${periodGrouping} GST`} icon={FileBarChart}>
                   <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={gstChartData}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -1316,7 +1407,7 @@ export default function ReportsPage() {
                   <Table className="mt-6">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Month</TableHead>
+                        <TableHead>{periodGrouping === 'Daily' ? 'Date' : periodGrouping === 'Weekly' ? 'Week' : periodGrouping === 'Yearly' ? 'Year' : 'Month'}</TableHead>
                         <TableHead className="text-right">Turnover</TableHead>
                         <TableHead className="text-right">CGST</TableHead>
                         <TableHead className="text-right">SGST</TableHead>
@@ -1379,7 +1470,7 @@ export default function ReportsPage() {
                   ]}
                   columns={3}
                 />
-                <ReportPanel title="Payment in vs out" actions={periodSelect}>
+                <ReportPanel title={`Payment in vs out (${periodGrouping.toLowerCase()})`}>
                   <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={paymentChartData}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -1423,7 +1514,7 @@ export default function ReportsPage() {
                     onPageChange={paymentsTimelinePagination.setPage}
                   />
                 </ReportPanel>
-                <ReportPanel title="By payment mode">
+                <ReportPanel title="By payment mode" description={`Totals for the ${periodWindow}.`}>
                   <Table>
                     <TableHeader>
                       <TableRow>

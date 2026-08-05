@@ -30,6 +30,11 @@ interface Payment {
   date: string
   reference: string
   notes: string
+  invoice?: {
+    id: string
+    invoice_number: string
+    is_pos?: boolean
+  }
   customer?: {
     id: string
     name: string
@@ -176,6 +181,12 @@ export default function PaymentsPage() {
     }
     return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${colors[mode] || 'bg-gray-100 text-gray-700'}`}>{mode.replace('_', ' ')}</span>
   }
+
+  const getPosBadge = () => (
+    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">POS</span>
+  )
+
+  const isPosPayment = (payment: Payment) => payment.invoice?.is_pos === true
 
   const handleDeletePayment = async (id: string) => {
     if (!(await confirm({
@@ -455,7 +466,12 @@ export default function PaymentsPage() {
                           />
                         </td>
                         <td className="py-3 text-gray-600">{formatDate(p.date)}</td>
-                        <td className="py-3 text-gray-600 font-mono text-xs">{p.id.slice(0, 8)}...</td>
+                        <td className="py-3 text-gray-600 font-mono text-xs">
+                          <div className="flex items-center gap-2">
+                            <span>{p.id.slice(0, 8)}...</span>
+                            {isPosPayment(p) && getPosBadge()}
+                          </div>
+                        </td>
                         <td className="py-3 font-medium text-gray-900">{getPartyName(p)}</td>
                         <td className="py-3 font-medium text-gray-900">{formatCurrency(p.amount_received)}</td>
                         <td className="py-3 font-medium text-gray-900">{formatCurrency(p.payment_in_discount)}</td>

@@ -25,6 +25,7 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
+  CircleDollarSign,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -217,7 +218,7 @@ export default function DailyReportPage() {
               </div>
             ) : report ? (
               <>
-                <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                   <div className="rounded-lg border bg-green-50 p-4">
                     <div className="flex items-center gap-2 text-green-800">
                       <TrendingUp className="h-4 w-4" />
@@ -251,6 +252,33 @@ export default function DailyReportPage() {
                     <p className="text-xs text-amber-700">
                       {report.payments_out.count} payments · AP today{' '}
                       {formatCurrency(report.accounts_payable?.total_amount || 0)}
+                    </p>
+                  </div>
+                  <div
+                    className={cn(
+                      'rounded-lg border p-4',
+                      (report.daily_profit ?? 0) >= 0 ? 'bg-emerald-50' : 'bg-red-50'
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'flex items-center gap-2',
+                        (report.daily_profit ?? 0) >= 0 ? 'text-emerald-800' : 'text-red-800'
+                      )}
+                    >
+                      <CircleDollarSign className="h-4 w-4" />
+                      <span className="text-sm font-medium">Daily profit</span>
+                    </div>
+                    <p
+                      className={cn(
+                        'mt-2 text-2xl font-bold',
+                        (report.daily_profit ?? 0) >= 0 ? 'text-emerald-900' : 'text-red-900'
+                      )}
+                    >
+                      {formatCurrency(report.daily_profit ?? 0)}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      Sales − purchases − expenses ± returns
                     </p>
                   </div>
                   <div
@@ -322,13 +350,40 @@ export default function DailyReportPage() {
                           {formatCurrency(report.gst_collected)}
                         </td>
                       </tr>
+                      <tr className="border-t bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-gray-900">
+                          Daily profit (accrual)
+                        </td>
+                        <td className="px-4 py-3 text-right">—</td>
+                        <td
+                          className={cn(
+                            'px-4 py-3 text-right font-semibold',
+                            (report.daily_profit ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-700'
+                          )}
+                        >
+                          {formatCurrency(report.daily_profit ?? 0)}
+                        </td>
+                      </tr>
+                      <tr className="border-t bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-gray-900">Net cash flow</td>
+                        <td className="px-4 py-3 text-right">—</td>
+                        <td
+                          className={cn(
+                            'px-4 py-3 text-right font-semibold',
+                            report.net_cash_flow >= 0 ? 'text-blue-700' : 'text-red-700'
+                          )}
+                        >
+                          {formatCurrency(report.net_cash_flow)}
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
 
                 <p className="mt-4 text-xs text-gray-500">
-                  Purchase expense = full bill total; Payment out = amount paid; Accounts payable =
-                  unpaid balance. Cancelled documents are excluded from counts.
+                  Daily profit = sales − purchases − expenses ± returns/notes (accrual). Purchase
+                  expense = full bill total; Payment out = amount paid; Accounts payable = unpaid
+                  balance. Cancelled documents are excluded from counts.
                 </p>
               </>
             ) : (
