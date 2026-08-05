@@ -74,6 +74,24 @@ function filterNavForRole(items: NavItem[], role?: string | null): NavItem[] {
     .filter((item): item is NavItem => item !== null)
 }
 
+/** Hide pages disabled in Super Admin → Pages & Menus. */
+function filterNavForPageFeatures(
+  items: NavItem[],
+  isPageEnabled: (pathname: string) => boolean
+): NavItem[] {
+  return items
+    .map((item) => {
+      if (item.children) {
+        const children = filterNavForPageFeatures(item.children, isPageEnabled)
+        if (children.length === 0) return null
+        return { ...item, children }
+      }
+      if (item.href && !isPageEnabled(item.href)) return null
+      return item
+    })
+    .filter((item): item is NavItem => item !== null)
+}
+
 const navItems: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Parties', href: '/parties', icon: UserCircle },
@@ -174,7 +192,10 @@ export default function Sidebar() {
   const { isPageEnabled } = usePageFeatures()
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [hovered, setHovered] = useState(false)
-  const visibleNavItems = useMemo(() => filterNavForRole(navItems, user?.role), [user?.role])
+  const visibleNavItems = useMemo(
+    () => filterNavForPageFeatures(filterNavForRole(navItems, user?.role), isPageEnabled),
+    [user?.role, isPageEnabled]
+  )
 
   // POS keeps the always-expanded sidebar; other pages collapse until hover.
   const isPosPage = pathname === '/pos' || pathname.startsWith('/pos/')
@@ -270,12 +291,13 @@ export default function Sidebar() {
               return (
                 <div key={item.name}>
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
                       if (isExpanded) toggleExpanded(item.name)
+                      e.currentTarget.blur()
                     }}
                     title={item.name}
                     className={cn(
-                      'flex w-full items-center rounded-lg py-2.5 text-sm font-medium transition-colors',
+                      'flex w-full items-center rounded-lg py-2.5 text-sm font-medium transition-colors outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0',
                       isExpanded ? 'justify-between px-3' : 'justify-center px-2',
                       hasActiveChild
                         ? 'bg-blue-50 text-blue-700'
@@ -298,7 +320,6 @@ export default function Sidebar() {
                       {item.children.map((child) => {
                         const ChildIcon = child.icon
                         const isChildActive = isNavChildActive(pathname, child.href)
-                        const childEnabled = !child.href || isPageEnabled(child.href)
                         return (
                           <Link
                             key={child.name}
@@ -306,20 +327,16 @@ export default function Sidebar() {
                             prefetch
                             onMouseEnter={() => prefetchHref(child.href)}
                             onFocus={() => prefetchHref(child.href)}
+                            onClick={(e) => e.currentTarget.blur()}
                             className={cn(
-                              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0',
                               isChildActive
                                 ? 'bg-blue-50 text-blue-700'
-                                : childEnabled
-                                  ? 'text-gray-600 hover:bg-gray-50'
-                                  : 'text-gray-400 hover:bg-gray-50'
+                                : 'text-gray-600 hover:bg-gray-50'
                             )}
                           >
                             <ChildIcon className={cn('h-4 w-4', isChildActive ? 'text-blue-600' : 'text-gray-400')} />
-                            <span className="flex-1 whitespace-nowrap">{child.name}</span>
-                            {!childEnabled && (
-                              <span className="text-[10px] font-normal uppercase tracking-wide text-gray-400">Soon</span>
-                            )}
+                            <span className="whitespace-nowrap">{child.name}</span>
                           </Link>
                         )
                       })}
@@ -331,7 +348,6 @@ export default function Sidebar() {
 
             const Icon = item.icon
             const isActive = pathname.startsWith(item.href || '')
-            const itemEnabled = !item.href || isPageEnabled(item.href)
             return (
               <Link
                 key={item.name}
@@ -340,25 +356,17 @@ export default function Sidebar() {
                 title={item.name}
                 onMouseEnter={() => prefetchHref(item.href)}
                 onFocus={() => prefetchHref(item.href)}
+                onClick={(e) => e.currentTarget.blur()}
                 className={cn(
-                  'flex items-center rounded-lg py-2.5 text-sm font-medium transition-colors',
+                  'flex items-center rounded-lg py-2.5 text-sm font-medium transition-colors outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0',
                   isExpanded ? 'gap-3 px-3' : 'justify-center px-2',
                   isActive
                     ? 'bg-blue-50 text-blue-700'
-                    : itemEnabled
-                      ? 'text-gray-700 hover:bg-gray-50'
-                      : 'text-gray-400 hover:bg-gray-50'
+                    : 'text-gray-700 hover:bg-gray-50'
                 )}
               >
                 <Icon className={cn('h-5 w-5 shrink-0', isActive ? 'text-blue-600' : 'text-gray-500')} />
-                {isExpanded && (
-                  <>
-                    <span className="flex-1 whitespace-nowrap">{item.name}</span>
-                    {!itemEnabled && (
-                      <span className="text-[10px] font-normal uppercase tracking-wide text-gray-400">Soon</span>
-                    )}
-                  </>
-                )}
+                {isExpanded && <span className="whitespace-nowrap">{item.name}</span>}
               </Link>
             )
           })}
@@ -366,10 +374,13 @@ export default function Sidebar() {
 
         <div className={cn('border-t', isExpanded ? 'p-3' : 'p-2')}>
           <button
-            onClick={logout}
+            onClick={(e) => {
+              e.currentTarget.blur()
+              logout()
+            }}
             title="Logout"
             className={cn(
-              'flex w-full items-center rounded-lg py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50',
+              'flex w-full items-center rounded-lg py-2.5 text-sm font-medium text-red-600 transition-colors outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 hover:bg-red-50',
               isExpanded ? 'gap-3 px-3' : 'justify-center px-2'
             )}
           >

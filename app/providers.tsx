@@ -19,12 +19,14 @@ function useKeyboardNavFocus() {
     }
 
     window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('mousedown', onPointer)
-    window.addEventListener('pointerdown', onPointer)
+    window.addEventListener('mousedown', onPointer, true)
+    window.addEventListener('pointerdown', onPointer, true)
+    window.addEventListener('touchstart', onPointer, true)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('mousedown', onPointer)
-      window.removeEventListener('pointerdown', onPointer)
+      window.removeEventListener('mousedown', onPointer, true)
+      window.removeEventListener('pointerdown', onPointer, true)
+      window.removeEventListener('touchstart', onPointer, true)
     }
   }, [])
 }

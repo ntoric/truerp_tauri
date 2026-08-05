@@ -96,8 +96,18 @@ select:focus-visible,
 
 /* Keyboard users still get a visible focus cue after Tab */
 body[data-keyboard-nav="true"] *:focus-visible {
-  outline: 2px solid hsl(var(--ring) / 0.45) !important;
+  outline: 2px solid hsl(221.2 83% 53% / 0.45) !important;
   outline-offset: 2px;
+}
+
+/* Sidebar nav: never show a focus border on click (active state is enough) */
+aside a:focus,
+aside a:focus-visible,
+aside button:focus,
+aside button:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
 }
 
 @layer utilities {
