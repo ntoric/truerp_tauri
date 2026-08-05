@@ -121,7 +121,7 @@ jobs:
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           generateReleaseNotes: true
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.tauri_args }}
 

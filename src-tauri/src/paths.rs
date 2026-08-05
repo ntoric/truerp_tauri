@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Runtime};
 
 /// Resolve resource roots used to find bundled Node and the Next.js server.
-pub fn resource_roots(app: &AppHandle) -> Vec<PathBuf> {
+pub fn resource_roots<R: Runtime>(app: &AppHandle<R>) -> Vec<PathBuf> {
     let mut roots = Vec::new();
 
     if let Ok(dir) = app.path().resource_dir() {

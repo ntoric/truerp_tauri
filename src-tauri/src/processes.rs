@@ -7,7 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::AppHandle;
+use tauri::{AppHandle, Runtime};
 
 pub const FRONTEND_ADDR: &str = "127.0.0.1:3000";
 pub const PROXY_ADDR: &str = "127.0.0.1:17888";
@@ -55,7 +55,7 @@ impl RuntimeProcesses {
 
 /// Stop any orphaned process still running the bundled Node binary.
 /// Safe for reinstall/update: only matches our resource path, not system Node.
-pub fn kill_bundled_node_processes(app: &AppHandle) {
+pub fn kill_bundled_node_processes<R: Runtime>(app: &AppHandle<R>) {
     let roots = resource_roots(app);
     let Some(node_bin) = find_node_binary(&roots) else {
         return;
