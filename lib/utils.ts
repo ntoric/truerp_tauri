@@ -43,3 +43,31 @@ export function formatDateTime(date: string | Date): string {
     minute: '2-digit',
   })
 }
+
+const MAX_SKU_BASE_LEN = 24
+
+/** Build a SKU suggestion from a product name (matches backend SKUFromName). */
+export function skuFromProductName(name: string): string {
+  const trimmed = name.trim()
+  if (!trimmed) return ''
+
+  let result = ''
+  let prevHyphen = true
+  for (const char of trimmed.toUpperCase()) {
+    if (/[A-Z0-9]/.test(char)) {
+      result += char
+      prevHyphen = false
+    } else if (!prevHyphen && result.length > 0) {
+      result += '-'
+      prevHyphen = true
+    }
+  }
+
+  result = result.replace(/^-+|-+$/g, '')
+  if (!result) return 'PROD'
+  if (result.length > MAX_SKU_BASE_LEN) {
+    result = result.slice(0, MAX_SKU_BASE_LEN).replace(/-+$/g, '')
+    if (!result) return 'PROD'
+  }
+  return result
+}

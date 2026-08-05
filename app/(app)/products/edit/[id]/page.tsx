@@ -18,6 +18,11 @@ import { ArrowLeft, Save, Search } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import ProductImageField from '@/components/ProductImageField'
+import {
+  WEIGHING_ITEM_CODE_MAX_LEN,
+  isWeightBasedUnit,
+  weighingItemCodeError,
+} from '@/lib/weighingScale'
 
 interface Product {
   id: string
@@ -212,6 +217,13 @@ export default function EditProductPage() {
       return
     }
 
+    const itemCodeErr = weighingItemCodeError(formData.unit, formData.item_code)
+    if (itemCodeErr) {
+      setError('item_code', itemCodeErr)
+      setActiveTab('basic')
+      return
+    }
+
     setSaving(true)
     clearErrors()
 
@@ -318,8 +330,21 @@ export default function EditProductPage() {
                   <Input
                     id="item_code"
                     value={formData.item_code}
+                    maxLength={
+                      isWeightBasedUnit(formData.unit) ? WEIGHING_ITEM_CODE_MAX_LEN : undefined
+                    }
                     onChange={(e) => handleChange('item_code', e.target.value)}
+                    placeholder={
+                      isWeightBasedUnit(formData.unit)
+                        ? `Max ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
+                        : undefined
+                    }
                   />
+                  {isWeightBasedUnit(formData.unit) && (
+                    <p className="text-xs text-muted-foreground">
+                      Weighing items: max {WEIGHING_ITEM_CODE_MAX_LEN} characters
+                    </p>
+                  )}
                   <FieldError message={fieldErrors.item_code} />
                 </div>
 

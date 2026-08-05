@@ -255,7 +255,12 @@ export default function Sidebar() {
           </Link>
         </div>
 
-        <nav className={cn('flex-1 space-y-1 overflow-y-auto py-4', isExpanded ? 'px-3' : 'px-2')}>
+        <nav
+          className={cn(
+            'sidebar-scroll flex-1 space-y-1 overflow-y-auto py-4',
+            isExpanded ? 'px-3' : 'px-2'
+          )}
+        >
           {visibleNavItems.map((item) => {
             if (item.children) {
               const Icon = item.icon

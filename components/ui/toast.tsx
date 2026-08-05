@@ -99,7 +99,7 @@ const ToastAction = React.forwardRef<
   <ToastPrimitives.Action
     ref={ref}
     className={cn(
-      "inline-flex h-7 shrink-0 items-center justify-center rounded-md border border-black/5 bg-white/50 px-2.5 text-xs font-medium backdrop-blur-sm transition-colors hover:bg-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+      "inline-flex h-7 shrink-0 items-center justify-center rounded-md border border-black/5 bg-white/50 px-2.5 text-xs font-medium backdrop-blur-sm transition-colors hover:bg-white/80 outline-none focus:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-50",
       className
     )}
     {...props}
@@ -114,7 +114,7 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      "absolute right-1.5 top-1.5 rounded-md p-1 text-foreground/40 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus-visible:ring-2 group-hover:opacity-100",
+      "absolute right-1.5 top-1.5 rounded-md p-1 text-foreground/40 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 outline-none focus:outline-none focus-visible:ring-0 group-hover:opacity-100",
       className
     )}
     toast-close=""

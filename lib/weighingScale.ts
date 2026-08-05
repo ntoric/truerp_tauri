@@ -134,10 +134,25 @@ export const DEFAULT_WEIGHING_SCALE_SETTINGS: WeighingScaleSettings = {
 
 const WEIGHT_UNITS = new Set(['KG', 'GM', 'G', 'GRAM', 'KGS', 'KILOGRAM', 'KILOGRAMS'])
 
+/** Max item code / PLU length for KG/GM (weighing) products. */
+export const WEIGHING_ITEM_CODE_MAX_LEN = 5
+
 export function isWeightBasedUnit(unit: string | undefined | null): boolean {
   if (!unit) return false
   const normalized = unit.trim().toUpperCase()
   return WEIGHT_UNITS.has(normalized)
+}
+
+export function weighingItemCodeError(
+  unit: string | undefined | null,
+  itemCode: string | undefined | null
+): string | null {
+  if (!isWeightBasedUnit(unit)) return null
+  const code = itemCode?.trim() ?? ''
+  if (code.length > WEIGHING_ITEM_CODE_MAX_LEN) {
+    return `Item code for weighing items must be at most ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
+  }
+  return null
 }
 
 export function roundWeight(value: number, decimalPlaces: number): number {

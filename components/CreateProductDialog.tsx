@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,12 +13,17 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { asArray, cn } from '@/lib/utils'
+import { asArray, cn, skuFromProductName } from '@/lib/utils'
 import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
 import { notifySuccess } from '@/lib/notify'
 import ProductImageField from '@/components/ProductImageField'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
 import { Barcode, Search } from 'lucide-react'
+import {
+  WEIGHING_ITEM_CODE_MAX_LEN,
+  isWeightBasedUnit,
+  weighingItemCodeError,
+} from '@/lib/weighingScale'
 
 export interface CreatedProduct {
   id: string
@@ -127,6 +132,7 @@ export default function CreateProductDialog({
     fieldErrors,
     clearErrors,
     clearFieldError,
+    setError,
     handleApiError,
     validateRequired,
     showSuccessToast,
@@ -165,16 +171,17 @@ export default function CreateProductDialog({
     notes: '',
   })
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
+  const skuManuallyEdited = useRef(false)
 
   useEffect(() => {
     if (!open) return
 
     const base = emptyProductForm()
-    setNewItem(
-      initialValues
-        ? { ...base, ...initialValues, inventory: { ...base.inventory, ...initialValues.inventory } }
-        : base
-    )
+    const seeded = initialValues
+      ? { ...base, ...initialValues, inventory: { ...base.inventory, ...initialValues.inventory } }
+      : base
+    skuManuallyEdited.current = Boolean(initialValues?.sku?.trim())
+    setNewItem(seeded)
     setCreateTab('basic')
     clearErrors()
 
@@ -224,9 +231,31 @@ export default function CreateProductDialog({
     if (clearField) clearFieldError(clearField)
   }
 
+  const handleNameChange = (name: string) => {
+    updateNewItem((prev) => {
+      const next: ProductFormState = { ...prev, name }
+      if (!skuManuallyEdited.current) {
+        next.sku = skuFromProductName(name)
+      }
+      return next
+    }, 'name')
+  }
+
+  const handleSkuChange = (sku: string) => {
+    skuManuallyEdited.current = true
+    updateNewItem({ sku }, 'sku')
+  }
+
   const handleCreateItem = async () => {
     if (!validateRequired({ name: newItem.name }, { name: 'Product name' })) {
       setCreateTab('basic')
+      return
+    }
+
+    const itemCodeErr = weighingItemCodeError(newItem.unit, newItem.inventory.item_code)
+    if (itemCodeErr) {
+      setError('item_code', itemCodeErr)
+      setCreateTab('inventory')
       return
     }
 
@@ -492,7 +521,7 @@ export default function CreateProductDialog({
                 <Input
                   id="create_name"
                   value={newItem.name}
-                  onChange={(e) => updateNewItem({ name: e.target.value }, 'name')}
+                  onChange={(e) => handleNameChange(e.target.value)}
                   placeholder="Enter product name"
                   className={cn(fieldErrors.name && 'border-red-500')}
                 />
@@ -504,8 +533,8 @@ export default function CreateProductDialog({
                 <Input
                   id="create_sku"
                   value={newItem.sku}
-                  onChange={(e) => updateNewItem({ sku: e.target.value }, 'sku')}
-                  placeholder="Enter SKU"
+                  onChange={(e) => handleSkuChange(e.target.value)}
+                  placeholder="Auto-generated from name"
                   className={cn(fieldErrors.sku && 'border-red-500')}
                 />
                 <FieldError message={fieldErrors.sku} />
@@ -739,19 +768,32 @@ export default function CreateProductDialog({
                   <Input
                     id="create_inventory_item_code"
                     value={newItem.inventory.item_code}
-                    onChange={(e) =>
+                    maxLength={
+                      isWeightBasedUnit(newItem.unit) ? WEIGHING_ITEM_CODE_MAX_LEN : undefined
+                    }
+                    onChange={(e) => {
+                      clearFieldError('item_code')
                       setNewItem((prev) => ({
                         ...prev,
                         inventory: { ...prev.inventory, item_code: e.target.value },
                       }))
+                    }}
+                    placeholder={
+                      isWeightBasedUnit(newItem.unit)
+                        ? `Max ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
+                        : 'Enter item code or scan'
                     }
-                    placeholder="Enter item code or scan"
                     className={cn(fieldErrors.item_code && 'border-red-500')}
                   />
                   <Button type="button" variant="outline" size="icon" onClick={() => setShowBarcodeScanner(true)}>
                     <Barcode className="h-4 w-4" />
                   </Button>
                 </div>
+                {isWeightBasedUnit(newItem.unit) && (
+                  <p className="text-xs text-muted-foreground">
+                    Weighing items: max {WEIGHING_ITEM_CODE_MAX_LEN} characters
+                  </p>
+                )}
                 <FieldError message={fieldErrors.item_code} />
               </div>
 
@@ -1101,10 +1143,23 @@ export default function CreateProductDialog({
         open={showBarcodeScanner}
         onOpenChange={setShowBarcodeScanner}
         onScan={(code) => {
-          setNewItem((prev) => ({
-            ...prev,
-            inventory: { ...prev.inventory, item_code: code },
-          }))
+          setNewItem((prev) => {
+            const nextCode = isWeightBasedUnit(prev.unit)
+              ? code.slice(0, WEIGHING_ITEM_CODE_MAX_LEN)
+              : code
+            if (isWeightBasedUnit(prev.unit) && code.length > WEIGHING_ITEM_CODE_MAX_LEN) {
+              setError(
+                'item_code',
+                `Item code for weighing items must be at most ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
+              )
+            } else {
+              clearFieldError('item_code')
+            }
+            return {
+              ...prev,
+              inventory: { ...prev.inventory, item_code: nextCode },
+            }
+          })
         }}
       />
     </>

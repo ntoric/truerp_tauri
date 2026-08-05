@@ -8,15 +8,31 @@ import {
   downloadAndInstallDesktopUpdate,
   getDesktopAppVersion,
   hasDesktopUpdater,
+  subscribeDesktopUpdateProgress,
   type DesktopUpdateCheckResult,
+  type DesktopUpdateProgress,
 } from '@/lib/desktopBridge'
 import { Download, Loader2, RefreshCw } from 'lucide-react'
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B'
+  if (bytes < 1024) return `${Math.round(bytes)} B`
+  const units = ['KB', 'MB', 'GB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`
+}
 
 export default function DesktopUpdatesCard() {
   const [visible, setVisible] = useState(false)
   const [version, setVersion] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
   const [installing, setInstalling] = useState(false)
+  const [progress, setProgress] = useState<DesktopUpdateProgress | null>(null)
   const [result, setResult] = useState<DesktopUpdateCheckResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -27,6 +43,27 @@ export default function DesktopUpdatesCard() {
       if (v) setVersion(v)
     })
   }, [])
+
+  useEffect(() => {
+    if (!visible) return
+    let unlisten: (() => void) | undefined
+    let cancelled = false
+
+    void subscribeDesktopUpdateProgress((next) => {
+      if (!cancelled) setProgress(next)
+    }).then((fn) => {
+      if (cancelled) {
+        fn()
+        return
+      }
+      unlisten = fn
+    })
+
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [visible])
 
   if (!visible) return null
 
@@ -59,14 +96,35 @@ export default function DesktopUpdatesCard() {
       return
     }
     setInstalling(true)
+    setProgress({ status: 'downloading', downloaded: 0, contentLength: null, percent: null })
     setError(null)
     try {
       await downloadAndInstallDesktopUpdate()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to install update')
       setInstalling(false)
+      setProgress(null)
     }
   }
+
+  const percent =
+    progress?.percent != null && Number.isFinite(progress.percent)
+      ? Math.max(0, Math.min(100, progress.percent))
+      : null
+  const progressLabel =
+    progress?.status === 'installing'
+      ? 'Installing update…'
+      : percent != null
+        ? `Downloading update… ${Math.round(percent)}%`
+        : 'Downloading update…'
+  const sizeLabel =
+    progress && progress.status === 'downloading'
+      ? progress.contentLength
+        ? `${formatBytes(progress.downloaded)} of ${formatBytes(progress.contentLength)}`
+        : progress.downloaded > 0
+          ? formatBytes(progress.downloaded)
+          : null
+      : null
 
   return (
     <Card>
@@ -100,10 +158,32 @@ export default function DesktopUpdatesCard() {
           )}
         </div>
 
+        {installing && (
+          <div className="space-y-2" role="status" aria-live="polite">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-foreground">{progressLabel}</span>
+              {sizeLabel && <span className="text-muted-foreground tabular-nums">{sizeLabel}</span>}
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+              {percent != null ? (
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-200 ease-out"
+                  style={{ width: `${percent}%` }}
+                />
+              ) : (
+                <div className="h-full w-1/3 animate-pulse rounded-full bg-primary/80" />
+              )}
+            </div>
+            {progress?.status === 'installing' && (
+              <p className="text-xs text-muted-foreground">The app will restart when installation finishes.</p>
+            )}
+          </div>
+        )}
+
         {result && !result.available && !error && (
           <p className="text-sm text-muted-foreground">You are on the latest version.</p>
         )}
-        {result?.available && result.notes && (
+        {result?.available && result.notes && !installing && (
           <p className="whitespace-pre-wrap text-sm text-muted-foreground">{result.notes}</p>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}

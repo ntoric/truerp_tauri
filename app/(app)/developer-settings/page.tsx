@@ -731,7 +731,7 @@ export default function DeveloperSettingsPage() {
                   Pages & Menus
                 </CardTitle>
                 <CardDescription>
-                  Disable a page to show a Coming Soon screen when users open it. Dashboard, Settings, and Developer Settings stay available.
+                  Disable a page to show a Coming Soon screen when users open it. Dashboard, core Settings tabs, and Developer Settings stay available. Settings &gt; Reminders and Settings &gt; CA Share can be enabled or disabled below.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">

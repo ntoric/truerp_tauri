@@ -11,6 +11,24 @@ export interface DesktopUpdateCheckResult {
   date?: string | null
 }
 
+export type DesktopUpdateProgressStatus = 'downloading' | 'installing'
+
+export interface DesktopUpdateProgress {
+  status: DesktopUpdateProgressStatus
+  downloaded: number
+  contentLength?: number | null
+  percent?: number | null
+}
+
+const UPDATE_PROGRESS_EVENT = 'desktop-update-progress'
+
+type TauriEventApi = {
+  listen?: (
+    event: string,
+    handler: (event: { payload: DesktopUpdateProgress }) => void
+  ) => Promise<() => void>
+}
+
 type DesktopAppBridge = {
   HasNativePrinting?: () => Promise<boolean>
   ListPrinters?: () => Promise<DesktopPrinterInfo[]>
@@ -40,10 +58,13 @@ type TauriCore = {
   invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>
 }
 
-function getTauriCore(): TauriCore | null {
+function getTauri(): { core?: TauriCore; event?: TauriEventApi } | null {
   if (typeof window === 'undefined') return null
-  const tauri = (window as unknown as { __TAURI__?: { core?: TauriCore } }).__TAURI__
-  return tauri?.core ?? null
+  return (window as unknown as { __TAURI__?: { core?: TauriCore; event?: TauriEventApi } }).__TAURI__ ?? null
+}
+
+function getTauriCore(): TauriCore | null {
+  return getTauri()?.core ?? null
 }
 
 function invokeErrorMessage(err: unknown): string {
@@ -220,4 +241,29 @@ export async function downloadAndInstallDesktopUpdate(): Promise<boolean> {
   if (!app?.DownloadAndInstallUpdate) return false
   await app.DownloadAndInstallUpdate()
   return true
+}
+
+/** Subscribe to native updater download/install progress. Returns an unsubscribe fn. */
+export async function subscribeDesktopUpdateProgress(
+  onProgress: (progress: DesktopUpdateProgress) => void
+): Promise<() => void> {
+  const listen = getTauri()?.event?.listen
+  if (!listen) return () => {}
+  try {
+    return await listen(UPDATE_PROGRESS_EVENT, (event) => {
+      const payload = event?.payload
+      if (!payload || typeof payload !== 'object') return
+      onProgress({
+        status: payload.status === 'installing' ? 'installing' : 'downloading',
+        downloaded: Number(payload.downloaded) || 0,
+        contentLength: payload.contentLength ?? null,
+        percent:
+          payload.percent == null || Number.isNaN(Number(payload.percent))
+            ? null
+            : Number(payload.percent),
+      })
+    })
+  } catch {
+    return () => {}
+  }
 }

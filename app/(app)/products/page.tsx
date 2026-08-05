@@ -20,7 +20,7 @@ import BarcodeScanner from '@/components/ui/BarcodeScanner'
 import { Package, Plus, Search, Trash2, Download, Upload, Printer, Edit, MoreVertical, Eye, Power, Barcode } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { asArray, cn } from '@/lib/utils'
+import { asArray, cn, skuFromProductName } from '@/lib/utils'
 import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
@@ -34,6 +34,11 @@ import {
 import { printHtmlDocument } from '@/lib/printDocument'
 import { printBarcodeLabels, type BarcodeLabelsPayload } from '@/lib/barcodeLabelPrint'
 import { normalizeThermalPrintSize } from '@/lib/printSizes'
+import {
+  WEIGHING_ITEM_CODE_MAX_LEN,
+  isWeightBasedUnit,
+  weighingItemCodeError,
+} from '@/lib/weighingScale'
 
 interface Category {
   id: string
@@ -113,6 +118,7 @@ export default function ProductsPage() {
     fieldErrors,
     clearErrors,
     clearFieldError,
+    setError,
     handleApiError,
     validateRequired,
     showSuccessToast,
@@ -202,6 +208,7 @@ export default function ProductsPage() {
   const [importedCount, setImportedCount] = useState<number | null>(null)
   const [importErrors, setImportErrors] = useState<string[]>([])
   const importFileRef = useRef<HTMLInputElement>(null)
+  const skuManuallyEdited = useRef(false)
 
   useEffect(() => { if (!authLoading && user) fetchCategories() }, [authLoading, user])
   useEffect(() => {
@@ -401,6 +408,7 @@ export default function ProductsPage() {
       if (res.ok) {
         const d = await res.json()
         const draftData = JSON.parse(d.data)
+        skuManuallyEdited.current = Boolean(draftData?.sku?.trim())
         setNewItem(draftData)
         setShowDraftsModal(false)
         setShowCreateModal(true)
@@ -712,6 +720,21 @@ export default function ProductsPage() {
     if (clearField) clearFieldError(clearField)
   }
 
+  const handleNameChange = (name: string) => {
+    updateNewItem((prev) => {
+      const next = { ...prev, name }
+      if (!skuManuallyEdited.current) {
+        next.sku = skuFromProductName(name)
+      }
+      return next
+    }, 'name')
+  }
+
+  const handleSkuChange = (sku: string) => {
+    skuManuallyEdited.current = true
+    updateNewItem({ sku }, 'sku')
+  }
+
   const emptyProductForm = {
     name: '',
     sku: '',
@@ -748,6 +771,13 @@ export default function ProductsPage() {
       return
     }
 
+    const itemCodeErr = weighingItemCodeError(newItem.unit, newItem.inventory.item_code)
+    if (itemCodeErr) {
+      setError('item_code', itemCodeErr)
+      setCreateTab('inventory')
+      return
+    }
+
     setCreating(true)
     clearErrors()
     try {
@@ -776,6 +806,7 @@ export default function ProductsPage() {
       })
       if (res.ok) {
         setShowCreateModal(false)
+        skuManuallyEdited.current = false
         setNewItem(emptyProductForm)
         clearErrors()
         showSuccessToast('Product created successfully')
@@ -822,6 +853,8 @@ export default function ProductsPage() {
               if (!open) {
                 clearErrors()
                 setCreateTab('basic')
+                skuManuallyEdited.current = false
+                setNewItem(emptyProductForm)
               }
             }}>
               <DialogTrigger asChild>
@@ -883,7 +916,7 @@ export default function ProductsPage() {
                       <Input
                         id="name"
                         value={newItem.name}
-                        onChange={(e) => updateNewItem({ name: e.target.value }, 'name')}
+                        onChange={(e) => handleNameChange(e.target.value)}
                         placeholder="Enter product name"
                         className={cn(fieldErrors.name && 'border-red-500')}
                       />
@@ -895,8 +928,8 @@ export default function ProductsPage() {
                       <Input
                         id="sku"
                         value={newItem.sku}
-                        onChange={(e) => updateNewItem({ sku: e.target.value }, 'sku')}
-                        placeholder="Enter SKU"
+                        onChange={(e) => handleSkuChange(e.target.value)}
+                        placeholder="Auto-generated from name"
                         className={cn(fieldErrors.sku && 'border-red-500')}
                       />
                       <FieldError message={fieldErrors.sku} />
@@ -1112,8 +1145,21 @@ export default function ProductsPage() {
                         <Input
                           id="inventory_item_code"
                           value={newItem.inventory.item_code}
-                          onChange={(e) => setNewItem({ ...newItem, inventory: { ...newItem.inventory, item_code: e.target.value } })}
-                          placeholder="Enter item code or scan"
+                          maxLength={
+                            isWeightBasedUnit(newItem.unit) ? WEIGHING_ITEM_CODE_MAX_LEN : undefined
+                          }
+                          onChange={(e) => {
+                            clearFieldError('item_code')
+                            setNewItem({
+                              ...newItem,
+                              inventory: { ...newItem.inventory, item_code: e.target.value },
+                            })
+                          }}
+                          placeholder={
+                            isWeightBasedUnit(newItem.unit)
+                              ? `Max ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
+                              : 'Enter item code or scan'
+                          }
                           className={cn(fieldErrors.item_code && 'border-red-500')}
                         />
                         <Button
@@ -1125,6 +1171,11 @@ export default function ProductsPage() {
                           <Barcode className="h-4 w-4" />
                         </Button>
                       </div>
+                      {isWeightBasedUnit(newItem.unit) && (
+                        <p className="text-xs text-muted-foreground">
+                          Weighing items: max {WEIGHING_ITEM_CODE_MAX_LEN} characters
+                        </p>
+                      )}
                       <FieldError message={fieldErrors.item_code} />
                     </div>
 
@@ -1819,7 +1870,18 @@ export default function ProductsPage() {
         open={showBarcodeScanner}
         onOpenChange={setShowBarcodeScanner}
         onScan={(code) => {
-          setNewItem({ ...newItem, inventory: { ...newItem.inventory, item_code: code } })
+          const nextCode = isWeightBasedUnit(newItem.unit)
+            ? code.slice(0, WEIGHING_ITEM_CODE_MAX_LEN)
+            : code
+          if (isWeightBasedUnit(newItem.unit) && code.length > WEIGHING_ITEM_CODE_MAX_LEN) {
+            setError(
+              'item_code',
+              `Item code for weighing items must be at most ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
+            )
+          } else {
+            clearFieldError('item_code')
+          }
+          setNewItem({ ...newItem, inventory: { ...newItem.inventory, item_code: nextCode } })
         }}
       />
     </DashboardLayout>

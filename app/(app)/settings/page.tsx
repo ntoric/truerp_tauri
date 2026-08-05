@@ -23,6 +23,7 @@ import PrintSettingsCard from '@/components/PrintSettingsCard'
 import DesktopUpdatesCard from '@/components/DesktopUpdatesCard'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import { usePageFeatures } from '@/hooks/usePageFeatures'
 
 interface Business {
   name: string
@@ -39,12 +40,6 @@ interface Business {
   upi_id: string
   logo_url: string
   signature_url: string
-  label_paper_size: string
-  label_width_mm: number
-  label_height_mm: number
-  label_columns: number
-  label_rows: number
-  label_margin_mm: number
   enable_ai_hsn_search: boolean
   enable_ai_bill_parsing: boolean
   gemini_api_key: string
@@ -96,6 +91,9 @@ interface InvoiceCustomFieldDef {
 export default function SettingsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { isPageEnabled } = usePageFeatures()
+  const remindersEnabled = isPageEnabled('/settings/reminders')
+  const caShareEnabled = isPageEnabled('/settings/ca-share')
   const [activeTab, setActiveTab] = useState('business')
   
   // Business state
@@ -103,8 +101,6 @@ export default function SettingsPage() {
     name: '', gstin: '', address: '', city: '', state: '', pincode: '',
     phone: '', email: '', bank_name: '', account_number: '', ifsc_code: '', upi_id: '',
     logo_url: '', signature_url: '',
-    label_paper_size: 'A4', label_width_mm: 50, label_height_mm: 30,
-    label_columns: 3, label_rows: 8, label_margin_mm: 10,
     enable_ai_hsn_search: false, enable_ai_bill_parsing: false, gemini_api_key: ''
   })
   
@@ -162,6 +158,14 @@ export default function SettingsPage() {
     }
     if (tab) setActiveTab(tab)
   }, [searchParams, router])
+
+  useEffect(() => {
+    if (activeTab === 'reminders' && !remindersEnabled) {
+      setActiveTab('business')
+    } else if (activeTab === 'ca' && !caShareEnabled) {
+      setActiveTab('business')
+    }
+  }, [activeTab, remindersEnabled, caShareEnabled])
 
   const fetchAllData = async () => {
     try {
@@ -520,7 +524,15 @@ export default function SettingsPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 lg:grid-cols-9">
+          <TabsList
+            className={`grid w-full grid-cols-4 ${
+              remindersEnabled && caShareEnabled
+                ? 'lg:grid-cols-8'
+                : remindersEnabled || caShareEnabled
+                  ? 'lg:grid-cols-7'
+                  : 'lg:grid-cols-6'
+            }`}
+          >
             <TabsTrigger value="business" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               <span className="hidden lg:inline">Business</span>
@@ -541,14 +553,18 @@ export default function SettingsPage() {
               <Scale className="h-4 w-4" />
               <span className="hidden lg:inline">Scale</span>
             </TabsTrigger>
-            <TabsTrigger value="reminders" className="flex items-center gap-2">
-              <Bell className="h-4 w-4" />
-              <span className="hidden lg:inline">Reminders</span>
-            </TabsTrigger>
-            <TabsTrigger value="ca" className="flex items-center gap-2">
-              <Share2 className="h-4 w-4" />
-              <span className="hidden lg:inline">CA Share</span>
-            </TabsTrigger>
+            {remindersEnabled && (
+              <TabsTrigger value="reminders" className="flex items-center gap-2">
+                <Bell className="h-4 w-4" />
+                <span className="hidden lg:inline">Reminders</span>
+              </TabsTrigger>
+            )}
+            {caShareEnabled && (
+              <TabsTrigger value="ca" className="flex items-center gap-2">
+                <Share2 className="h-4 w-4" />
+                <span className="hidden lg:inline">CA Share</span>
+              </TabsTrigger>
+            )}
             <TabsTrigger value="help" className="flex items-center gap-2">
               <HelpCircle className="h-4 w-4" />
               <span className="hidden lg:inline">Help</span>
@@ -661,46 +677,6 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                       <Label htmlFor="upi_id">UPI ID</Label>
                       <Input id="upi_id" value={business.upi_id} onChange={(e) => handleChange('upi_id', e.target.value, setBusiness)} />
-                    </div>
-                  </div>
-
-                  {/* Label Printing Settings */}
-                  <div className="border-t pt-4 mt-4">
-                    <h3 className="text-lg font-semibold mb-4">Label Printing Settings</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="label_paper_size">Paper Size</Label>
-                        <Select value={business.label_paper_size} onValueChange={(value) => handleChange('label_paper_size', value, setBusiness)}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="A4">A4</SelectItem>
-                            <SelectItem value="Letter">Letter</SelectItem>
-                            <SelectItem value="Legal">Legal</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="label_columns">Columns per Row</Label>
-                        <Input id="label_columns" type="number" min="1" max="5" value={business.label_columns} onChange={(e) => handleChange('label_columns', parseInt(e.target.value) || 3, setBusiness)} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="label_rows">Rows per Page</Label>
-                        <Input id="label_rows" type="number" min="1" max="20" value={business.label_rows} onChange={(e) => handleChange('label_rows', parseInt(e.target.value) || 8, setBusiness)} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="label_width_mm">Label Width (mm)</Label>
-                        <Input id="label_width_mm" type="number" min="10" max="200" value={business.label_width_mm} onChange={(e) => handleChange('label_width_mm', parseFloat(e.target.value) || 50, setBusiness)} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="label_height_mm">Label Height (mm)</Label>
-                        <Input id="label_height_mm" type="number" min="10" max="200" value={business.label_height_mm} onChange={(e) => handleChange('label_height_mm', parseFloat(e.target.value) || 30, setBusiness)} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="label_margin_mm">Page Margin (mm)</Label>
-                        <Input id="label_margin_mm" type="number" min="0" max="50" value={business.label_margin_mm} onChange={(e) => handleChange('label_margin_mm', parseFloat(e.target.value) || 10, setBusiness)} />
-                      </div>
                     </div>
                   </div>
 
@@ -944,6 +920,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           {/* Reminders Tab */}
+          {remindersEnabled && (
           <TabsContent value="reminders">
             <Card>
               <CardHeader className="flex flex-row items-center gap-2">
@@ -1036,8 +1013,10 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
 
           {/* CA Report Sharing Tab */}
+          {caShareEnabled && (
           <TabsContent value="ca">
             <Card>
               <CardHeader className="flex flex-row items-center gap-2">
@@ -1104,6 +1083,7 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
 
           {/* Help & Support Tab */}
           <TabsContent value="help" className="space-y-6">

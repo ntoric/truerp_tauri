@@ -1,8 +1,12 @@
 use crate::processes;
 use serde::Serialize;
-use tauri::{AppHandle, Runtime};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_updater::{Update, UpdaterExt};
+
+pub const UPDATE_PROGRESS_EVENT: &str = "desktop-update-progress";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,6 +16,22 @@ pub struct UpdateCheckResult {
     pub version: Option<String>,
     pub notes: Option<String>,
     pub date: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProgress {
+    /// "downloading" | "installing"
+    pub status: String,
+    pub downloaded: u64,
+    pub content_length: Option<u64>,
+    pub percent: Option<f64>,
+}
+
+fn emit_progress<R: Runtime>(app: &AppHandle<R>, progress: UpdateProgress) {
+    if let Err(err) = app.emit(UPDATE_PROGRESS_EVENT, &progress) {
+        log::debug!("update progress emit failed: {err}");
+    }
 }
 
 fn current_version<R: Runtime>(app: &AppHandle<R>) -> String {
@@ -88,13 +108,53 @@ pub async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
         update.version
     );
 
+    let progress_app = app.clone();
+    let downloaded = Arc::new(AtomicU64::new(0));
+    let downloaded_for_chunks = Arc::clone(&downloaded);
+
     update
         .download_and_install(
-            |chunk_len, content_len| {
-                log::debug!("update progress: +{chunk_len} / {content_len:?}");
+            move |chunk_len, content_len| {
+                let total_downloaded =
+                    downloaded_for_chunks.fetch_add(chunk_len as u64, Ordering::Relaxed) + chunk_len as u64;
+                let percent = content_len.map(|total| {
+                    if total == 0 {
+                        0.0
+                    } else {
+                        ((total_downloaded as f64) / (total as f64) * 100.0).min(100.0)
+                    }
+                });
+                log::debug!("update progress: {total_downloaded} / {content_len:?}");
+                emit_progress(
+                    &progress_app,
+                    UpdateProgress {
+                        status: "downloading".into(),
+                        downloaded: total_downloaded,
+                        content_length: content_len,
+                        percent,
+                    },
+                );
             },
-            || {
-                log::info!("update download finished; installing");
+            {
+                let progress_app = app.clone();
+                let downloaded = Arc::clone(&downloaded);
+                move || {
+                    let total_downloaded = downloaded.load(Ordering::Relaxed);
+                    log::info!("update download finished; installing");
+                    emit_progress(
+                        &progress_app,
+                        UpdateProgress {
+                            status: "installing".into(),
+                            downloaded: total_downloaded,
+                            content_length: if total_downloaded > 0 {
+                                Some(total_downloaded)
+                            } else {
+                                None
+                            },
+                            percent: Some(100.0),
+                        },
+                    );
+                }
             },
         )
         .await

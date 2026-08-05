@@ -349,9 +349,12 @@ export default function WeighingScaleSettingsCard() {
                   id="barcode_plu_digits"
                   type="number"
                   min={3}
-                  max={8}
+                  max={5}
                   value={settings.barcode_plu_digits}
-                  onChange={(e) => update('barcode_plu_digits', parseInt(e.target.value, 10) || 5)}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10) || 5
+                    update('barcode_plu_digits', Math.min(5, Math.max(3, n)))
+                  }}
                 />
               </div>
               <div className="space-y-2">

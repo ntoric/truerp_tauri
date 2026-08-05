@@ -43,6 +43,13 @@ export interface PrintSettings {
   thermal_printer_name: string
   document_printer_name: string
   auto_print_on_pos: boolean
+  /** A4 barcode sheet layout (persisted on business) */
+  label_paper_size: string
+  label_width_mm: number
+  label_height_mm: number
+  label_columns: number
+  label_rows: number
+  label_margin_mm: number
 }
 
 const DEFAULT_PRINT_SETTINGS: PrintSettings = {
@@ -62,6 +69,12 @@ const DEFAULT_PRINT_SETTINGS: PrintSettings = {
   thermal_printer_name: '',
   document_printer_name: '',
   auto_print_on_pos: true,
+  label_paper_size: 'A4',
+  label_width_mm: 50,
+  label_height_mm: 30,
+  label_columns: 3,
+  label_rows: 8,
+  label_margin_mm: 10,
 }
 
 function normalizeBarcodeLabelSize(value: unknown): BarcodeLabelSize {
@@ -81,6 +94,15 @@ function mergePrintSettings(raw: Partial<PrintSettings>): PrintSettings {
     thermal_printer_name: raw.thermal_printer_name || '',
     document_printer_name: raw.document_printer_name || '',
     auto_print_on_pos: raw.auto_print_on_pos !== false,
+    label_paper_size: raw.label_paper_size || DEFAULT_PRINT_SETTINGS.label_paper_size,
+    label_width_mm: Number(raw.label_width_mm) > 0 ? Number(raw.label_width_mm) : DEFAULT_PRINT_SETTINGS.label_width_mm,
+    label_height_mm: Number(raw.label_height_mm) > 0 ? Number(raw.label_height_mm) : DEFAULT_PRINT_SETTINGS.label_height_mm,
+    label_columns: Number(raw.label_columns) > 0 ? Number(raw.label_columns) : DEFAULT_PRINT_SETTINGS.label_columns,
+    label_rows: Number(raw.label_rows) > 0 ? Number(raw.label_rows) : DEFAULT_PRINT_SETTINGS.label_rows,
+    label_margin_mm:
+      raw.label_margin_mm !== undefined && raw.label_margin_mm !== null && !Number.isNaN(Number(raw.label_margin_mm))
+        ? Number(raw.label_margin_mm)
+        : DEFAULT_PRINT_SETTINGS.label_margin_mm,
   }
 }
 
@@ -220,8 +242,12 @@ export default function PrintSettingsCard() {
         body: JSON.stringify(settings),
       })
       if (res.ok) {
-        setSettings(mergePrintSettings(await res.json()))
+        const merged = mergePrintSettings(await res.json())
+        setSettings(merged)
         setMessage('Print settings saved successfully')
+        setPreviewLoading(true)
+        await loadBarcodePreview(merged.barcode_print_mode, merged.barcode_label_size)
+        setPreviewLoading(false)
       } else {
         const data = await res.json().catch(() => ({}))
         setMessage(data.error || 'Failed to update print settings')
@@ -667,9 +693,85 @@ export default function PrintSettingsCard() {
                       </div>
                     </div>
                   ) : (
-                    <p className="text-xs text-muted-foreground">
-                      A4 layout uses label size and grid from Business → Label Printing Settings.
-                    </p>
+                    <div className="space-y-4">
+                      <p className="text-sm font-semibold text-gray-900">A4 sheet layout</p>
+                      <div className="space-y-2">
+                        <Label htmlFor="label_paper_size">Paper Size</Label>
+                        <Select
+                          value={settings.label_paper_size}
+                          onValueChange={(value) => update('label_paper_size', value)}
+                        >
+                          <SelectTrigger id="label_paper_size">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="A4">A4</SelectItem>
+                            <SelectItem value="Letter">Letter</SelectItem>
+                            <SelectItem value="Legal">Legal</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="label_columns">Columns</Label>
+                          <Input
+                            id="label_columns"
+                            type="number"
+                            min={1}
+                            max={5}
+                            value={settings.label_columns}
+                            onChange={(e) => update('label_columns', parseInt(e.target.value) || 3)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="label_rows">Rows</Label>
+                          <Input
+                            id="label_rows"
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={settings.label_rows}
+                            onChange={(e) => update('label_rows', parseInt(e.target.value) || 8)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="label_width_mm">Width (mm)</Label>
+                          <Input
+                            id="label_width_mm"
+                            type="number"
+                            min={10}
+                            max={200}
+                            value={settings.label_width_mm}
+                            onChange={(e) => update('label_width_mm', parseFloat(e.target.value) || 50)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="label_height_mm">Height (mm)</Label>
+                          <Input
+                            id="label_height_mm"
+                            type="number"
+                            min={10}
+                            max={200}
+                            value={settings.label_height_mm}
+                            onChange={(e) => update('label_height_mm', parseFloat(e.target.value) || 30)}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="label_margin_mm">Page Margin (mm)</Label>
+                        <Input
+                          id="label_margin_mm"
+                          type="number"
+                          min={0}
+                          max={50}
+                          value={settings.label_margin_mm}
+                          onChange={(e) => update('label_margin_mm', parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Save print settings to refresh the A4 sheet preview.
+                      </p>
+                    </div>
                   )}
                 </div>
                 <div>
