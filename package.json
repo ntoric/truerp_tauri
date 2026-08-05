@@ -1,6 +1,6 @@
 {
   "name": "truerp-frontend",
-  "version": "0.0.19",
+  "version": "0.0.24",
   "private": true,
   "scripts": {
     "dev": "next dev",

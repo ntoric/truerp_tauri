@@ -15,6 +15,7 @@ import { Plus, Send, Calendar, Users, MessageSquare, Loader2, Clock, CheckCircle
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface SMSCampaign {
   id: string
@@ -56,6 +57,7 @@ interface SMSStats {
 }
 
 export default function SMSMarketingPage() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [campaigns, setCampaigns] = useState<SMSCampaign[]>([])
   const { page, setPage, totalPages, totalItems, paginatedItems, pageSize } = usePagination(campaigns)
   const [stats, setStats] = useState<SMSStats | null>(null)
@@ -147,7 +149,12 @@ export default function SMSMarketingPage() {
   }
 
   const handleSendCampaign = async (id: string) => {
-    if (!confirm('Are you sure you want to send this campaign?')) return
+    if (!(await confirm({
+      title: 'Send campaign?',
+      description: 'Are you sure you want to send this campaign?',
+      confirmLabel: 'Send',
+      variant: 'default',
+    }))) return
     setSending(true)
     try {
       const res = await apiFetch(`/sms-marketing/${id}/send`, {
@@ -168,7 +175,10 @@ export default function SMSMarketingPage() {
   }
 
   const handleDeleteCampaign = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this campaign?')) return
+    if (!(await confirm({
+      title: 'Delete campaign?',
+      description: 'Are you sure you want to delete this campaign? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/sms-marketing/${id}`, {
         method: 'DELETE'
@@ -589,6 +599,7 @@ export default function SMSMarketingPage() {
           )}
         </DialogContent>
       </Dialog>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

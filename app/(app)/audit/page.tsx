@@ -15,6 +15,7 @@ import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { isSuperAdmin } from '@/lib/roles'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface AuditLog {
   id: string
@@ -41,6 +42,7 @@ interface AuditStats {
 
 export default function AuditDashboard() {
   const { user, loading: authLoading } = useAuth()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [stats, setStats] = useState<AuditStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -131,7 +133,10 @@ export default function AuditDashboard() {
   }
 
   const deleteLogs = async () => {
-    if (!confirm('Are you sure you want to delete all filtered audit logs? This action cannot be undone.')) return
+    if (!(await confirm({
+      title: 'Delete filtered audit logs?',
+      description: 'Are you sure you want to delete all filtered audit logs? This action cannot be undone.',
+    }))) return
 
     try {
       const params = new URLSearchParams()
@@ -550,6 +555,7 @@ export default function AuditDashboard() {
           </div>
         )}
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

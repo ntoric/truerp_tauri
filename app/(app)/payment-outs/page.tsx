@@ -22,6 +22,7 @@ import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface PaymentOut {
   id: string
@@ -77,6 +78,7 @@ function billPartyId(bill: PurchaseBill) {
 }
 
 export default function PaymentOutsPage() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const {
     fieldErrors,
     clearErrors,
@@ -303,7 +305,10 @@ export default function PaymentOutsPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this payment out?')) return
+    if (!(await confirm({
+      title: 'Delete payment out?',
+      description: 'Are you sure you want to delete this payment out? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/payment-outs/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -733,6 +738,7 @@ export default function PaymentOutsPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

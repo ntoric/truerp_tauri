@@ -13,6 +13,7 @@ import {
   type DesktopUpdateProgress,
 } from '@/lib/desktopBridge'
 import { Download, Loader2, RefreshCw } from 'lucide-react'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '0 B'
@@ -28,6 +29,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function DesktopUpdatesCard() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [visible, setVisible] = useState(false)
   const [version, setVersion] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
@@ -65,8 +67,6 @@ export default function DesktopUpdatesCard() {
     }
   }, [visible])
 
-  if (!visible) return null
-
   const onCheck = async () => {
     setChecking(true)
     setError(null)
@@ -88,13 +88,12 @@ export default function DesktopUpdatesCard() {
 
   const onInstall = async () => {
     if (!result?.available) return
-    if (
-      !confirm(
-        `Download and install TruERP ${result.version || ''}? The app will restart when finished.`
-      )
-    ) {
-      return
-    }
+    if (!(await confirm({
+      title: `Install TruERP ${result.version || ''}?`,
+      description: 'Download and install this update? The app will restart when finished.',
+      confirmLabel: 'Install',
+      variant: 'default',
+    }))) return
     setInstalling(true)
     setProgress({ status: 'downloading', downloaded: 0, contentLength: null, percent: null })
     setError(null)
@@ -106,6 +105,8 @@ export default function DesktopUpdatesCard() {
       setProgress(null)
     }
   }
+
+  if (!visible) return null
 
   const percent =
     progress?.percent != null && Number.isFinite(progress.percent)
@@ -188,6 +189,7 @@ export default function DesktopUpdatesCard() {
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
       </CardContent>
+      {confirmDialog}
     </Card>
   )
 }

@@ -58,6 +58,12 @@ const BRIDGE_JS: &str = r#"
         filename: filename || 'document.pdf'
       });
     },
+    SaveFile: function (dataBase64, filename) {
+      return invoke('save_file', {
+        dataBase64: dataBase64 || '',
+        filename: filename || 'download.bin'
+      });
+    },
     PrintThermal: function (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) {
       return invoke('print_thermal', {
         content: content || '',
@@ -106,6 +112,7 @@ pub fn run() {
             print::list_printers,
             print::print_pdf,
             print::save_pdf,
+            print::save_file,
             thermal::print_thermal,
             thermal::print_raw_base64,
             #[cfg(desktop)]

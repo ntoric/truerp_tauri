@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, MoreVertical, Edit, Trash2, CheckCircle } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface SalesReturn {
@@ -29,6 +30,7 @@ interface SalesReturn {
 }
 
 export default function SalesReturnsPage() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [returns, setReturns] = useState<SalesReturn[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -95,7 +97,10 @@ export default function SalesReturnsPage() {
   }
 
   const handleDeleteReturn = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this sales return?')) return
+    if (!(await confirm({
+      title: 'Delete sales return?',
+      description: 'Are you sure you want to delete this sales return? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/sales-returns/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -138,7 +143,10 @@ export default function SalesReturnsPage() {
   }
 
   const handleBulkDeleteReturns = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedReturns.size} sales return(s)?`)) return
+    if (!(await confirm({
+      title: `Delete ${selectedReturns.size} sales return(s)?`,
+      description: `Are you sure you want to delete ${selectedReturns.size} sales return(s)? This action cannot be undone.`,
+    }))) return
     try {
       await Promise.all(
         Array.from(selectedReturns).map(id => apiFetch(`/sales-returns/${id}`, { method: 'DELETE' }))
@@ -312,6 +320,7 @@ export default function SalesReturnsPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

@@ -23,9 +23,10 @@ import { useFormErrors } from '@/hooks/useFormErrors'
 import { asArray, cn, skuFromProductName } from '@/lib/utils'
 import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
 import { notifyError, notifySuccess } from '@/lib/notify'
-import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
+import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
 import ProductImageField from '@/components/ProductImageField'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
   BARCODE_LABEL_SIZE_OPTIONS,
@@ -124,12 +125,13 @@ export default function ProductsPage() {
     showSuccessToast,
     showErrorToast,
   } = useFormErrors()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [createTab, setCreateTab] = useState('basic')
   const [creating, setCreating] = useState(false)
   const [categories, setCategories] = useState<Category[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedCategory, setSelectedCategory] = useState<string>('')
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -138,9 +140,6 @@ export default function ProductsPage() {
   const [printQuantity, setPrintQuantity] = useState(1)
   const [printLabelSize, setPrintLabelSize] = useState<BarcodeLabelSize>('2inch')
   const [selectedProductForPrint, setSelectedProductForPrint] = useState<string | null>(null)
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
-  const [confirmAction, setConfirmAction] = useState<'delete' | 'disable' | 'bulk_delete' | null>(null)
-  const [confirmProductId, setConfirmProductId] = useState<string | null>(null)
   const [showPreviewDialog, setShowPreviewDialog] = useState(false)
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null)
   const [drafts, setDrafts] = useState<any[]>([])
@@ -417,6 +416,10 @@ export default function ProductsPage() {
   }
 
   const handleDeleteDraft = async (draftId: string) => {
+    if (!(await confirm({
+      title: 'Delete draft?',
+      description: 'Are you sure you want to delete this draft? This action cannot be undone.',
+    }))) return
     try {
       await apiFetch(`/drafts/${draftId}`, { method: 'DELETE' })
       fetchDrafts()
@@ -443,9 +446,17 @@ export default function ProductsPage() {
 
   const handleBulkDelete = async () => {
     if (selectedItems.size === 0) return
-    setConfirmAction('bulk_delete')
-    setConfirmProductId(null)
-    setShowConfirmDialog(true)
+    if (!(await confirm({
+      title: 'Delete products?',
+      description: `Are you sure you want to delete ${selectedItems.size} selected items? This action cannot be undone.`,
+    }))) return
+    try {
+      await Promise.all(
+        Array.from(selectedItems).map(id => apiFetch(`/products/${id}`, { method: 'DELETE' }))
+      )
+      setSelectedItems(new Set())
+      fetchProducts()
+    } catch (err) { console.error(err) }
   }
 
   const handleHsnSearch = async (search: string) => {
@@ -480,18 +491,17 @@ export default function ProductsPage() {
       if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
       if (searchQuery) params.append('search', searchQuery)
       const res = await apiFetch(`/products/export/csv?${params.toString()}`)
-      if (res.ok) {
-        const blob = await res.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `products_${new Date().toISOString().split('T')[0]}.csv`
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
+      if (!res.ok) {
+        notifyError('Failed to export products CSV')
+        return
       }
-    } catch (err) { console.error(err) }
+      const blob = await res.blob()
+      await downloadBlob(`products_${accountingExportDateStamp()}.csv`, blob)
+      notifySuccess('Products CSV exported')
+    } catch (err) {
+      console.error(err)
+      notifyError(err instanceof Error ? err.message : 'Failed to export products CSV')
+    }
   }
 
   const handleExportExcel = async () => {
@@ -500,18 +510,17 @@ export default function ProductsPage() {
       if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
       if (searchQuery) params.append('search', searchQuery)
       const res = await apiFetch(`/products/export/excel?${params.toString()}`)
-      if (res.ok) {
-        const blob = await res.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `products_${new Date().toISOString().split('T')[0]}.xlsx`
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
+      if (!res.ok) {
+        notifyError('Failed to export products Excel')
+        return
       }
-    } catch (err) { console.error(err) }
+      const blob = await res.blob()
+      await downloadBlob(`products_${accountingExportDateStamp()}.xlsx`, blob)
+      notifySuccess('Products Excel exported')
+    } catch (err) {
+      console.error(err)
+      notifyError(err instanceof Error ? err.message : 'Failed to export products Excel')
+    }
   }
 
   const handleDownloadImportTemplate = () => {
@@ -663,56 +672,44 @@ export default function ProductsPage() {
   }
 
   const handleToggleActive = async (productId: string, currentStatus: boolean) => {
-    setConfirmAction('disable')
-    setConfirmProductId(productId)
-    setShowConfirmDialog(true)
+    const product = products.find(p => p.id === productId)
+    if (!product) return
+    if (!(await confirm({
+      title: product.is_active ? 'Disable product?' : 'Enable product?',
+      description: product.is_active
+        ? 'Are you sure you want to disable this product?'
+        : 'Are you sure you want to enable this product?',
+      confirmLabel: product.is_active ? 'Disable' : 'Enable',
+      variant: 'default',
+    }))) return
+    try {
+      const res = await apiFetch(`/products/${productId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: !product.is_active })
+      })
+      if (res.ok) {
+        fetchProducts()
+      }
+    } catch (err) { console.error(err) }
   }
 
   const handleDeleteProduct = async (productId: string) => {
-    setConfirmAction('delete')
-    setConfirmProductId(productId)
-    setShowConfirmDialog(true)
+    if (!(await confirm({
+      title: 'Delete product?',
+      description: 'Are you sure you want to delete this product? This action cannot be undone.',
+    }))) return
+    try {
+      const res = await apiFetch(`/products/${productId}`, { method: 'DELETE' })
+      if (res.ok) {
+        fetchProducts()
+      }
+    } catch (err) { console.error(err) }
   }
 
   const handlePreviewProduct = (product: Product) => {
     setPreviewProduct(product)
     setShowPreviewDialog(true)
-  }
-
-  const handleConfirmAction = async () => {
-    if (confirmAction === 'delete' && confirmProductId) {
-      try {
-        const res = await apiFetch(`/products/${confirmProductId}`, { method: 'DELETE' })
-        if (res.ok) {
-          fetchProducts()
-        }
-      } catch (err) { console.error(err) }
-    } else if (confirmAction === 'disable' && confirmProductId) {
-      const product = products.find(p => p.id === confirmProductId)
-      if (product) {
-        try {
-          const res = await apiFetch(`/products/${confirmProductId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ is_active: !product.is_active })
-          })
-          if (res.ok) {
-            fetchProducts()
-          }
-        } catch (err) { console.error(err) }
-      }
-    } else if (confirmAction === 'bulk_delete') {
-      try {
-        await Promise.all(
-          Array.from(selectedItems).map(id => apiFetch(`/products/${id}`, { method: 'DELETE' }))
-        )
-        setSelectedItems(new Set())
-        fetchProducts()
-      } catch (err) { console.error(err) }
-    }
-    setShowConfirmDialog(false)
-    setConfirmAction(null)
-    setConfirmProductId(null)
   }
 
   const updateNewItem = (patch: Partial<typeof newItem> | ((prev: typeof newItem) => typeof newItem), clearField?: string) => {
@@ -1529,35 +1526,6 @@ export default function ProductsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {confirmAction === 'delete' ? 'Delete Product' : 
-               confirmAction === 'disable' ? 'Disable Product' : 
-               'Delete Products'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              {confirmAction === 'delete' ? 'Are you sure you want to delete this product? This action cannot be undone.' :
-               confirmAction === 'disable' ? 'Are you sure you want to disable this product?' :
-               `Are you sure you want to delete ${selectedItems.size} selected items? This action cannot be undone.`}
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleConfirmAction}>
-                {confirmAction === 'delete' ? 'Delete' :
-                 confirmAction === 'disable' ? 'Disable' :
-                 'Delete'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -1884,6 +1852,7 @@ export default function ProductsPage() {
           setNewItem({ ...newItem, inventory: { ...newItem.inventory, item_code: nextCode } })
         }}
       />
+      {confirmDialog}
     </DashboardLayout>
   )
 }

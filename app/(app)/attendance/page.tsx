@@ -36,6 +36,7 @@ import {
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface Staff {
   id: string
@@ -126,6 +127,7 @@ function withAutoWorkHours(prev: {
 export default function AttendancePage() {
   const { user, loading: authLoading } = useAuth()
   const { activeStore, loading: storeLoading } = useStore()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [attendances, setAttendances] = useState<Attendance[]>([])
   const [stats, setStats] = useState<AttendanceStats | null>(null)
@@ -137,9 +139,6 @@ export default function AttendancePage() {
   const [departmentFilter, setDepartmentFilter] = useState('all')
   const [selectedStaffIds, setSelectedStaffIds] = useState<Set<string>>(new Set())
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
-  const [attendanceToDelete, setAttendanceToDelete] = useState<Attendance | null>(null)
-  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false)
   const [isBulkStatusConfirmOpen, setIsBulkStatusConfirmOpen] = useState(false)
   const [bulkStatus, setBulkStatus] = useState<string>('present')
   const [formData, setFormData] = useState({
@@ -317,19 +316,15 @@ export default function AttendancePage() {
     window.setTimeout(() => setIsDialogOpen(true), 0)
   }
 
-  const handleDelete = (attendance: Attendance) => {
-    setAttendanceToDelete(attendance)
-    window.setTimeout(() => setIsDeleteConfirmOpen(true), 0)
-  }
-
-  const confirmDelete = async () => {
-    if (!attendanceToDelete) return
+  const handleDelete = async (attendance: Attendance) => {
+    if (!(await confirm({
+      title: 'Delete attendance?',
+      description: 'Are you sure you want to delete this attendance record? This action cannot be undone.',
+    }))) return
     try {
-      const res = await apiFetch(`/attendance/${attendanceToDelete.id}`, { method: 'DELETE' })
+      const res = await apiFetch(`/attendance/${attendance.id}`, { method: 'DELETE' })
       if (res.ok) {
         notifySuccess('Attendance deleted')
-        setIsDeleteConfirmOpen(false)
-        setAttendanceToDelete(null)
         refreshData()
         return
       }
@@ -391,23 +386,17 @@ export default function AttendancePage() {
     }
   }
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     const deletableIds = Array.from(selectedStaffIds)
       .map((staffId) => attendances.find((a) => a.staff_id === staffId))
       .filter((attendance): attendance is Attendance => Boolean(attendance))
       .map((attendance) => attendance.id)
 
     if (deletableIds.length === 0) return
-    window.setTimeout(() => setIsBulkDeleteConfirmOpen(true), 0)
-  }
-
-  const confirmBulkDelete = async () => {
-    const deletableIds = Array.from(selectedStaffIds)
-      .map((staffId) => attendances.find((a) => a.staff_id === staffId))
-      .filter((attendance): attendance is Attendance => Boolean(attendance))
-      .map((attendance) => attendance.id)
-
-    if (deletableIds.length === 0) return
+    if (!(await confirm({
+      title: 'Delete attendance records?',
+      description: `Are you sure you want to delete ${deletableIds.length} attendance records? This action cannot be undone.`,
+    }))) return
 
     try {
       const res = await apiFetch('/attendance/bulk/delete', {
@@ -417,7 +406,6 @@ export default function AttendancePage() {
       })
       if (res.ok) {
         setSelectedStaffIds(new Set())
-        setIsBulkDeleteConfirmOpen(false)
         refreshData()
       }
     } catch (err) { console.error(err) }
@@ -832,32 +820,6 @@ export default function AttendancePage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Confirm Delete</DialogTitle></DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Are you sure you want to delete this attendance record? This action cannot be undone.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={isBulkDeleteConfirmOpen} onOpenChange={setIsBulkDeleteConfirmOpen}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Confirm Bulk Delete</DialogTitle></DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Are you sure you want to delete {selectedDeletableCount} attendance records? This action cannot be undone.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsBulkDeleteConfirmOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={confirmBulkDelete}>Delete</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
         <Dialog open={isBulkStatusConfirmOpen} onOpenChange={setIsBulkStatusConfirmOpen}>
           <DialogContent>
             <DialogHeader>
@@ -872,6 +834,7 @@ export default function AttendancePage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {confirmDialog}
       </div>
     </DashboardLayout>
   )

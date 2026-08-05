@@ -24,6 +24,7 @@ import DesktopUpdatesCard from '@/components/DesktopUpdatesCard'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface Business {
   name: string
@@ -92,6 +93,7 @@ export default function SettingsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isPageEnabled } = usePageFeatures()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const remindersEnabled = isPageEnabled('/settings/reminders')
   const caShareEnabled = isPageEnabled('/settings/ca-share')
   const [activeTab, setActiveTab] = useState('business')
@@ -234,7 +236,10 @@ export default function SettingsPage() {
   }
 
   const deleteCustomField = async (id: string) => {
-    if (!confirm('Delete this custom field?')) return
+    if (!(await confirm({
+      title: 'Delete custom field?',
+      description: 'Are you sure you want to delete this custom field? This action cannot be undone.',
+    }))) return
     await apiFetch(`/settings/invoice-custom-fields/${id}`, { method: 'DELETE' })
     await fetchInvoiceCustomFields()
   }
@@ -471,6 +476,10 @@ export default function SettingsPage() {
   }
 
   const handleDeleteReminder = async (id: string) => {
+    if (!(await confirm({
+      title: 'Delete reminder?',
+      description: 'Are you sure you want to delete this reminder? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/settings/reminders/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -482,6 +491,10 @@ export default function SettingsPage() {
   }
 
   const handleDeleteCaShare = async (id: string) => {
+    if (!(await confirm({
+      title: 'Delete CA share?',
+      description: 'Are you sure you want to remove this CA share entry? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/settings/ca-sharing/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -508,7 +521,7 @@ export default function SettingsPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-5xl space-y-6">
+      <div className="w-full space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <Button variant="destructive" onClick={handleLogout}>
@@ -1133,6 +1146,7 @@ export default function SettingsPage() {
           circularCrop={false}
         />
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

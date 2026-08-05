@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatCurrency } from '@/lib/utils'
 import { ArrowLeft, Loader2, Send, Trash2, Pencil } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface Party {
   id: string
@@ -56,6 +57,7 @@ interface DebitNote {
 export default function DebitNoteDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [debitNote, setDebitNote] = useState<DebitNote | null>(null)
   const [loading, setLoading] = useState(true)
   const [issuing, setIssuing] = useState(false)
@@ -85,7 +87,12 @@ export default function DebitNoteDetailPage() {
   }
 
   const handleIssue = async () => {
-    if (!confirm('Are you sure you want to issue this debit note? This will update the linked purchase bill.')) return
+    if (!(await confirm({
+      title: 'Issue debit note?',
+      description: 'Are you sure you want to issue this debit note? This will update the linked purchase bill.',
+      confirmLabel: 'Issue',
+      variant: 'default',
+    }))) return
     setIssuing(true)
     try {
       const res = await apiFetch(`/debit-notes/${params.id}/issue`, { method: 'POST' })
@@ -102,7 +109,10 @@ export default function DebitNoteDetailPage() {
   }
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this debit note?')) return
+    if (!(await confirm({
+      title: 'Delete debit note?',
+      description: 'Are you sure you want to delete this debit note? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/debit-notes/${params.id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -307,6 +317,7 @@ export default function DebitNoteDetailPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

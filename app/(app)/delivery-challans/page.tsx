@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Truck } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface DeliveryChallan {
@@ -30,6 +31,7 @@ interface DeliveryChallan {
 }
 
 export default function DeliveryChallansPage() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [challans, setChallans] = useState<DeliveryChallan[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -115,7 +117,10 @@ export default function DeliveryChallansPage() {
   }
 
   const handleDeleteChallan = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this delivery challan?')) return
+    if (!(await confirm({
+      title: 'Delete delivery challan?',
+      description: 'Are you sure you want to delete this delivery challan? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/delivery-challans/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -187,7 +192,10 @@ export default function DeliveryChallansPage() {
   }
 
   const handleBulkDeleteChallans = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedChallans.size} delivery challan(s)?`)) return
+    if (!(await confirm({
+      title: 'Delete delivery challans?',
+      description: `Are you sure you want to delete ${selectedChallans.size} delivery challan(s)? This action cannot be undone.`,
+    }))) return
     try {
       await Promise.all(
         Array.from(selectedChallans).map(id => apiFetch(`/delivery-challans/${id}`, { method: 'DELETE' }))
@@ -369,6 +377,7 @@ export default function DeliveryChallansPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

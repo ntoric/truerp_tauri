@@ -17,6 +17,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { Plus, Search, MoreVertical, Edit, Trash2, CheckCircle, Download } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface PurchaseReturn {
@@ -31,6 +32,7 @@ interface PurchaseReturn {
 }
 
 export default function PurchaseReturnsPage() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [returns, setReturns] = useState<PurchaseReturn[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -114,7 +116,10 @@ export default function PurchaseReturnsPage() {
   }
 
   const handleDeleteReturn = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this purchase return?')) return
+    if (!(await confirm({
+      title: 'Delete purchase return?',
+      description: 'Are you sure you want to delete this purchase return? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/purchase-returns/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -268,6 +273,7 @@ export default function PurchaseReturnsPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

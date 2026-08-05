@@ -20,6 +20,7 @@ import { Plus, Search, PlusCircle, Loader2, Printer as ThermalPrinter, MoreVerti
 import ThermalPrintModal from '@/components/ThermalPrintModal'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface Expense {
@@ -40,6 +41,7 @@ interface Category {
 }
 
 export default function ExpensesPage() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
@@ -139,7 +141,10 @@ export default function ExpensesPage() {
   }
 
   const handleDeleteExpense = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this expense?')) return
+    if (!(await confirm({
+      title: 'Delete expense?',
+      description: 'Are you sure you want to delete this expense? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/expenses/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -173,7 +178,10 @@ export default function ExpensesPage() {
   }
 
   const handleBulkDeleteExpenses = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedExpenses.size} expense(s)?`)) return
+    if (!(await confirm({
+      title: `Delete ${selectedExpenses.size} expense(s)?`,
+      description: `Are you sure you want to delete ${selectedExpenses.size} expense(s)? This action cannot be undone.`,
+    }))) return
     try {
       await Promise.all(
         Array.from(selectedExpenses).map(id => apiFetch(`/expenses/${id}`, { method: 'DELETE' }))
@@ -393,6 +401,7 @@ export default function ExpensesPage() {
           />
         )}
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

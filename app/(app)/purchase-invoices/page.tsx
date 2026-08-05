@@ -15,6 +15,7 @@ import { notifyError } from '@/lib/notify'
 import { downloadPurchaseBillPdf, printHtmlDocument } from '@/lib/printDocument'
 import { printBarcodeLabels, type BarcodeLabelsPayload } from '@/lib/barcodeLabelPrint'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
   BARCODE_LABEL_SIZE_OPTIONS,
@@ -59,6 +60,7 @@ interface PurchaseBillStats {
 }
 
 export default function PurchaseInvoicesPage() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [bills, setBills] = useState<PurchaseBill[]>([])
   const [stats, setStats] = useState<PurchaseBillStats>({ total_purchase: 0, paid: 0, unpaid: 0 })
   const [loading, setLoading] = useState(true)
@@ -257,7 +259,10 @@ export default function PurchaseInvoicesPage() {
   }
 
   const handleDeleteBill = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this purchase invoice?')) return
+    if (!(await confirm({
+      title: 'Delete purchase invoice?',
+      description: 'Are you sure you want to delete this purchase invoice? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/purchase/bills/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -363,7 +368,10 @@ export default function PurchaseInvoicesPage() {
   }
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedBills.size} purchase invoices?`)) return
+    if (!(await confirm({
+      title: `Delete ${selectedBills.size} purchase invoices?`,
+      description: `Are you sure you want to delete ${selectedBills.size} purchase invoices? This action cannot be undone.`,
+    }))) return
     try {
       const promises = Array.from(selectedBills).map(id =>
         apiFetch(`/purchase/bills/${id}`, { method: 'DELETE' })
@@ -1104,6 +1112,7 @@ export default function PurchaseInvoicesPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </DashboardLayout>
   )
 }

@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { notifySuccess } from '@/lib/notify'
 import { isSuperAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
@@ -60,6 +61,7 @@ function readScopedErrors(
 export default function StoresPage() {
   const { user, loading: authLoading } = useAuth()
   const { refreshStores } = useStore()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const {
     fieldErrors,
     setFieldErrors,
@@ -208,7 +210,10 @@ export default function StoresPage() {
 
   const handleDeleteStore = async () => {
     if (!selectedStore) return
-    if (!confirm(`Delete store "${selectedStore.name}"? Remove all store users first.`)) return
+    if (!(await confirm({
+      title: `Delete store "${selectedStore.name}"?`,
+      description: 'Remove all store users first. This action cannot be undone.',
+    }))) return
     const res = await apiFetch(`/stores/${selectedStore.id}`, { method: 'DELETE' })
     if (!res.ok) {
       await handleApiError(res, { toastTitle: 'Unable to delete store' })
@@ -223,21 +228,13 @@ export default function StoresPage() {
 
   const handleResetStore = async () => {
     if (!selectedStore) return
-    if (
-      !confirm(
-        `Reset all operational data for "${selectedStore.name}"?\n\nThis permanently deletes invoices, products, parties, inventory, payments, expenses, and related records.\n\nStore users and the business profile are kept.`
-      )
-    ) {
-      return
-    }
-    const typed = window.prompt(
-      `Type the store code "${selectedStore.code}" to confirm the reset:`
-    )
-    if (typed === null) return
-    if (typed.trim() !== selectedStore.code) {
-      showErrorToast('Store code did not match. Reset cancelled.')
-      return
-    }
+    if (!(await confirm({
+      title: `Reset store "${selectedStore.name}"?`,
+      description:
+        'This permanently deletes invoices, products, parties, inventory, payments, expenses, and related records. Store users and the business profile are kept.',
+      confirmLabel: 'Reset',
+      confirmText: selectedStore.code,
+    }))) return
     setResetting(true)
     try {
       const res = await apiFetch(`/stores/${selectedStore.id}/reset`, { method: 'POST' })
@@ -604,6 +601,7 @@ export default function StoresPage() {
           </Tabs>
         </div>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

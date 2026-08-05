@@ -29,6 +29,7 @@ import { Plus, Search, Phone, ArrowUp, ArrowDown, Trash2, Edit, MoreVertical, Do
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface Party {
   id: string
@@ -66,6 +67,7 @@ export default function PartiesPage() {
     clearFieldError,
     showErrorToast,
   } = useFormErrors()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [parties, setParties] = useState<Party[]>([])
   const [stats, setStats] = useState<PartyStats>({ total_parties: 0, to_collect: 0, to_pay: 0 })
   const [loading, setLoading] = useState(true)
@@ -78,9 +80,6 @@ export default function PartiesPage() {
   const [isBulkCategoryModalOpen, setIsBulkCategoryModalOpen] = useState(false)
   const [bulkCategory, setBulkCategory] = useState('')
   const [isCategoryUpdateConfirmOpen, setIsCategoryUpdateConfirmOpen] = useState(false)
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
-  const [partyToDelete, setPartyToDelete] = useState<string | null>(null)
-  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false)
   const [formData, setFormData] = useState({ ...EMPTY_PARTY_FORM })
 
   const updateFormField = <K extends keyof typeof formData>(field: K, value: (typeof formData)[K]) => {
@@ -207,10 +206,10 @@ export default function PartiesPage() {
 
   const handleBulkDelete = async () => {
     if (selectedParties.size === 0) return
-    setIsBulkDeleteConfirmOpen(true)
-  }
-
-  const confirmBulkDelete = async () => {
+    if (!(await confirm({
+      title: 'Delete parties?',
+      description: `Are you sure you want to delete ${selectedParties.size} parties? This action cannot be undone.`,
+    }))) return
     try {
       const res = await apiFetch('/parties/bulk/delete', {
         method: 'POST',
@@ -219,7 +218,6 @@ export default function PartiesPage() {
       })
       if (res.ok) {
         setSelectedParties(new Set())
-        setIsBulkDeleteConfirmOpen(false)
         fetchParties()
         fetchStats()
       }
@@ -333,18 +331,14 @@ export default function PartiesPage() {
     }
   }
 
-  const handleDeleteParty = (id: string) => {
-    setPartyToDelete(id)
-    setIsDeleteConfirmOpen(true)
-  }
-
-  const confirmDeleteParty = async () => {
-    if (!partyToDelete) return
+  const handleDeleteParty = async (id: string) => {
+    if (!(await confirm({
+      title: 'Delete party?',
+      description: 'Are you sure you want to delete this party? This action cannot be undone.',
+    }))) return
     try {
-      const res = await apiFetch(`/parties/${partyToDelete}`, { method: 'DELETE' })
+      const res = await apiFetch(`/parties/${id}`, { method: 'DELETE' })
       if (res.ok) {
-        setIsDeleteConfirmOpen(false)
-        setPartyToDelete(null)
         fetchParties()
         fetchStats()
       }
@@ -624,36 +618,6 @@ export default function PartiesPage() {
             </DialogContent>
           </Dialog>
 
-          <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Confirm Delete</DialogTitle>
-              </DialogHeader>
-              <p className="py-4 text-sm text-gray-600">
-                Are you sure you want to delete this party? This action cannot be undone.
-              </p>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>Cancel</Button>
-                <Button variant="destructive" onClick={confirmDeleteParty}>Delete</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog open={isBulkDeleteConfirmOpen} onOpenChange={setIsBulkDeleteConfirmOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Confirm Bulk Delete</DialogTitle>
-              </DialogHeader>
-              <p className="py-4 text-sm text-gray-600">
-                Are you sure you want to delete {selectedParties.size} parties? This action cannot be undone.
-              </p>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsBulkDeleteConfirmOpen(false)}>Cancel</Button>
-                <Button variant="destructive" onClick={confirmBulkDelete}>Delete</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
           <Dialog open={isCategoryUpdateConfirmOpen} onOpenChange={setIsCategoryUpdateConfirmOpen}>
             <DialogContent>
               <DialogHeader>
@@ -865,6 +829,7 @@ export default function PartiesPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

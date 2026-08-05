@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface SavedTemplate {
   id: string
@@ -22,6 +23,7 @@ interface SavedTemplate {
 }
 
 export default function InvoiceTemplatesPage() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [templates, setTemplates] = useState<SavedTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -62,7 +64,10 @@ export default function InvoiceTemplatesPage() {
   }
 
   const remove = async (id: string) => {
-    if (!confirm('Delete this template?')) return
+    if (!(await confirm({
+      title: 'Delete template?',
+      description: 'Are you sure you want to delete this template? This action cannot be undone.',
+    }))) return
     const res = await apiFetch(`/invoice-templates/${id}`, { method: 'DELETE' })
     if (res.ok) {
       notifySuccess('Template deleted')
@@ -151,6 +156,7 @@ export default function InvoiceTemplatesPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

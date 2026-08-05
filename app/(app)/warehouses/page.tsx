@@ -25,6 +25,7 @@ import { formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface WarehouseData {
   id: string
@@ -48,6 +49,7 @@ export default function WarehousesPage() {
   const searchParams = useSearchParams()
   const { user, loading: authLoading } = useAuth()
   const { showSuccessToast, showErrorToast } = useFormErrors()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -55,9 +57,6 @@ export default function WarehousesPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [stateFilter, setStateFilter] = useState('all')
   const [selectedWarehouses, setSelectedWarehouses] = useState<Set<string>>(new Set())
-  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false)
-  const [isBulkStatusConfirmOpen, setIsBulkStatusConfirmOpen] = useState(false)
-  const [bulkStatusAction, setBulkStatusAction] = useState<'enable' | 'disable'>('enable')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingWarehouse, setEditingWarehouse] = useState<WarehouseData | null>(null)
@@ -134,12 +133,12 @@ export default function WarehousesPage() {
     }
   }
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (deletableSelectedCount === 0) return
-    setIsBulkDeleteConfirmOpen(true)
-  }
-
-  const confirmBulkDelete = async () => {
+    if (!(await confirm({
+      title: 'Confirm bulk delete',
+      description: `Delete ${deletableSelectedCount} selected warehouse${deletableSelectedCount === 1 ? '' : 's'}? Default warehouses will be skipped and cannot be deleted.`,
+    }))) return
     try {
       const res = await apiFetch('/warehouses/bulk/delete', {
         method: 'POST',
@@ -148,7 +147,6 @@ export default function WarehousesPage() {
       })
       if (res.ok) {
         setSelectedWarehouses(new Set())
-        setIsBulkDeleteConfirmOpen(false)
         fetchWarehouses()
       }
     } catch (err) {
@@ -156,25 +154,27 @@ export default function WarehousesPage() {
     }
   }
 
-  const handleBulkStatus = (action: 'enable' | 'disable') => {
+  const handleBulkStatus = async (action: 'enable' | 'disable') => {
     if (selectedWarehouses.size === 0) return
-    setBulkStatusAction(action)
-    setIsBulkStatusConfirmOpen(true)
-  }
-
-  const confirmBulkStatus = async () => {
+    if (!(await confirm({
+      title: action === 'enable' ? 'Enable warehouses' : 'Disable warehouses',
+      description: action === 'enable'
+        ? `Enable ${selectedWarehouses.size} selected warehouse${selectedWarehouses.size === 1 ? '' : 's'}?`
+        : `Disable ${selectedWarehouses.size} selected warehouse${selectedWarehouses.size === 1 ? '' : 's'}?`,
+      confirmLabel: action === 'enable' ? 'Enable' : 'Disable',
+      variant: 'default',
+    }))) return
     try {
       const res = await apiFetch('/warehouses/bulk/update-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ids: Array.from(selectedWarehouses),
-          is_active: bulkStatusAction === 'enable',
+          is_active: action === 'enable',
         }),
       })
       if (res.ok) {
         setSelectedWarehouses(new Set())
-        setIsBulkStatusConfirmOpen(false)
         fetchWarehouses()
       }
     } catch (err) {
@@ -326,7 +326,10 @@ export default function WarehousesPage() {
   }
 
   const handleDeleteWarehouse = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this warehouse?')) return
+    if (!(await confirm({
+      title: 'Delete warehouse?',
+      description: 'Are you sure you want to delete this warehouse? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/warehouses/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -812,48 +815,7 @@ export default function WarehousesPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isBulkDeleteConfirmOpen} onOpenChange={setIsBulkDeleteConfirmOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Confirm Bulk Delete</DialogTitle>
-            </DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Delete {deletableSelectedCount} selected warehouse{deletableSelectedCount === 1 ? '' : 's'}?
-              Default warehouses will be skipped and cannot be deleted.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsBulkDeleteConfirmOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={confirmBulkDelete}>
-                Delete
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={isBulkStatusConfirmOpen} onOpenChange={setIsBulkStatusConfirmOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {bulkStatusAction === 'enable' ? 'Enable Warehouses' : 'Disable Warehouses'}
-              </DialogTitle>
-            </DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              {bulkStatusAction === 'enable'
-                ? `Enable ${selectedWarehouses.size} selected warehouse${selectedWarehouses.size === 1 ? '' : 's'}?`
-                : `Disable ${selectedWarehouses.size} selected warehouse${selectedWarehouses.size === 1 ? '' : 's'}?`}
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsBulkStatusConfirmOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={confirmBulkStatus}>
-                {bulkStatusAction === 'enable' ? 'Enable' : 'Disable'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {confirmDialog}
       </div>
     </DashboardLayout>
   )

@@ -23,6 +23,7 @@ import PaginationControls from '@/components/ui/pagination-controls'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { formatDate } from '@/lib/utils'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface Staff {
   id: string
@@ -48,6 +49,7 @@ interface Staff {
 
 export default function StaffPage() {
   const { user, loading: authLoading } = useAuth()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -58,9 +60,6 @@ export default function StaffPage() {
   const [selectedStaff, setSelectedStaff] = useState<Set<string>>(new Set())
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null)
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
-  const [staffToDelete, setStaffToDelete] = useState<string | null>(null)
-  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false)
   const [isBulkStatusConfirmOpen, setIsBulkStatusConfirmOpen] = useState(false)
   const [bulkStatusAction, setBulkStatusAction] = useState<'enable' | 'disable'>('disable')
   const [isStatusConfirmOpen, setIsStatusConfirmOpen] = useState(false)
@@ -172,18 +171,14 @@ export default function StaffPage() {
     setIsDialogOpen(true)
   }
 
-  const handleDelete = (id: string) => {
-    setStaffToDelete(id)
-    setIsDeleteConfirmOpen(true)
-  }
-
-  const confirmDelete = async () => {
-    if (!staffToDelete) return
+  const handleDelete = async (id: string) => {
+    if (!(await confirm({
+      title: 'Delete staff member?',
+      description: 'Are you sure you want to delete this staff member? This action cannot be undone.',
+    }))) return
     try {
-      const res = await apiFetch(`/staff/${staffToDelete}`, { method: 'DELETE' })
+      const res = await apiFetch(`/staff/${id}`, { method: 'DELETE' })
       if (res.ok) {
-        setIsDeleteConfirmOpen(false)
-        setStaffToDelete(null)
         fetchStaffs()
       }
     } catch (err) { console.error(err) }
@@ -228,12 +223,12 @@ export default function StaffPage() {
     }
   }
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (selectedStaff.size === 0) return
-    setIsBulkDeleteConfirmOpen(true)
-  }
-
-  const confirmBulkDelete = async () => {
+    if (!(await confirm({
+      title: 'Delete staff members?',
+      description: `Are you sure you want to delete ${selectedStaff.size} staff members? This action cannot be undone.`,
+    }))) return
     try {
       const res = await apiFetch('/staff/bulk/delete', {
         method: 'POST',
@@ -242,7 +237,6 @@ export default function StaffPage() {
       })
       if (res.ok) {
         setSelectedStaff(new Set())
-        setIsBulkDeleteConfirmOpen(false)
         fetchStaffs()
       }
     } catch (err) { console.error(err) }
@@ -578,32 +572,6 @@ export default function StaffPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Confirm Delete</DialogTitle></DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Are you sure you want to delete this staff member? This action cannot be undone.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={isBulkDeleteConfirmOpen} onOpenChange={setIsBulkDeleteConfirmOpen}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Confirm Bulk Delete</DialogTitle></DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Are you sure you want to delete {selectedStaff.size} staff members? This action cannot be undone.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsBulkDeleteConfirmOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={confirmBulkDelete}>Delete</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
         <Dialog open={isBulkStatusConfirmOpen} onOpenChange={setIsBulkStatusConfirmOpen}>
           <DialogContent>
             <DialogHeader>
@@ -633,6 +601,7 @@ export default function StaffPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {confirmDialog}
       </div>
     </DashboardLayout>
   )

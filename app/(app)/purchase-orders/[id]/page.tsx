@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatCurrency } from '@/lib/utils'
 import { ArrowLeft, Loader2, Send, Trash2, Pencil } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface Party {
   id: string
@@ -51,6 +52,7 @@ interface PurchaseOrder {
 export default function PurchaseOrderDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [order, setOrder] = useState<PurchaseOrder | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -80,7 +82,12 @@ export default function PurchaseOrderDetailPage() {
   }
 
   const handleSubmit = async () => {
-    if (!confirm('Are you sure you want to submit this purchase order?')) return
+    if (!(await confirm({
+      title: 'Submit purchase order?',
+      description: 'Are you sure you want to submit this purchase order?',
+      confirmLabel: 'Submit',
+      variant: 'default',
+    }))) return
     setSubmitting(true)
     try {
       const res = await apiFetch(`/purchase/orders/${params.id}/submit`, { method: 'POST' })
@@ -97,7 +104,10 @@ export default function PurchaseOrderDetailPage() {
   }
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this purchase order?')) return
+    if (!(await confirm({
+      title: 'Delete purchase order?',
+      description: 'Are you sure you want to delete this purchase order? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/purchase/orders/${params.id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -300,6 +310,7 @@ export default function PurchaseOrderDetailPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

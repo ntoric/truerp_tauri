@@ -18,6 +18,7 @@ import {
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, CreditCard, MoreVertical, Trash2, Search } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface Payment {
@@ -46,6 +47,7 @@ interface Party {
 }
 
 export default function PaymentsPage() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [payments, setPayments] = useState<Payment[]>([])
   const [parties, setParties] = useState<Party[]>([])
   const [loading, setLoading] = useState(true)
@@ -176,7 +178,10 @@ export default function PaymentsPage() {
   }
 
   const handleDeletePayment = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this payment?')) return
+    if (!(await confirm({
+      title: 'Delete payment?',
+      description: 'Are you sure you want to delete this payment? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/payments/${id}`, { method: 'DELETE' })
       if (res.ok) fetchPayments()
@@ -218,7 +223,10 @@ export default function PaymentsPage() {
   }
 
   const handleBulkDeletePayments = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedPayments.size} payment(s)?`)) return
+    if (!(await confirm({
+      title: 'Delete payments?',
+      description: `Are you sure you want to delete ${selectedPayments.size} payment(s)? This action cannot be undone.`,
+    }))) return
     try {
       await Promise.all(
         Array.from(selectedPayments).map(id => apiFetch(`/payments/${id}`, { method: 'DELETE' }))
@@ -497,6 +505,7 @@ export default function PaymentsPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

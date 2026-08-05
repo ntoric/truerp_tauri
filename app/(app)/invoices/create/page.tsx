@@ -17,6 +17,7 @@ import { notifyError, notifySuccess } from '@/lib/notify'
 import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { computeLoyaltyDiscount, estimatePointsEarned } from '@/lib/loyalty'
@@ -89,6 +90,7 @@ export default function CreateInvoicePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editId = searchParams.get('id')
+  const { confirm, confirmDialog } = useConfirmDialog()
   const {
     fieldErrors,
     clearFieldError,
@@ -849,6 +851,10 @@ export default function CreateInvoicePage() {
   }
 
   const handleDeleteDraft = async (draftId: string) => {
+    if (!(await confirm({
+      title: 'Delete draft?',
+      description: 'Are you sure you want to delete this draft? This action cannot be undone.',
+    }))) return
     try {
       await apiFetch(`/drafts/${draftId}`, { method: 'DELETE' })
       fetchDrafts()
@@ -1639,6 +1645,7 @@ export default function CreateInvoicePage() {
         )}
 
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

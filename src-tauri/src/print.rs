@@ -78,26 +78,48 @@ pub fn print_pdf(
     result
 }
 
-/// Save a PDF to the user's Downloads folder and open it (WKWebView cannot rely on `<a download>`).
-#[tauri::command]
-pub fn save_pdf(pdf_base64: String, filename: String) -> Result<String, String> {
-    let data = decode_pdf_base64(&pdf_base64)?;
-    let stem = {
-        let trimmed = filename.trim();
-        let without_ext = trimmed
-            .strip_suffix(".pdf")
-            .or_else(|| trimmed.strip_suffix(".PDF"))
-            .unwrap_or(trimmed);
-        sanitize_file_stem(without_ext)
-    };
-    let name = format!("{stem}.pdf");
+fn decode_bytes_base64(data_base64: &str) -> Result<Vec<u8>, String> {
+    let mut raw = data_base64.trim().to_string();
+    if raw.is_empty() {
+        return Err("empty file content".into());
+    }
+    if let Some(i) = raw.find("base64,") {
+        raw = raw[i + "base64,".len()..].to_string();
+    }
+    base64::engine::general_purpose::STANDARD
+        .decode(raw.as_bytes())
+        .map_err(|e| format!("invalid file base64: {e}"))
+}
 
+fn sanitize_download_filename(filename: &str, default_ext: &str) -> String {
+    let trimmed = filename.trim();
+    let (stem_raw, ext_raw) = match trimmed.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() && ext.len() <= 8 => {
+            (stem, ext)
+        }
+        _ => (trimmed, default_ext.trim_start_matches('.')),
+    };
+    let stem = sanitize_file_stem(stem_raw);
+    let mut ext = String::new();
+    for ch in ext_raw.chars() {
+        if ch.is_ascii_alphanumeric() {
+            ext.push(ch.to_ascii_lowercase());
+        }
+    }
+    if ext.is_empty() {
+        format!("{stem}.{default_ext}")
+    } else {
+        format!("{stem}.{ext}")
+    }
+}
+
+fn write_downloads_file(name: &str, data: &[u8]) -> Result<String, String> {
     let dir = dirs::download_dir()
         .or_else(dirs::document_dir)
         .unwrap_or_else(std::env::temp_dir);
     fs::create_dir_all(&dir).map_err(|e| format!("create downloads dir: {e}"))?;
 
-    let mut path = dir.join(&name);
+    let mut path = dir.join(name);
     if path.exists() {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -106,9 +128,28 @@ pub fn save_pdf(pdf_base64: String, filename: String) -> Result<String, String> 
         path = dir.join(format!("{nanos}-{name}"));
     }
 
-    fs::write(&path, &data).map_err(|e| format!("write PDF: {e}"))?;
+    fs::write(&path, data).map_err(|e| format!("write file: {e}"))?;
     open_saved_file(&path)?;
     Ok(path.display().to_string())
+}
+
+/// Save a PDF to the user's Downloads folder and open it (WKWebView cannot rely on `<a download>`).
+#[tauri::command]
+pub fn save_pdf(pdf_base64: String, filename: String) -> Result<String, String> {
+    let data = decode_pdf_base64(&pdf_base64)?;
+    let name = sanitize_download_filename(&filename, "pdf");
+    write_downloads_file(&name, &data)
+}
+
+/// Save arbitrary bytes (CSV/Excel/etc.) to Downloads — same WKWebView limitation as PDFs.
+#[tauri::command]
+pub fn save_file(data_base64: String, filename: String) -> Result<String, String> {
+    let data = decode_bytes_base64(&data_base64)?;
+    if data.is_empty() {
+        return Err("empty file content".into());
+    }
+    let name = sanitize_download_filename(&filename, "bin");
+    write_downloads_file(&name, &data)
 }
 
 #[cfg(target_os = "macos")]

@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatCurrency } from '@/lib/utils'
 import { ArrowLeft, Loader2, Send, Trash2, Pencil } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface Party {
   id: string
@@ -56,6 +57,7 @@ interface CreditNote {
 export default function CreditNoteDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [creditNote, setCreditNote] = useState<CreditNote | null>(null)
   const [loading, setLoading] = useState(true)
   const [issuing, setIssuing] = useState(false)
@@ -85,7 +87,12 @@ export default function CreditNoteDetailPage() {
   }
 
   const handleIssue = async () => {
-    if (!confirm('Are you sure you want to issue this credit note? This will update the linked invoice.')) return
+    if (!(await confirm({
+      title: 'Issue credit note?',
+      description: 'Are you sure you want to issue this credit note? This will update the linked invoice.',
+      confirmLabel: 'Issue',
+      variant: 'default',
+    }))) return
     setIssuing(true)
     try {
       const res = await apiFetch(`/credit-notes/${params.id}/issue`, { method: 'POST' })
@@ -102,7 +109,10 @@ export default function CreditNoteDetailPage() {
   }
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this credit note?')) return
+    if (!(await confirm({
+      title: 'Delete credit note?',
+      description: 'Are you sure you want to delete this credit note? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/credit-notes/${params.id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -307,6 +317,7 @@ export default function CreditNoteDetailPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

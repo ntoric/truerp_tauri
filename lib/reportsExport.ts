@@ -2,12 +2,12 @@ import { accountingExportDateStamp, downloadCsv, downloadJson, rowsToCsv } from 
 
 export const reportsExportDateStamp = accountingExportDateStamp
 
-export function exportReportCsv(baseName: string, rows: (string | number | null | undefined)[][]) {
-  downloadCsv(`${baseName}-${reportsExportDateStamp()}`, rows)
+export async function exportReportCsv(baseName: string, rows: (string | number | null | undefined)[][]) {
+  await downloadCsv(`${baseName}-${reportsExportDateStamp()}`, rows)
 }
 
-export function exportReportJson(baseName: string, data: unknown) {
-  downloadJson(`${baseName}-${reportsExportDateStamp()}`, data)
+export async function exportReportJson(baseName: string, data: unknown) {
+  await downloadJson(`${baseName}-${reportsExportDateStamp()}`, data)
 }
 
 export function salesReportCsvRows(data: {

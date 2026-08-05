@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
   PaymentMethodMapping,
@@ -75,6 +76,7 @@ interface CashBankSummary {
 
 export default function CashBankPage() {
   const { user, loading: authLoading } = useAuth()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [summary, setSummary] = useState<CashBankSummary | null>(null)
   const [transactions, setTransactions] = useState<CashTransaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -290,7 +292,10 @@ export default function CashBankPage() {
   }
 
   const handleDeleteAccount = async (accountId: string) => {
-    if (!confirm('Are you sure you want to delete this account?')) return
+    if (!(await confirm({
+      title: 'Delete account?',
+      description: 'Are you sure you want to delete this account? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/cash-bank/accounts/${accountId}`, { method: 'DELETE' })
       if (res.ok) fetchData()
@@ -336,7 +341,10 @@ export default function CashBankPage() {
   }
 
   const handleDeleteTransaction = async (transactionId: string) => {
-    if (!confirm('Are you sure you want to delete this transaction?')) return
+    if (!(await confirm({
+      title: 'Delete transaction?',
+      description: 'Are you sure you want to delete this transaction? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/cash-bank/transactions/${transactionId}`, { method: 'DELETE' })
       if (res.ok) fetchData()
@@ -877,6 +885,7 @@ export default function CashBankPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

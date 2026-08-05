@@ -31,12 +31,13 @@ import {
 import { Plus, Pencil, Trash2, FileText, Power, MoreVertical, Download } from 'lucide-react'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { Checkbox } from '@/components/ui/checkbox'
-import { notifySuccess } from '@/lib/notify'
+import { notifyError, notifySuccess } from '@/lib/notify'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { cn, formatDate } from '@/lib/utils'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 interface Category {
   id: string
@@ -55,6 +56,7 @@ export default function CategoriesPage() {
     validateRequired,
     handleApiError,
   } = useFormErrors()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -62,15 +64,9 @@ export default function CategoriesPage() {
   const [drafts, setDrafts] = useState<any[]>([])
   const [loadingDraft, setLoadingDraft] = useState(false)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
-  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null)
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set())
-  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false)
   const [isBulkStatusConfirmOpen, setIsBulkStatusConfirmOpen] = useState(false)
   const [bulkStatusAction, setBulkStatusAction] = useState<'enable' | 'disable'>('disable')
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
-  const [confirmAction, setConfirmAction] = useState<'disable' | null>(null)
-  const [confirmCategoryId, setConfirmCategoryId] = useState<string | null>(null)
   const [formData, setFormData] = useState({ name: '', description: '', is_active: true })
 
   useEffect(() => {
@@ -115,18 +111,14 @@ export default function CategoriesPage() {
     setIsDialogOpen(true)
   }
 
-  const handleDelete = (id: string) => {
-    setCategoryToDelete(id)
-    setIsDeleteConfirmOpen(true)
-  }
-
-  const confirmDelete = async () => {
-    if (!categoryToDelete) return
+  const handleDelete = async (id: string) => {
+    if (!(await confirm({
+      title: 'Delete category?',
+      description: 'Are you sure you want to delete this category? This action cannot be undone.',
+    }))) return
     try {
-      const res = await apiFetch(`/categories/${categoryToDelete}`, { method: 'DELETE' })
+      const res = await apiFetch(`/categories/${id}`, { method: 'DELETE' })
       if (res.ok) {
-        setIsDeleteConfirmOpen(false)
-        setCategoryToDelete(null)
         fetchCategories()
       }
     } catch (err) { console.error(err) }
@@ -176,48 +168,53 @@ export default function CategoriesPage() {
   }
 
   const handleDeleteDraft = async (draftId: string) => {
+    if (!(await confirm({
+      title: 'Delete draft?',
+      description: 'Are you sure you want to delete this draft? This action cannot be undone.',
+    }))) return
     try {
       await apiFetch(`/drafts/${draftId}`, { method: 'DELETE' })
       fetchDrafts()
     } catch (err) { console.error(err) }
   }
 
-  const handleToggleActive = (categoryId: string, currentStatus: boolean) => {
-    setConfirmAction('disable')
-    setConfirmCategoryId(categoryId)
-    setShowConfirmDialog(true)
-  }
-
-  const handleConfirmAction = async () => {
-    if (confirmAction === 'disable' && confirmCategoryId) {
-      const category = categories.find(c => c.id === confirmCategoryId)
-      if (category) {
-        try {
-          const res = await apiFetch(`/categories/${confirmCategoryId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              name: category.name,
-              description: category.description,
-              is_active: !category.is_active
-            })
-          })
-          if (res.ok) {
-            fetchCategories()
-          }
-        } catch (err) { console.error(err) }
+  const handleToggleActive = async (categoryId: string, currentStatus: boolean) => {
+    const category = categories.find(c => c.id === categoryId)
+    if (!category) return
+    const enabling = category.is_active
+    if (!(await confirm({
+      title: enabling ? 'Disable category?' : 'Enable category?',
+      description: enabling
+        ? 'Are you sure you want to disable this category? This will also disable all products in this category.'
+        : 'Are you sure you want to enable this category? This will also enable all products in this category.',
+      confirmLabel: enabling ? 'Disable' : 'Enable',
+      variant: 'default',
+    }))) return
+    try {
+      const res = await apiFetch(`/categories/${categoryId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: category.name,
+          description: category.description,
+          is_active: !category.is_active
+        })
+      })
+      if (res.ok) {
+        fetchCategories()
       }
-    }
-    setShowConfirmDialog(false)
-    setConfirmAction(null)
-    setConfirmCategoryId(null)
+    } catch (err) { console.error(err) }
   }
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const exportList =
       selectedCategories.size > 0
         ? categories.filter((cat) => selectedCategories.has(cat.id))
         : categories
+    if (exportList.length === 0) {
+      notifyError('No categories to export')
+      return
+    }
     const rows: (string | number)[][] = [
       ['Name', 'Description', 'Status', 'Created', 'Last Modified'],
       ...exportList.map((cat) => [
@@ -228,7 +225,17 @@ export default function CategoriesPage() {
         cat.updated_at ? formatDate(cat.updated_at) : '',
       ]),
     ]
-    downloadCsv(`categories_${accountingExportDateStamp()}.csv`, rows)
+    try {
+      await downloadCsv(`categories_${accountingExportDateStamp()}.csv`, rows)
+      notifySuccess(
+        selectedCategories.size > 0
+          ? `Exported ${exportList.length} selected categories`
+          : `Exported ${exportList.length} categories`
+      )
+    } catch (err) {
+      console.error(err)
+      notifyError(err instanceof Error ? err.message : 'Failed to export categories')
+    }
   }
 
   const handleSelectCategory = (id: string) => {
@@ -246,12 +253,12 @@ export default function CategoriesPage() {
     }
   }
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (selectedCategories.size === 0) return
-    setIsBulkDeleteConfirmOpen(true)
-  }
-
-  const confirmBulkDelete = async () => {
+    if (!(await confirm({
+      title: 'Delete categories?',
+      description: `Are you sure you want to delete ${selectedCategories.size} categories? This action cannot be undone.`,
+    }))) return
     try {
       const res = await apiFetch('/categories/bulk/delete', {
         method: 'POST',
@@ -260,7 +267,6 @@ export default function CategoriesPage() {
       })
       if (res.ok) {
         setSelectedCategories(new Set())
-        setIsBulkDeleteConfirmOpen(false)
         fetchCategories()
       }
     } catch (err) {
@@ -485,36 +491,6 @@ export default function CategoriesPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Confirm Delete</DialogTitle>
-            </DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Are you sure you want to delete this category? This action cannot be undone.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={isBulkDeleteConfirmOpen} onOpenChange={setIsBulkDeleteConfirmOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Confirm Bulk Delete</DialogTitle>
-            </DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Are you sure you want to delete {selectedCategories.size} categories? This action cannot be undone.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsBulkDeleteConfirmOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={confirmBulkDelete}>Delete</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
         <Dialog open={isBulkStatusConfirmOpen} onOpenChange={setIsBulkStatusConfirmOpen}>
           <DialogContent>
             <DialogHeader>
@@ -535,31 +511,7 @@ export default function CategoriesPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {confirmAction === 'disable' ? 'Disable Category' : 'Enable Category'}
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                {confirmAction === 'disable' 
-                  ? 'Are you sure you want to disable this category? This will also disable all products in this category.' 
-                  : 'Are you sure you want to enable this category? This will also enable all products in this category.'}
-              </p>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
-                  Cancel
-                </Button>
-                <Button variant="destructive" onClick={handleConfirmAction}>
-                  {confirmAction === 'disable' ? 'Disable' : 'Enable'}
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        {confirmDialog}
       </div>
     </DashboardLayout>
   )

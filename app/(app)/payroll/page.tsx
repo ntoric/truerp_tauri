@@ -22,6 +22,7 @@ import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { formatDate } from '@/lib/utils'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import {
   useBankAccounts,
   CASH_IN_HAND_ACCOUNT,
@@ -108,6 +109,7 @@ function formatPaidFrom(payroll: Payroll) {
 export default function PayrollPage() {
   const { user, loading: authLoading } = useAuth()
   const { accounts: bankAccounts, primaryAccount } = useBankAccounts()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [payrolls, setPayrolls] = useState<Payroll[]>([])
   const [stats, setStats] = useState<PayrollStats | null>(null)
@@ -122,9 +124,6 @@ export default function PayrollPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingPayroll, setEditingPayroll] = useState<Payroll | null>(null)
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
-  const [payrollToDelete, setPayrollToDelete] = useState<string | null>(null)
-  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false)
   const [isBulkStatusConfirmOpen, setIsBulkStatusConfirmOpen] = useState(false)
   const [bulkStatus, setBulkStatus] = useState<'paid' | 'pending'>('paid')
   const [paymentNumber, setPaymentNumber] = useState('')
@@ -311,18 +310,14 @@ export default function PayrollPage() {
     } catch (err) { console.error(err) }
   }
 
-  const handleDelete = (id: string) => {
-    setPayrollToDelete(id)
-    setIsDeleteConfirmOpen(true)
-  }
-
-  const confirmDelete = async () => {
-    if (!payrollToDelete) return
+  const handleDelete = async (id: string) => {
+    if (!(await confirm({
+      title: 'Delete payroll record?',
+      description: 'Are you sure you want to delete this payroll record? This action cannot be undone.',
+    }))) return
     try {
-      const res = await apiFetch(`/payroll/${payrollToDelete}`, { method: 'DELETE' })
+      const res = await apiFetch(`/payroll/${id}`, { method: 'DELETE' })
       if (res.ok) {
-        setIsDeleteConfirmOpen(false)
-        setPayrollToDelete(null)
         refreshData()
       }
     } catch (err) { console.error(err) }
@@ -343,12 +338,12 @@ export default function PayrollPage() {
     }
   }
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (selectedPayrolls.size === 0) return
-    setIsBulkDeleteConfirmOpen(true)
-  }
-
-  const confirmBulkDelete = async () => {
+    if (!(await confirm({
+      title: 'Delete payroll records?',
+      description: `Are you sure you want to delete ${selectedPayrolls.size} payroll records? This action cannot be undone.`,
+    }))) return
     try {
       const res = await apiFetch('/payroll/bulk/delete', {
         method: 'POST',
@@ -357,7 +352,6 @@ export default function PayrollPage() {
       })
       if (res.ok) {
         setSelectedPayrolls(new Set())
-        setIsBulkDeleteConfirmOpen(false)
         refreshData()
       }
     } catch (err) { console.error(err) }
@@ -904,32 +898,6 @@ export default function PayrollPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Confirm Delete</DialogTitle></DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Are you sure you want to delete this payroll record? This action cannot be undone.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={isBulkDeleteConfirmOpen} onOpenChange={setIsBulkDeleteConfirmOpen}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Confirm Bulk Delete</DialogTitle></DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Are you sure you want to delete {selectedPayrolls.size} payroll records? This action cannot be undone.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsBulkDeleteConfirmOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={confirmBulkDelete}>Delete</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
         <Dialog open={isBulkStatusConfirmOpen} onOpenChange={setIsBulkStatusConfirmOpen}>
           <DialogContent>
             <DialogHeader>
@@ -944,6 +912,7 @@ export default function PayrollPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {confirmDialog}
       </div>
     </DashboardLayout>
   )

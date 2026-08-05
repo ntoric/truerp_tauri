@@ -24,6 +24,7 @@ import {
 import JSZip from 'jszip'
 import { Plus, Trash2, Info, BookOpen, CheckCircle, Eye, Download, MoreVertical } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface Account {
@@ -155,6 +156,7 @@ function ExportActions({ onCsv, onJson }: { onCsv: () => void; onJson: () => voi
 export default function AccountingPage() {
   const { user, loading: authLoading } = useAuth()
   const { toast } = useToast()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const { accounts: bankAccounts, refresh: refreshBankAccounts } = useBankAccounts()
 
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -319,7 +321,10 @@ export default function AccountingPage() {
   }
 
   const handleDeleteAccount = async (id: string) => {
-    if (!confirm('Delete this account?')) return
+    if (!(await confirm({
+      title: 'Delete account?',
+      description: 'Are you sure you want to delete this account? This action cannot be undone.',
+    }))) return
     const res = await apiFetch(`/accounting/accounts/${id}`, { method: 'DELETE' })
     if (res.ok) await refreshAll()
     else {
@@ -374,7 +379,10 @@ export default function AccountingPage() {
   }
 
   const handleDeleteJournal = async (id: string) => {
-    if (!confirm('Delete this draft journal entry?')) return
+    if (!(await confirm({
+      title: 'Delete draft journal entry?',
+      description: 'Are you sure you want to delete this draft journal entry? This action cannot be undone.',
+    }))) return
     const res = await apiFetch(`/accounting/journal/${id}`, { method: 'DELETE' })
     if (res.ok) await refreshAll()
   }
@@ -427,7 +435,10 @@ export default function AccountingPage() {
   const handleBulkDeleteAccounts = async () => {
     const eligible = accounts.filter(a => selectedAccounts.has(a.id) && !a.is_default)
     if (eligible.length === 0) return
-    if (!confirm(`Delete ${eligible.length} account(s)?`)) return
+    if (!(await confirm({
+      title: `Delete ${eligible.length} account(s)?`,
+      description: `Are you sure you want to delete ${eligible.length} account(s)? This action cannot be undone.`,
+    }))) return
     try {
       await Promise.all(
         eligible.map(a => apiFetch(`/accounting/accounts/${a.id}`, { method: 'DELETE' }))
@@ -482,7 +493,10 @@ export default function AccountingPage() {
   const handleBulkDeleteJournals = async () => {
     const eligible = journalEntries.filter(j => selectedJournals.has(j.id) && j.status === 'draft')
     if (eligible.length === 0) return
-    if (!confirm(`Delete ${eligible.length} draft journal entr${eligible.length === 1 ? 'y' : 'ies'}?`)) return
+    if (!(await confirm({
+      title: `Delete ${eligible.length} draft journal entr${eligible.length === 1 ? 'y' : 'ies'}?`,
+      description: `Are you sure you want to delete ${eligible.length} draft journal entr${eligible.length === 1 ? 'y' : 'ies'}? This action cannot be undone.`,
+    }))) return
     try {
       await Promise.all(
         eligible.map(j => apiFetch(`/accounting/journal/${j.id}`, { method: 'DELETE' }))
@@ -1852,6 +1866,7 @@ export default function AccountingPage() {
           </DialogContent>
         </Dialog>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

@@ -18,6 +18,7 @@ import {
 import { Plus, Edit, Trash2, MoreVertical, Eye, CheckCircle } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface Party {
@@ -58,6 +59,7 @@ interface PurchaseBill {
 export default function PurchasesPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [receipts, setReceipts] = useState<PurchaseReceipt[]>([])
   const [bills, setBills] = useState<PurchaseBill[]>([])
@@ -94,7 +96,10 @@ export default function PurchasesPage() {
   }
 
   const handleDeleteOrder = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this purchase order?')) return
+    if (!(await confirm({
+      title: 'Delete purchase order?',
+      description: 'Are you sure you want to delete this purchase order? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/purchase/orders/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -134,7 +139,10 @@ export default function PurchasesPage() {
   }
 
   const handleDeleteBill = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this bill?')) return
+    if (!(await confirm({
+      title: 'Delete bill?',
+      description: 'Are you sure you want to delete this bill? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/purchase/bills/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -326,6 +334,7 @@ export default function PurchasesPage() {
           </TabsContent>
         </Tabs>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

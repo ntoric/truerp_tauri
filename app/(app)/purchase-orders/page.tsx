@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Plus, Eye, Pencil, Trash2 } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface Party {
@@ -30,6 +31,7 @@ interface PurchaseOrder {
 export default function PurchaseOrdersPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -61,7 +63,10 @@ export default function PurchaseOrdersPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this purchase order?')) return
+    if (!(await confirm({
+      title: 'Delete purchase order?',
+      description: 'Are you sure you want to delete this purchase order? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/purchase/orders/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -145,6 +150,7 @@ export default function PurchaseOrdersPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

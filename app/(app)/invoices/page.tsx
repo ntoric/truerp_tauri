@@ -21,6 +21,7 @@ import { notifyError, notifySuccess } from '@/lib/notify'
 import { downloadInvoicePdf } from '@/lib/printDocument'
 import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2 } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface Invoice {
@@ -66,6 +67,7 @@ const INVOICE_IMPORT_SAMPLE_ROWS: (string | number)[][] = [
 ]
 
 export default function InvoicesPage() {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [stats, setStats] = useState<InvoiceStats>({ total_sales: 0, paid: 0, unpaid: 0, cancelled: 0 })
   const [loading, setLoading] = useState(true)
@@ -265,7 +267,10 @@ export default function InvoicesPage() {
   }
 
   const handleDeleteInvoice = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this invoice?')) return
+    if (!(await confirm({
+      title: 'Delete invoice?',
+      description: 'Are you sure you want to delete this invoice? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/invoices/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -372,7 +377,10 @@ export default function InvoicesPage() {
   }
 
   const handleBulkDeleteInvoices = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedInvoices.size} invoice(s)?`)) return
+    if (!(await confirm({
+      title: `Delete ${selectedInvoices.size} invoice(s)?`,
+      description: `Are you sure you want to delete ${selectedInvoices.size} invoice(s)? This action cannot be undone.`,
+    }))) return
     try {
       await Promise.all(
         Array.from(selectedInvoices).map(id => apiFetch(`/invoices/${id}`, { method: 'DELETE' }))
@@ -847,6 +855,7 @@ export default function InvoicesPage() {
         </DialogContent>
       </Dialog>
 
+      {confirmDialog}
     </DashboardLayout>
   )
 }

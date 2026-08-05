@@ -20,6 +20,7 @@ import { formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface Party {
@@ -46,6 +47,7 @@ interface DebitNote {
 export default function DebitNotesPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [debitNotes, setDebitNotes] = useState<DebitNote[]>([])
   const [vendors, setVendors] = useState<Party[]>([])
   const [loading, setLoading] = useState(true)
@@ -172,7 +174,10 @@ export default function DebitNotesPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this debit note?')) return
+    if (!(await confirm({
+      title: 'Delete debit note?',
+      description: 'Are you sure you want to delete this debit note? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/debit-notes/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -356,6 +361,7 @@ export default function DebitNotesPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

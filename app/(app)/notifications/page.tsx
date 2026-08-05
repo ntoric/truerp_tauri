@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 type NotificationTypeKey = 'invoice_due' | 'payment_due' | 'overdue'
 
@@ -151,6 +152,7 @@ function mergePreferences(apiPrefs: NotificationPreference[]): Record<Notificati
 
 export default function NotificationsPage() {
   const searchParams = useSearchParams()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [activeTab, setActiveTab] = useState('preferences')
   const [loading, setLoading] = useState(true)
   const [savingType, setSavingType] = useState<NotificationTypeKey | null>(null)
@@ -301,6 +303,10 @@ export default function NotificationsPage() {
   }
 
   const deleteNotification = async (id: string) => {
+    if (!(await confirm({
+      title: 'Delete notification?',
+      description: 'Are you sure you want to delete this notification? This action cannot be undone.',
+    }))) return
     const res = await apiFetch(`/notifications/${id}`, { method: 'DELETE' })
     if (res.ok) {
       await fetchNotifications()
@@ -332,6 +338,10 @@ export default function NotificationsPage() {
   }
 
   const deleteTemplate = async (id: string) => {
+    if (!(await confirm({
+      title: 'Delete template?',
+      description: 'Are you sure you want to delete this notification template? This action cannot be undone.',
+    }))) return
     await apiFetch(`/notifications/templates/${id}`, { method: 'DELETE' })
     await fetchTemplates()
   }
@@ -352,6 +362,10 @@ export default function NotificationsPage() {
   }
 
   const deleteReminder = async (id: string) => {
+    if (!(await confirm({
+      title: 'Delete reminder?',
+      description: 'Are you sure you want to delete this reminder? This action cannot be undone.',
+    }))) return
     await apiFetch(`/settings/reminders/${id}`, { method: 'DELETE' })
     await fetchReminders()
   }
@@ -771,6 +785,7 @@ export default function NotificationsPage() {
           </TabsContent>
         </Tabs>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

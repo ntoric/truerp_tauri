@@ -19,6 +19,7 @@ import { Plus, Eye, Pencil, Trash2, MoreVertical, Search } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface Party {
@@ -45,6 +46,7 @@ interface CreditNote {
 export default function CreditNotesPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set())
@@ -109,7 +111,10 @@ export default function CreditNotesPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this credit note?')) return
+    if (!(await confirm({
+      title: 'Delete credit note?',
+      description: 'Are you sure you want to delete this credit note? This action cannot be undone.',
+    }))) return
     try {
       const res = await apiFetch(`/credit-notes/${id}`, { method: 'DELETE' })
       if (res.ok) {
@@ -145,7 +150,10 @@ export default function CreditNotesPage() {
       notifyError('Only draft credit notes can be deleted')
       return
     }
-    if (!confirm(`Are you sure you want to delete ${eligible.length} credit note(s)?`)) return
+    if (!(await confirm({
+      title: 'Delete credit notes?',
+      description: `Are you sure you want to delete ${eligible.length} credit note(s)? This action cannot be undone.`,
+    }))) return
     try {
       await Promise.all(
         eligible.map(note => apiFetch(`/credit-notes/${note.id}`, { method: 'DELETE' }))
@@ -308,6 +316,7 @@ export default function CreditNotesPage() {
           </CardContent>
         </Card>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

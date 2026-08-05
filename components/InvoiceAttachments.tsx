@@ -5,6 +5,7 @@ import { apiFetch } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Paperclip, Trash2, Upload, ExternalLink } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
 export interface InvoiceAttachment {
   id: string
@@ -26,6 +27,7 @@ function formatFileSize(bytes: number) {
 }
 
 export default function InvoiceAttachments({ invoiceId }: InvoiceAttachmentsProps) {
+  const { confirm, confirmDialog } = useConfirmDialog()
   const [files, setFiles] = useState<InvoiceAttachment[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -71,7 +73,10 @@ export default function InvoiceAttachments({ invoiceId }: InvoiceAttachmentsProp
   }
 
   const onDelete = async (id: string) => {
-    if (!confirm('Remove this attachment?')) return
+    if (!(await confirm({
+      title: 'Remove attachment?',
+      description: 'Are you sure you want to remove this attachment? This action cannot be undone.',
+    }))) return
     const res = await apiFetch(`/invoices/${invoiceId}/attachments/${id}`, { method: 'DELETE' })
     if (res.ok) {
       notifySuccess('Attachment removed')
@@ -126,6 +131,7 @@ export default function InvoiceAttachments({ invoiceId }: InvoiceAttachmentsProp
           ))}
         </ul>
       )}
+      {confirmDialog}
     </div>
   )
 }

@@ -32,6 +32,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
   assignableRolesFor,
@@ -119,6 +120,7 @@ async function copyText(text: string, label: string) {
 export default function UserManagementPage() {
   const { user, loading: authLoading } = useAuth()
   const { stores, activeStore } = useStore()
+  const { confirm, confirmDialog } = useConfirmDialog()
   const isSA = !!user && isSuperAdmin(user.role)
   const assignableRoles = useMemo(() => assignableRolesFor(user?.role), [user?.role])
 
@@ -291,7 +293,10 @@ export default function UserManagementPage() {
   }
 
   const handleDeleteUser = async (id: string) => {
-    if (!confirm('Delete this user?')) return
+    if (!(await confirm({
+      title: 'Delete user?',
+      description: 'Are you sure you want to delete this user? This action cannot be undone.',
+    }))) return
     const res = await apiFetch(`/settings/users/${id}`, { method: 'DELETE' })
     if (res.ok) {
       notifySuccess('User deleted')
@@ -332,7 +337,10 @@ export default function UserManagementPage() {
   }
 
   const handleDeleteRole = async (id: string) => {
-    if (!confirm('Delete this role?')) return
+    if (!(await confirm({
+      title: 'Delete role?',
+      description: 'Are you sure you want to delete this role? This action cannot be undone.',
+    }))) return
     const res = await apiFetch(`/compliance/roles/${id}`, { method: 'DELETE' })
     if (res.ok) {
       notifySuccess('Role deleted')
@@ -553,98 +561,6 @@ export default function UserManagementPage() {
     )
   }
 
-  const CreateUserForm = () => (
-    <form onSubmit={handleCreateUser} className="grid gap-4 sm:grid-cols-2">
-      <div className="space-y-2">
-        <Label>Name</Label>
-        <Input
-          value={newUser.name}
-          onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-          required
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Email</Label>
-        <Input
-          type="email"
-          value={newUser.email}
-          onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-          required
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Password</Label>
-        <Input
-          type="password"
-          value={newUser.password}
-          onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-          required
-          minLength={6}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Phone</Label>
-        <Input
-          value={newUser.phone}
-          onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Role</Label>
-        <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value })}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {assignableRoles.map((r) => (
-              <SelectItem key={r.value} value={r.value}>
-                {r.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      {isSA ? (
-        <div className="space-y-2">
-          <Label>Store</Label>
-          <Select
-            value={newUser.store_id || activeStore?.id || ''}
-            onValueChange={(value) => setNewUser({ ...newUser, store_id: value })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select store" />
-            </SelectTrigger>
-            <SelectContent>
-              {stores.filter((s) => s.is_active).map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <Label>Store</Label>
-          <Input
-            value={activeStore?.name || 'Your store'}
-            disabled
-            className="bg-muted"
-          />
-          <p className="text-xs text-muted-foreground">
-            New users are assigned to your store automatically.
-          </p>
-        </div>
-      )}
-      <div className="sm:col-span-2">
-        <Button type="submit" disabled={saving}>
-          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Add user
-        </Button>
-      </div>
-    </form>
-  )
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -684,7 +600,104 @@ export default function UserManagementPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <CreateUserForm />
+                <form onSubmit={handleCreateUser} className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Name</Label>
+                    <Input
+                      value={newUser.name}
+                      onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      value={newUser.email}
+                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Password</Label>
+                    <Input
+                      type="password"
+                      value={newUser.password}
+                      onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                      required
+                      minLength={6}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Phone</Label>
+                    <Input
+                      value={newUser.phone}
+                      onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Role</Label>
+                    <Select
+                      value={newUser.role}
+                      onValueChange={(value) => setNewUser({ ...newUser, role: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {assignableRoles.map((r) => (
+                          <SelectItem key={r.value} value={r.value}>
+                            {r.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {isSA ? (
+                    <div className="space-y-2">
+                      <Label>Store</Label>
+                      <Select
+                        value={newUser.store_id || activeStore?.id || ''}
+                        onValueChange={(value) => setNewUser({ ...newUser, store_id: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select store" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {stores
+                            .filter((s) => s.is_active)
+                            .map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label>Store</Label>
+                      <Input
+                        value={activeStore?.name || 'Your store'}
+                        disabled
+                        className="bg-muted"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        New users are assigned to your store automatically.
+                      </p>
+                    </div>
+                  )}
+                  <div className="sm:col-span-2">
+                    <Button type="submit" disabled={saving}>
+                      {saving ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Add user
+                    </Button>
+                  </div>
+                </form>
                 <UserTable rows={manageableUsers} allowRoleEdit showStore={isSA} />
                 {manageableUsers.length === 0 && (
                   <p className="text-sm text-muted-foreground">No users yet.</p>
@@ -1122,6 +1135,7 @@ export default function UserManagementPage() {
           </TabsContent>
         </Tabs>
       </div>
+      {confirmDialog}
     </DashboardLayout>
   )
 }
