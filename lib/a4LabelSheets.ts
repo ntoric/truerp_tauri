@@ -62,8 +62,16 @@ export const A4_LABEL_SHEET_PRESETS: A4LabelSheetPreset[] = [
   A4_PRESET_46x24,
 ]
 
-export function labelsPerSheet(layout: Pick<A4LabelSheetLayout, 'columns' | 'rows'>): number {
-  return Math.max(1, layout.columns * layout.rows)
+type SheetGridCount = Pick<A4LabelSheetLayout, 'columns' | 'rows'> & {
+  cols?: number
+  label_columns?: number
+  label_rows?: number
+}
+
+export function labelsPerSheet(layout: SheetGridCount): number {
+  const columns = layout.columns ?? layout.cols ?? layout.label_columns ?? 1
+  const rows = layout.rows ?? layout.label_rows ?? 1
+  return Math.max(1, columns * rows)
 }
 
 export function normalizeA4SheetPreset(value: unknown): A4LabelSheetPresetKey {

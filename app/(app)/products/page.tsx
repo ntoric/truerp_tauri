@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
-import { Package, Plus, Search, Trash2, Download, Upload, Printer, Edit, MoreVertical, Eye, Power, Barcode } from 'lucide-react'
+import { Package, Plus, Search, Trash2, Download, Upload, Printer, Edit, MoreVertical, Eye, Power, Barcode, Loader2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { asArray, cn, skuFromProductName } from '@/lib/utils'
@@ -152,6 +152,9 @@ export default function ProductsPage() {
   const [printStartPosition, setPrintStartPosition] = useState(1)
   const [printSheetColumns, setPrintSheetColumns] = useState(4)
   const [printSheetRows, setPrintSheetRows] = useState(11)
+  const [printPreviewHtml, setPrintPreviewHtml] = useState('')
+  const [printPreviewLoading, setPrintPreviewLoading] = useState(false)
+  const printPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedProductForPrint, setSelectedProductForPrint] = useState<string | null>(null)
   const [showPreviewDialog, setShowPreviewDialog] = useState(false)
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null)
@@ -644,6 +647,74 @@ export default function ProductsPage() {
 
   const printLabelsPerSheet = printSheetColumns * printSheetRows
   const printStartHint = stickerPositionToRowCol(printStartPosition, printSheetColumns)
+
+  const refreshPrintPreview = useCallback(async () => {
+    if (!selectedProductForPrint || !showPrintDialog) {
+      setPrintPreviewHtml('')
+      return
+    }
+
+    setPrintPreviewLoading(true)
+    try {
+      if (printBarcodeMode === 'label') {
+        const res = await apiFetch(
+          `/printer/barcode/preview?mode=label&size=${encodeURIComponent(printLabelSize)}`
+        )
+        if (res.ok) {
+          const data = await res.json()
+          setPrintPreviewHtml(data.html || '')
+        } else {
+          setPrintPreviewHtml('')
+        }
+        return
+      }
+
+      const res = await apiFetch(`/products/${selectedProductForPrint}/print-label`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quantity: Math.min(printQuantity, 8),
+          format: 'html',
+          start_position: printStartPosition,
+          preview: true,
+        }),
+      })
+      if (res.ok) {
+        setPrintPreviewHtml(await res.text())
+      } else {
+        setPrintPreviewHtml('')
+      }
+    } catch {
+      setPrintPreviewHtml('')
+    } finally {
+      setPrintPreviewLoading(false)
+    }
+  }, [
+    printBarcodeMode,
+    printLabelSize,
+    printQuantity,
+    printStartPosition,
+    selectedProductForPrint,
+    showPrintDialog,
+  ])
+
+  useEffect(() => {
+    if (!showPrintDialog) {
+      setPrintPreviewHtml('')
+      return
+    }
+    if (printPreviewTimerRef.current) {
+      clearTimeout(printPreviewTimerRef.current)
+    }
+    printPreviewTimerRef.current = setTimeout(() => {
+      void refreshPrintPreview()
+    }, 350)
+    return () => {
+      if (printPreviewTimerRef.current) {
+        clearTimeout(printPreviewTimerRef.current)
+      }
+    }
+  }, [refreshPrintPreview, showPrintDialog])
 
   const handlePrintConfirm = async () => {
     if (!selectedProductForPrint) return
@@ -1576,8 +1647,11 @@ export default function ProductsPage() {
                     max={printLabelsPerSheet}
                     value={printStartPosition}
                     onChange={(e) => {
-                      const n = parseInt(e.target.value) || 1
-                      setPrintStartPosition(Math.min(printLabelsPerSheet, Math.max(1, n)))
+                      const raw = e.target.value
+                      if (raw === '') return
+                      const n = Number(raw)
+                      if (!Number.isFinite(n)) return
+                      setPrintStartPosition(Math.min(printLabelsPerSheet, Math.max(1, Math.round(n))))
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
@@ -1587,6 +1661,37 @@ export default function ProductsPage() {
                 </div>
               </>
             )}
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <Label>
+                  {printBarcodeMode === 'label' ? 'Label preview' : 'A4 sheet preview'}
+                </Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={printPreviewLoading}
+                  onClick={() => void refreshPrintPreview()}
+                >
+                  {printPreviewLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    'Refresh'
+                  )}
+                </Button>
+              </div>
+              {printPreviewHtml ? (
+                <iframe
+                  title="Barcode print preview"
+                  srcDoc={printPreviewHtml}
+                  className="h-[320px] w-full rounded border bg-white"
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {printPreviewLoading ? 'Loading preview…' : 'Preview unavailable'}
+                </p>
+              )}
+            </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setShowPrintDialog(false)}>
                 Cancel

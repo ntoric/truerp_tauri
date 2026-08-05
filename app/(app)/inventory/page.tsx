@@ -722,108 +722,112 @@ export default function InventoryPage() {
                   Stock Entry
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-3xl">
+              <DialogContent className="max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>Create Stock Entry</DialogTitle>
                 </DialogHeader>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <Label>Item Name</Label>
-                    <SearchableSelect
-                      value={newEntry.selected_item_id}
-                      onValueChange={(value) => handleSelectInventoryItem(value, 'entry')}
-                      options={inventoryItems.map((item) => ({
-                        value: item.id,
-                        label: item.sku ? `${item.name} (${item.sku})` : item.name,
-                      }))}
-                      placeholder="Select item"
-                      searchPlaceholder="Search items..."
-                      emptyMessage="No items found"
-                      onAddNew={handleOpenCreateProductForm}
-                      addNewLabel="Add New Item"
-                    />
-                  </div>
-                  <div>
-                    <Label>Outlet / Warehouse</Label>
-                    <SearchableSelect
-                      value={newEntry.outlet_id}
-                      onValueChange={(value) => setNewEntry((prev) => ({ ...prev, outlet_id: value }))}
-                      options={warehouses.map((wh) => ({
-                        value: wh.id,
-                        label: `${wh.name} (${wh.code})`,
-                      }))}
-                      placeholder="Select outlet"
-                      searchPlaceholder="Search warehouses..."
-                      emptyMessage="No warehouses found"
-                      onAddNew={handleOpenCreateWarehouseForm}
-                      addNewLabel="Add New Warehouse"
-                    />
-                  </div>
-                  <div>
-                    <Label>Entry Type</Label>
-                    <Select value={newEntry.entry_type} onValueChange={(v) => setNewEntry({ ...newEntry, entry_type: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="purchase">Purchase</SelectItem>
-                        <SelectItem value="sale">Sale</SelectItem>
-                        <SelectItem value="adjustment">Adjustment</SelectItem>
-                        <SelectItem value="transfer">Transfer</SelectItem>
-                        <SelectItem value="opening">Opening Stock</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Quantity</Label>
-                    <Input
-                      type="number"
-                      value={newEntry.quantity}
-                      onChange={(e) => setNewEntry({ ...newEntry, quantity: parseFloat(e.target.value) || 0 })}
-                    />
-                  </div>
-                  <div>
-                    <Label>Cost Price</Label>
-                    <Input
-                      type="number"
-                      value={newEntry.cost_price}
-                      onChange={(e) => setNewEntry({ ...newEntry, cost_price: parseFloat(e.target.value) || 0 })}
-                    />
-                  </div>
-                  <div>
-                    <Label>Batch No</Label>
-                    <Input
-                      value={newEntry.batch_no}
-                      onChange={(e) => setNewEntry({ ...newEntry, batch_no: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label>Item code</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={newEntry.item_code}
-                        onChange={(e) => setNewEntry({ ...newEntry, item_code: e.target.value })}
-                        placeholder="Enter item code or scan"
+                <div className="grid gap-4 py-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Item Name</Label>
+                      <SearchableSelect
+                        value={newEntry.selected_item_id}
+                        onValueChange={(value) => handleSelectInventoryItem(value, 'entry')}
+                        options={inventoryItems.map((item) => ({
+                          value: item.id,
+                          label: item.sku ? `${item.name} (${item.sku})` : item.name,
+                        }))}
+                        placeholder="Select item"
+                        searchPlaceholder="Search items..."
+                        emptyMessage="No items found"
+                        onAddNew={handleOpenCreateProductForm}
+                        addNewLabel="Add New Item"
                       />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setShowBarcodeScanner(true)}
-                      >
-                        <Barcode className="h-4 w-4" />
-                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Outlet / Warehouse</Label>
+                      <SearchableSelect
+                        value={newEntry.outlet_id}
+                        onValueChange={(value) => setNewEntry((prev) => ({ ...prev, outlet_id: value }))}
+                        options={warehouses.map((wh) => ({
+                          value: wh.id,
+                          label: `${wh.name} (${wh.code})`,
+                        }))}
+                        placeholder="Select outlet"
+                        searchPlaceholder="Search warehouses..."
+                        emptyMessage="No warehouses found"
+                        onAddNew={handleOpenCreateWarehouseForm}
+                        addNewLabel="Add New Warehouse"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Entry Type</Label>
+                      <Select value={newEntry.entry_type} onValueChange={(v) => setNewEntry({ ...newEntry, entry_type: v })}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="purchase">Purchase</SelectItem>
+                          <SelectItem value="sale">Sale</SelectItem>
+                          <SelectItem value="adjustment">Adjustment</SelectItem>
+                          <SelectItem value="transfer">Transfer</SelectItem>
+                          <SelectItem value="opening">Opening Stock</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Quantity</Label>
+                      <Input
+                        type="number"
+                        value={newEntry.quantity}
+                        onChange={(e) => setNewEntry({ ...newEntry, quantity: parseFloat(e.target.value) || 0 })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Cost Price</Label>
+                      <Input
+                        type="number"
+                        value={newEntry.cost_price}
+                        onChange={(e) => setNewEntry({ ...newEntry, cost_price: parseFloat(e.target.value) || 0 })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Batch No</Label>
+                      <Input
+                        value={newEntry.batch_no}
+                        onChange={(e) => setNewEntry({ ...newEntry, batch_no: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Item code</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={newEntry.item_code}
+                          onChange={(e) => setNewEntry({ ...newEntry, item_code: e.target.value })}
+                          placeholder="Enter item code or scan"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setShowBarcodeScanner(true)}
+                        >
+                          <Barcode className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                  <div className="col-span-2">
+                  <div className="space-y-2">
                     <Label>Notes</Label>
                     <Input
                       value={newEntry.notes}
                       onChange={(e) => setNewEntry({ ...newEntry, notes: e.target.value })}
                     />
                   </div>
-                  <Button onClick={handleCreateEntry} className="col-span-2 w-full">Create Entry</Button>
                 </div>
+                <DialogFooter>
+                  <Button onClick={handleCreateEntry}>Create Entry</Button>
+                </DialogFooter>
               </DialogContent>
             </Dialog>
             <Dialog open={showAdjustStockModal} onOpenChange={setShowAdjustStockModal}>

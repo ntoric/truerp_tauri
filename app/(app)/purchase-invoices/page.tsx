@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -101,6 +101,9 @@ export default function PurchaseInvoicesPage() {
     startPosition: 1,
   })
   const [generatingLabels, setGeneratingLabels] = useState(false)
+  const [labelPreviewHtml, setLabelPreviewHtml] = useState('')
+  const [labelPreviewLoading, setLabelPreviewLoading] = useState(false)
+  const labelPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [exporting, setExporting] = useState(false)
 
   const paperDimensions: Record<string, { width: number; height: number }> = {
@@ -122,7 +125,7 @@ export default function PurchaseInvoicesPage() {
   }
 
   const isThermalSelected = isThermalLabelSize(labelConfig.paperSize)
-  const sheetLabelsPerPage = labelsPerSheet(labelConfig)
+  const sheetLabelsPerPage = labelsPerSheet({ columns: labelConfig.cols, rows: labelConfig.rows })
   const startHint = stickerPositionToRowCol(labelConfig.startPosition, labelConfig.cols)
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
 
@@ -516,16 +519,100 @@ export default function PurchaseInvoicesPage() {
     }
   }
 
+  const buildLabelRequestBody = useCallback(
+    (billId: string, preview = false) => {
+      const thermal = isThermalLabelSize(labelConfig.paperSize)
+      const quantities: Record<string, number> = {}
+      Object.entries(itemQuantities).forEach(([id, qty]) => {
+        quantities[id] = Math.max(0, Math.round(Number(qty) || 0))
+      })
+      return {
+        bill_id: billId,
+        item_quantities: quantities,
+        preview,
+        format: thermal ? 'json' : 'html',
+        config: {
+          paper_size: labelConfig.paperSize,
+          sheet_preset: thermal ? undefined : labelConfig.sheetPreset,
+          label_width: labelConfig.labelWidth,
+          label_height: labelConfig.labelHeight,
+          cols: thermal ? 1 : labelConfig.cols,
+          rows: thermal ? 1 : labelConfig.rows,
+          margin: thermal ? 0 : labelConfig.margin,
+          margin_top: thermal ? 0 : labelConfig.marginTop,
+          margin_left: thermal ? 0 : labelConfig.marginLeft,
+          gap_h: thermal ? 0 : labelConfig.gapH,
+          gap_v: thermal ? 0 : labelConfig.gapV,
+          start_position: thermal ? 1 : labelConfig.startPosition,
+        },
+      }
+    },
+    [itemQuantities, labelConfig]
+  )
+
+  const refreshLabelPreview = useCallback(async () => {
+    if (!labelModal) {
+      setLabelPreviewHtml('')
+      return
+    }
+
+    setLabelPreviewLoading(true)
+    try {
+      if (isThermalLabelSize(labelConfig.paperSize)) {
+        const size = normalizeThermalPrintSize(labelConfig.paperSize)
+        const res = await apiFetch(
+          `/printer/barcode/preview?mode=label&size=${encodeURIComponent(size)}`
+        )
+        if (res.ok) {
+          const data = await res.json()
+          setLabelPreviewHtml(data.html || '')
+        } else {
+          setLabelPreviewHtml('')
+        }
+        return
+      }
+
+      const res = await apiFetch('/purchase/bills/labels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildLabelRequestBody(labelModal, true)),
+      })
+      if (res.ok) {
+        setLabelPreviewHtml(await res.text())
+      } else {
+        setLabelPreviewHtml('')
+      }
+    } catch {
+      setLabelPreviewHtml('')
+    } finally {
+      setLabelPreviewLoading(false)
+    }
+  }, [buildLabelRequestBody, labelConfig.paperSize, labelModal])
+
+  useEffect(() => {
+    if (!labelModal) {
+      setLabelPreviewHtml('')
+      return
+    }
+    if (labelPreviewTimerRef.current) {
+      clearTimeout(labelPreviewTimerRef.current)
+    }
+    labelPreviewTimerRef.current = setTimeout(() => {
+      void refreshLabelPreview()
+    }, 350)
+    return () => {
+      if (labelPreviewTimerRef.current) {
+        clearTimeout(labelPreviewTimerRef.current)
+      }
+    }
+  }, [labelModal, refreshLabelPreview])
+
   const handleGenerateLabels = async () => {
     if (!labelModal || generatingLabels) return
 
     setGeneratingLabels(true)
     try {
       const thermal = isThermalLabelSize(labelConfig.paperSize)
-      const quantities: Record<string, number> = {}
-      Object.entries(itemQuantities).forEach(([id, qty]) => {
-        quantities[id] = Math.max(0, Math.round(Number(qty) || 0))
-      })
 
       let thermalPrinterName = ''
       if (thermal) {
@@ -546,25 +633,7 @@ export default function PurchaseInvoicesPage() {
           'Content-Type': 'application/json',
           ...(thermal ? { Accept: 'application/json' } : {}),
         },
-        body: JSON.stringify({
-          bill_id: labelModal,
-          item_quantities: quantities,
-          format: thermal ? 'json' : 'html',
-          config: {
-            paper_size: labelConfig.paperSize,
-            sheet_preset: isThermal ? undefined : labelConfig.sheetPreset,
-            label_width: labelConfig.labelWidth,
-            label_height: labelConfig.labelHeight,
-            cols: thermal ? 1 : labelConfig.cols,
-            rows: thermal ? 1 : labelConfig.rows,
-            margin: thermal ? 0 : labelConfig.margin,
-            margin_top: thermal ? 0 : labelConfig.marginTop,
-            margin_left: thermal ? 0 : labelConfig.marginLeft,
-            gap_h: thermal ? 0 : labelConfig.gapH,
-            gap_v: thermal ? 0 : labelConfig.gapV,
-            start_position: thermal ? 1 : labelConfig.startPosition,
-          },
-        }),
+        body: JSON.stringify(buildLabelRequestBody(labelModal, false)),
       })
 
       if (!res.ok) {
@@ -1247,10 +1316,13 @@ export default function PurchaseInvoicesPage() {
                       max={sheetLabelsPerPage}
                       value={labelConfig.startPosition}
                       onChange={(e) => {
-                        const n = Number(e.target.value) || 1
+                        const raw = e.target.value
+                        if (raw === '') return
+                        const n = Number(raw)
+                        if (!Number.isFinite(n)) return
                         setLabelConfig({
                           ...labelConfig,
-                          startPosition: Math.min(sheetLabelsPerPage, Math.max(1, n)),
+                          startPosition: Math.min(sheetLabelsPerPage, Math.max(1, Math.round(n))),
                         })
                       }}
                       className="mt-1"
@@ -1292,6 +1364,38 @@ export default function PurchaseInvoicesPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <Label className="text-sm font-medium">
+                    {isThermalSelected ? 'Label preview' : 'A4 sheet preview'}
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={labelPreviewLoading}
+                    onClick={() => void refreshLabelPreview()}
+                  >
+                    {labelPreviewLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Refresh'
+                    )}
+                  </Button>
+                </div>
+                {labelPreviewHtml ? (
+                  <iframe
+                    title="Label print preview"
+                    srcDoc={labelPreviewHtml}
+                    className="h-[360px] w-full rounded border bg-white"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {labelPreviewLoading ? 'Loading preview…' : 'Preview unavailable'}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t">

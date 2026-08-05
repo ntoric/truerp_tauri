@@ -24,6 +24,7 @@ export interface DailyReport {
   gst_collected: number
   net_cash_flow: number
   daily_profit: number
+  product_profit: number
 }
 
 const metricRows: { key: keyof DailyReport; label: string }[] = [
@@ -75,6 +76,7 @@ export function buildDailyReportShareText(report: DailyReport): string {
     `Accounts Payable (total outstanding): ${formatCurrency(report.accounts_payable_total || 0)}`,
     `GST Collected: ${formatCurrency(report.gst_collected)}`,
     `Daily Profit: ${formatCurrency(report.daily_profit ?? 0)}`,
+    `Product Profit: ${formatCurrency(report.product_profit ?? 0)}`,
     `Net Cash Flow: ${formatCurrency(report.net_cash_flow)}`,
     '',
     'Note: Purchase expense = full bill total; Payment out = amount paid; AP = unpaid balance.',
