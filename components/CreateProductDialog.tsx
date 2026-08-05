@@ -117,6 +117,8 @@ interface CreateProductDialogProps {
   onOpenChange: (open: boolean) => void
   onCreated?: (product: CreatedProduct) => void
   showDraftButton?: boolean
+  /** Opening stock quantity is only relevant when creating from the products page. */
+  showOpeningStock?: boolean
   /** When provided and dialog opens, form is seeded from these values (e.g. draft load). */
   initialValues?: Partial<ProductFormState> | null
 }
@@ -126,6 +128,7 @@ export default function CreateProductDialog({
   onOpenChange,
   onCreated,
   showDraftButton = true,
+  showOpeningStock = false,
   initialValues = null,
 }: CreateProductDialogProps) {
   const {
@@ -725,21 +728,23 @@ export default function CreateProductDialog({
                 <FieldError message={fieldErrors['inventory.outlet_id']} />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="create_inventory_quantity">Opening Stock Quantity</Label>
-                <Input
-                  id="create_inventory_quantity"
-                  type="number"
-                  value={newItem.inventory.quantity}
-                  onChange={(e) =>
-                    setNewItem((prev) => ({
-                      ...prev,
-                      inventory: { ...prev.inventory, quantity: parseFloat(e.target.value) || 0 },
-                    }))
-                  }
-                  placeholder="0"
-                />
-              </div>
+              {showOpeningStock && (
+                <div className="space-y-2">
+                  <Label htmlFor="create_inventory_quantity">Opening Stock Quantity</Label>
+                  <Input
+                    id="create_inventory_quantity"
+                    type="number"
+                    value={newItem.inventory.quantity}
+                    onChange={(e) =>
+                      setNewItem((prev) => ({
+                        ...prev,
+                        inventory: { ...prev.inventory, quantity: parseFloat(e.target.value) || 0 },
+                      }))
+                    }
+                    placeholder="0"
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="create_inventory_cost_price">Cost Price</Label>
@@ -838,9 +843,11 @@ export default function CreateProductDialog({
                 </div>
               </div>
 
-              <p className="text-sm text-gray-500">
-                Fill in these details to automatically create opening stock entry when the product is created.
-              </p>
+              {showOpeningStock && (
+                <p className="text-sm text-gray-500">
+                  Fill in these details to automatically create opening stock entry when the product is created.
+                </p>
+              )}
             </TabsContent>
 
             <TabsContent value="settings" className="space-y-4 mt-4">

@@ -215,6 +215,15 @@ export default function PrintSettingsCard() {
     setSettings((prev) => ({ ...prev, [key]: value }))
   }
 
+  /** A4 sheet layout edits invalidate the named preset — persist as custom. */
+  const updateLabelLayout = <K extends keyof PrintSettings>(key: K, value: PrintSettings[K]) => {
+    setSettings((prev) => ({
+      ...prev,
+      [key]: value,
+      label_sheet_preset: 'custom',
+    }))
+  }
+
   const refreshPrinters = useCallback(async () => {
     setPrintersLoading(true)
     try {
@@ -782,7 +791,7 @@ export default function PrintSettingsCard() {
                         <Label htmlFor="label_paper_size">Paper Size</Label>
                         <Select
                           value={settings.label_paper_size}
-                          onValueChange={(value) => update('label_paper_size', value)}
+                          onValueChange={(value) => updateLabelLayout('label_paper_size', value)}
                         >
                           <SelectTrigger id="label_paper_size">
                             <SelectValue />
@@ -804,7 +813,7 @@ export default function PrintSettingsCard() {
                             max={6}
                             value={settings.label_columns}
                             onChange={(e) =>
-                              update('label_columns', parseInt(e.target.value) || 4)
+                              updateLabelLayout('label_columns', parseInt(e.target.value) || 4)
                             }
                           />
                         </div>
@@ -816,7 +825,7 @@ export default function PrintSettingsCard() {
                             min={1}
                             max={20}
                             value={settings.label_rows}
-                            onChange={(e) => update('label_rows', parseInt(e.target.value) || 11)}
+                            onChange={(e) => updateLabelLayout('label_rows', parseInt(e.target.value) || 11)}
                           />
                         </div>
                         <div className="space-y-2">
@@ -829,7 +838,7 @@ export default function PrintSettingsCard() {
                             step={0.1}
                             value={settings.label_width_mm}
                             onChange={(e) =>
-                              update('label_width_mm', parseFloat(e.target.value) || 48.5)
+                              updateLabelLayout('label_width_mm', parseFloat(e.target.value) || 48.5)
                             }
                           />
                         </div>
@@ -843,7 +852,7 @@ export default function PrintSettingsCard() {
                             step={0.1}
                             value={settings.label_height_mm}
                             onChange={(e) =>
-                              update('label_height_mm', parseFloat(e.target.value) || 25.4)
+                              updateLabelLayout('label_height_mm', parseFloat(e.target.value) || 25.4)
                             }
                           />
                         </div>
@@ -859,7 +868,7 @@ export default function PrintSettingsCard() {
                             step={0.1}
                             value={settings.label_margin_left_mm}
                             onChange={(e) =>
-                              update('label_margin_left_mm', parseFloat(e.target.value) || 0)
+                              updateLabelLayout('label_margin_left_mm', parseFloat(e.target.value) || 0)
                             }
                           />
                         </div>
@@ -873,7 +882,7 @@ export default function PrintSettingsCard() {
                             step={0.1}
                             value={settings.label_margin_top_mm}
                             onChange={(e) =>
-                              update('label_margin_top_mm', parseFloat(e.target.value) || 0)
+                              updateLabelLayout('label_margin_top_mm', parseFloat(e.target.value) || 0)
                             }
                           />
                         </div>
@@ -887,7 +896,7 @@ export default function PrintSettingsCard() {
                             step={0.1}
                             value={settings.label_gap_h_mm}
                             onChange={(e) =>
-                              update('label_gap_h_mm', parseFloat(e.target.value) || 0)
+                              updateLabelLayout('label_gap_h_mm', parseFloat(e.target.value) || 0)
                             }
                           />
                         </div>
@@ -901,7 +910,7 @@ export default function PrintSettingsCard() {
                             step={0.1}
                             value={settings.label_gap_v_mm}
                             onChange={(e) =>
-                              update('label_gap_v_mm', parseFloat(e.target.value) || 0)
+                              updateLabelLayout('label_gap_v_mm', parseFloat(e.target.value) || 0)
                             }
                           />
                         </div>
