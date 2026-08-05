@@ -1,3 +1,4 @@
+use crate::processes;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -20,10 +21,13 @@ fn current_version<R: Runtime>(app: &AppHandle<R>) -> String {
 fn build_updater<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<tauri_plugin_updater::Updater, String> {
+    let app_for_exit = app.clone();
     let mut builder = app
         .updater_builder()
-        .on_before_exit(|| {
-            log::info!("TruERP is quitting to apply a Windows update install");
+        .on_before_exit(move || {
+            // Windows NSIS cannot overwrite resources\node\node.exe while it is locked.
+            log::info!("stopping bundled Node before Windows update install");
+            processes::kill_bundled_node_processes(&app_for_exit);
         });
 
     if let Ok(raw) = std::env::var("TRUERP_UPDATE_ENDPOINT") {

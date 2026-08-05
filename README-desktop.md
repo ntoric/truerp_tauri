@@ -76,6 +76,27 @@ export NEXT_PUBLIC_API_URL="https://api.example.com/api/v1"
 npm run desktop:windows
 ```
 
+### Windows install error: `node.exe` file locked
+
+If the NSIS installer shows **Error opening file for writing: …\TruERP\resources\node\node.exe**, a previous TruERP session left the bundled Node process running. Clicking **Ignore** skips installing Node, so the app cannot open.
+
+**Recover on the affected PC:**
+
+1. Close TruERP if it is open.
+2. Open Task Manager → end **TruERP** and any **Node.js** process whose path is under `%LOCALAPPDATA%\TruERP\`.
+   Or in PowerShell:
+   ```powershell
+   taskkill /F /T /IM TruERP.exe 2>$null
+   $node = Join-Path $env:LOCALAPPDATA "TruERP\resources\node\node.exe"
+   Get-CimInstance Win32_Process |
+     Where-Object { $_.ExecutablePath -ieq $node } |
+     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+   ```
+3. Re-run the installer (do **not** click Ignore if the error appears again).
+4. If it still fails, uninstall TruERP, reboot, then install again.
+
+Newer builds kill the bundled Node automatically in the NSIS pre-install hook (`src-tauri/windows/hooks.nsh`).
+
 ## Runtime resources
 
 Packaged under `src-tauri/resources/`:

@@ -31,6 +31,8 @@ import {
   type BarcodeLabelSize,
 } from '@/components/PrintSettingsCard'
 import { printHtmlDocument } from '@/lib/printDocument'
+import { printBarcodeLabels, type BarcodeLabelsPayload } from '@/lib/barcodeLabelPrint'
+import { normalizeThermalPrintSize } from '@/lib/printSizes'
 
 interface Category {
   id: string
@@ -585,15 +587,48 @@ export default function ProductsPage() {
     if (!selectedProductForPrint) return
 
     try {
+      let thermalPrinterName = ''
+      try {
+        const settingsRes = await apiFetch('/settings/print')
+        if (settingsRes.ok) {
+          const settings = await settingsRes.json()
+          thermalPrinterName = settings.thermal_printer_name || ''
+        }
+      } catch {
+        /* optional */
+      }
+
       const res = await apiFetch(`/products/${selectedProductForPrint}/print-label`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
         body: JSON.stringify({
           quantity: printQuantity,
           label_size: printLabelSize,
+          format: 'json',
         }),
       })
       if (res.ok) {
+        const contentType = res.headers.get('content-type') || ''
+        if (contentType.includes('application/json')) {
+          const payload = (await res.json()) as BarcodeLabelsPayload
+          if (!payload?.labels?.length) {
+            notifyError('Label print returned empty content')
+            return
+          }
+          await printBarcodeLabels(
+            {
+              ...payload,
+              size: normalizeThermalPrintSize(payload.size || printLabelSize),
+              title: payload.title || 'Product Labels',
+            },
+            { printerName: thermalPrinterName }
+          )
+          setShowPrintDialog(false)
+          return
+        }
         const html = await res.text()
         if (!html.trim()) {
           notifyError('Label print returned empty content')

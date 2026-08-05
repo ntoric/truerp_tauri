@@ -61,6 +61,12 @@ const BRIDGE_JS: &str = r#"
         logoEscposBase64: logoEscposBase64 || null
       });
     },
+    PrintRaw: function (dataBase64, printerName) {
+      return invoke('print_raw_base64', {
+        dataBase64: dataBase64 || '',
+        printerName: printerName || ''
+      });
+    },
     FrontendReady: function () { return invoke('frontend_ready'); },
     DataDirectory: function () { return invoke('data_directory'); },
     APIStatus: function () { return Promise.resolve('running'); },
@@ -158,6 +164,15 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running TruERP");
+        .build(tauri::generate_context!())
+        .expect("error while building TruERP")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<AppState>() {
+                    state.runtime.stop();
+                }
+                #[cfg(windows)]
+                processes::kill_bundled_node_processes(app);
+            }
+        });
 }

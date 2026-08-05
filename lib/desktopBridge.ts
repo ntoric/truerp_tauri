@@ -28,6 +28,8 @@ type DesktopAppBridge = {
     jobTitle?: string,
     logoEscposBase64?: string | null
   ) => Promise<void>
+  /** Silent raw ESC/POS (or other) bytes as base64 — used for barcode labels. */
+  PrintRaw?: (dataBase64: string, printerName: string) => Promise<void>
   AppVersion?: () => Promise<string>
   CheckForUpdates?: () => Promise<DesktopUpdateCheckResult>
   DownloadAndInstallUpdate?: () => Promise<void>
@@ -70,6 +72,11 @@ function getDesktopApp(): DesktopAppBridge | null {
         paperWidthMm: paperWidthMm ?? null,
         jobTitle: jobTitle || 'TruERP Receipt',
         logoEscposBase64: logoEscposBase64 || null,
+      }) as Promise<void>,
+    PrintRaw: (dataBase64, printerName) =>
+      invoke('print_raw_base64', {
+        dataBase64: dataBase64 || '',
+        printerName: printerName || '',
       }) as Promise<void>,
     AppVersion: () => invoke('app_version') as Promise<string>,
     CheckForUpdates: () => invoke('check_for_updates') as Promise<DesktopUpdateCheckResult>,
@@ -131,6 +138,18 @@ export async function desktopPrintThermal(
   const app = getDesktopApp()
   if (!app?.PrintThermal) return false
   await app.PrintThermal(content, printerName, paperWidthMm, jobTitle, logoEscposBase64)
+  return true
+}
+
+/** Silent raw bytes (base64) to the thermal printer — no print dialog. */
+export async function desktopPrintRaw(
+  dataBase64: string,
+  printerName = ''
+): Promise<boolean> {
+  const app = getDesktopApp()
+  if (!app?.PrintRaw) return false
+  if (!dataBase64?.trim()) return false
+  await app.PrintRaw(dataBase64, printerName)
   return true
 }
 

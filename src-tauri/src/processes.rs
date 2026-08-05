@@ -31,9 +31,80 @@ impl RuntimeProcesses {
         if let Ok(mut guard) = self.frontend_child.lock() {
             if let Some(mut child) = guard.take() {
                 let _ = child.kill();
-                let _ = child.wait();
+                // Wait so Windows releases the lock on node.exe before
+                // reinstall / updater NSIS overwrites resources\node\node.exe.
+                let deadline = Instant::now() + Duration::from_secs(5);
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) => break,
+                        Ok(None) if Instant::now() < deadline => {
+                            std::thread::sleep(Duration::from_millis(50));
+                        }
+                        _ => {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            break;
+                        }
+                    }
+                }
             }
         }
+        self.frontend_ready.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Stop any orphaned process still running the bundled Node binary.
+/// Safe for reinstall/update: only matches our resource path, not system Node.
+pub fn kill_bundled_node_processes(app: &AppHandle) {
+    let roots = resource_roots(app);
+    let Some(node_bin) = find_node_binary(&roots) else {
+        return;
+    };
+    kill_processes_at_path(&node_bin);
+}
+
+fn kill_processes_at_path(exe: &Path) {
+    #[cfg(windows)]
+    {
+        // Prefer the path we spawned with; strip \\?\ so it matches Win32_Process.
+        let raw = exe
+            .canonicalize()
+            .unwrap_or_else(|_| exe.to_path_buf());
+        let path_str = raw
+            .to_string_lossy()
+            .trim_start_matches(r"\\?\")
+            .replace('\'', "''");
+        if path_str.is_empty() {
+            return;
+        }
+        let script = format!(
+            "$ErrorActionPreference='SilentlyContinue'; \
+             function Normalize([string]$p) {{ if ($p.StartsWith('\\\\?\\')) {{ $p.Substring(4) }} else {{ $p }} }}; \
+             $target = Normalize '{path_str}'; \
+             Get-CimInstance Win32_Process | \
+             Where-Object {{ $_.ExecutablePath -and ((Normalize $_.ExecutablePath) -ieq $target) }} | \
+             ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"
+        );
+        let mut cmd = Command::new("powershell");
+        cmd.args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ]);
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let _ = cmd.status();
+        std::thread::sleep(Duration::from_millis(400));
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = exe;
     }
 }
 
@@ -108,6 +179,9 @@ fn start_frontend(runtime: &RuntimeProcesses, roots: &[PathBuf]) -> Result<(), S
         );
         return Ok(());
     }
+
+    // Clear stale Node from a previous crash so we don't double-bind or leave locks.
+    kill_processes_at_path(&node_bin);
 
     runtime_log(
         &runtime.data_root,

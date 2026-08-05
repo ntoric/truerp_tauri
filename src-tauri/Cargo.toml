@@ -1,6 +1,6 @@
 [package]
 name = "truerp"
-version = "0.0.14"
+version = "0.0.15"
 description = "TruERP desktop client (Tauri) — cloud API"
 authors = ["TruERP"]
 edition = "2021"

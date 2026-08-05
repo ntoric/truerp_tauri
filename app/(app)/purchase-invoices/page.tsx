@@ -13,6 +13,7 @@ import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Lo
 import JSZip from 'jszip'
 import { notifyError } from '@/lib/notify'
 import { downloadPurchaseBillPdf, printHtmlDocument } from '@/lib/printDocument'
+import { printBarcodeLabels, type BarcodeLabelsPayload } from '@/lib/barcodeLabelPrint'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
@@ -446,12 +447,29 @@ export default function PurchaseInvoicesPage() {
         quantities[id] = Math.max(0, Math.round(Number(qty) || 0))
       })
 
+      let thermalPrinterName = ''
+      if (thermal) {
+        try {
+          const settingsRes = await apiFetch('/settings/print')
+          if (settingsRes.ok) {
+            const settings = await settingsRes.json()
+            thermalPrinterName = settings.thermal_printer_name || ''
+          }
+        } catch {
+          /* optional */
+        }
+      }
+
       const res = await apiFetch('/purchase/bills/labels', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(thermal ? { Accept: 'application/json' } : {}),
+        },
         body: JSON.stringify({
           bill_id: labelModal,
           item_quantities: quantities,
+          format: thermal ? 'json' : 'html',
           config: {
             paper_size: labelConfig.paperSize,
             label_width: labelConfig.labelWidth,
@@ -465,18 +483,39 @@ export default function PurchaseInvoicesPage() {
         }),
       })
 
-      if (res.ok) {
-        const html = await res.text()
-        if (!html.trim()) {
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to generate labels')
+        return
+      }
+
+      if (thermal) {
+        const payload = (await res.json()) as BarcodeLabelsPayload
+        if (!payload?.labels?.length) {
           notifyError('Label print returned empty content')
           return
         }
-        printHtmlDocument(html, { title: 'Purchase Labels' })
+        await printBarcodeLabels(
+          {
+            ...payload,
+            size: normalizeThermalPrintSize(payload.size || labelConfig.paperSize),
+            width_mm: payload.width_mm || labelConfig.labelWidth,
+            height_mm: payload.height_mm || labelConfig.labelHeight,
+            title: payload.title || 'Purchase Labels',
+          },
+          { printerName: thermalPrinterName }
+        )
         setLabelModal(null)
-      } else {
-        const data = await res.json().catch(() => ({}))
-        notifyError(data.error || 'Failed to generate labels')
+        return
       }
+
+      const html = await res.text()
+      if (!html.trim()) {
+        notifyError('Label print returned empty content')
+        return
+      }
+      printHtmlDocument(html, { title: 'Purchase Labels' })
+      setLabelModal(null)
     } catch (err) {
       console.error(err)
       notifyError(err instanceof Error ? err.message : 'An error occurred while generating labels')
@@ -937,7 +976,7 @@ export default function PurchaseInvoicesPage() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     {BARCODE_LABEL_SIZE_OPTIONS.find((o) => o.value === labelConfig.paperSize)?.description}
                     {' · '}
-                    One barcode label per thermal page
+                    One horizontal label per row · prints directly to the thermal printer
                   </p>
                 )}
               </div>
