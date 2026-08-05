@@ -76,12 +76,16 @@ export async function fetchDocumentPrint(options: {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || 'Failed to prepare print document')
+    const message =
+      typeof err.error === 'string' && err.error.trim()
+        ? err.error
+        : `Failed to prepare print document (${res.status})`
+    throw new Error(message)
   }
   return res.json()
 }
 
-function base64ToUint8Array(base64: string): Uint8Array {
+function base64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const raw = base64.includes('base64,') ? base64.split('base64,')[1] : base64
   const binary = atob(raw)
   const bytes = new Uint8Array(binary.length)
@@ -108,7 +112,10 @@ export function downloadPdfBase64(pdfBase64: string, filename: string): void {
     throw new Error('PDF was empty')
   }
   const bytes = base64ToUint8Array(pdfBase64)
-  const blob = new Blob([bytes], { type: 'application/pdf' })
+  // Copy into a plain ArrayBuffer-backed view — required for BlobPart typing / WKWebView.
+  const copy = new Uint8Array(bytes.byteLength)
+  copy.set(bytes)
+  const blob = new Blob([copy], { type: 'application/pdf' })
   triggerBlobDownload(blob, filename.endsWith('.pdf') ? filename : `${filename}.pdf`)
 }
 
@@ -214,91 +221,121 @@ function thermalReceiptHtml(content: string, widthMm: number, logoUrl?: string):
 /**
  * Print an HTML document from inside the current webview.
  * Never uses window.open — in Tauri that launches the system browser and breaks label printing.
+ * Uses srcdoc + onload so WKWebView/Tauri can access the frame document reliably.
  */
-export function printHtmlDocument(html: string, options?: { title?: string }): void {
+export function printHtmlDocument(html: string, options?: { title?: string }): Promise<void> {
   if (!html?.trim()) {
-    throw new Error('Print HTML was empty')
+    return Promise.reject(new Error('Print HTML was empty'))
   }
 
-  const iframe = document.createElement('iframe')
-  iframe.setAttribute('title', options?.title || 'TruERP Labels')
-  iframe.style.position = 'fixed'
-  iframe.style.right = '0'
-  iframe.style.bottom = '0'
-  // Non-zero size helps WebViews lay out @page label dimensions before printing.
-  iframe.style.width = '1px'
-  iframe.style.height = '1px'
-  iframe.style.border = '0'
-  iframe.style.opacity = '0'
-  iframe.style.pointerEvents = 'none'
-  document.body.appendChild(iframe)
+  return new Promise((resolve, reject) => {
+    const iframe = document.createElement('iframe')
+    iframe.setAttribute('title', options?.title || 'TruERP Labels')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    // Non-zero size helps WebViews lay out @page label dimensions before printing.
+    iframe.style.width = '1px'
+    iframe.style.height = '1px'
+    iframe.style.border = '0'
+    iframe.style.opacity = '0'
+    iframe.style.pointerEvents = 'none'
 
-  const doc = iframe.contentDocument || iframe.contentWindow?.document
-  if (!doc) {
-    iframe.remove()
-    throw new Error('Unable to open print frame')
-  }
+    let settled = false
+    let printed = false
+    const cleanup = () => {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
+    }
 
-  doc.open()
-  doc.write(html)
-  doc.close()
-
-  const cleanup = () => {
-    if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
-  }
-
-  const doPrint = () => {
-    try {
-      iframe.contentWindow?.focus()
-      iframe.contentWindow?.print()
-    } catch (err) {
-      console.warn('In-app HTML print failed:', err)
+    const fail = (err: unknown) => {
+      if (settled) return
+      settled = true
       cleanup()
+      reject(err instanceof Error ? err : new Error('Unable to open print frame'))
+    }
+
+    const doPrint = () => {
+      if (printed) return
+      printed = true
+      try {
+        iframe.contentWindow?.focus()
+        iframe.contentWindow?.print()
+        if (!settled) {
+          settled = true
+          resolve()
+        }
+        setTimeout(cleanup, 120_000)
+      } catch (err) {
+        fail(err)
+      }
+    }
+
+    iframe.onload = () => {
+      // Barcodes are embedded as PNG data URIs — short delay is enough for layout.
+      setTimeout(doPrint, 250)
+    }
+
+    document.body.appendChild(iframe)
+    try {
+      iframe.srcdoc = html
+    } catch (err) {
+      fail(err)
       return
     }
-    setTimeout(cleanup, 120_000)
-  }
-
-  // Barcodes are embedded as PNG data URIs — short delay is enough for layout.
-  setTimeout(doPrint, 250)
+    // Some WebViews skip onload for srcdoc — still attempt print.
+    setTimeout(doPrint, 800)
+  })
 }
 
-/** Browser fallback: print thermal receipt via a hidden iframe (no PDF blank space). */
-function printThermalTextInApp(content: string, widthMm = 58, logoUrl?: string): void {
-  const iframe = document.createElement('iframe')
-  iframe.setAttribute('title', 'TruERP Thermal Print')
-  iframe.style.position = 'fixed'
-  iframe.style.right = '0'
-  iframe.style.bottom = '0'
-  iframe.style.width = '0'
-  iframe.style.height = '0'
-  iframe.style.border = '0'
-  document.body.appendChild(iframe)
-  const doc = iframe.contentDocument || iframe.contentWindow?.document
-  if (!doc) {
-    iframe.remove()
-    throw new Error('Unable to open print frame')
-  }
-  doc.open()
-  doc.write(thermalReceiptHtml(content, widthMm, logoUrl))
-  doc.close()
-  const cleanup = () => {
-    if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
-  }
-  const doPrint = () => {
-    try {
-      iframe.contentWindow?.focus()
-      iframe.contentWindow?.print()
-    } finally {
-      setTimeout(cleanup, 60_000)
+/** Browser/desktop fallback: print thermal receipt via a hidden iframe (no PDF blank space). */
+function printThermalTextInApp(
+  content: string,
+  widthMm = 58,
+  logoUrl?: string
+): Promise<void> {
+  return printHtmlDocument(thermalReceiptHtml(content, widthMm, logoUrl), {
+    title: 'TruERP Thermal Print',
+  }).catch(async (err) => {
+    // Last resort for stubborn WebViews: write via document API after append.
+    const iframe = document.createElement('iframe')
+    iframe.setAttribute('title', 'TruERP Thermal Print')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '1px'
+    iframe.style.height = '1px'
+    iframe.style.border = '0'
+    iframe.style.opacity = '0'
+    iframe.style.pointerEvents = 'none'
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document
+    if (!doc) {
+      iframe.remove()
+      throw err instanceof Error ? err : new Error('Unable to open print frame')
     }
-  }
-  // Allow logo image to load before printing when present.
-  if (logoUrl?.trim()) {
-    setTimeout(doPrint, 350)
-  } else {
-    setTimeout(doPrint, 50)
-  }
+    doc.open()
+    doc.write(thermalReceiptHtml(content, widthMm, logoUrl))
+    doc.close()
+
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
+      }
+      const doPrint = () => {
+        try {
+          iframe.contentWindow?.focus()
+          iframe.contentWindow?.print()
+          resolve()
+          setTimeout(cleanup, 60_000)
+        } catch (printErr) {
+          cleanup()
+          reject(printErr)
+        }
+      }
+      setTimeout(doPrint, logoUrl?.trim() ? 350 : 50)
+    })
+  })
 }
 
 function escapeHtml(s: string): string {
@@ -349,7 +386,7 @@ export async function printThermalContent(options: {
     }
   }
 
-  printThermalTextInApp(content, widthMm, logoSrc || undefined)
+  await printThermalTextInApp(content, widthMm, logoSrc || undefined)
 }
 
 /**

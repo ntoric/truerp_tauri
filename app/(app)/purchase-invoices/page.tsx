@@ -514,7 +514,7 @@ export default function PurchaseInvoicesPage() {
         notifyError('Label print returned empty content')
         return
       }
-      printHtmlDocument(html, { title: 'Purchase Labels' })
+      await printHtmlDocument(html, { title: 'Purchase Labels' })
       setLabelModal(null)
     } catch (err) {
       console.error(err)
@@ -976,7 +976,7 @@ export default function PurchaseInvoicesPage() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     {BARCODE_LABEL_SIZE_OPTIONS.find((o) => o.value === labelConfig.paperSize)?.description}
                     {' · '}
-                    One horizontal label per row · prints directly to the thermal printer
+                    Name → barcode → MRP / price · prints directly to the thermal printer
                   </p>
                 )}
               </div>

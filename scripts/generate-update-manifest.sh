@@ -4,7 +4,7 @@
 # Usage:
 #   ./scripts/generate-update-manifest.sh \
 #     --version 1.0.1 \
-#     --base-url https://github.com/ntoric/TruERP/releases/download/v1.0.1 \
+#     --base-url https://github.com/ntoric/truerp_tauri/releases/download/v1.0.1 \
 #     [--notes "Bug fixes"] \
 #     [--out latest.json]
 #

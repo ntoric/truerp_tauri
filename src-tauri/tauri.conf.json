@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TruERP",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "identifier": "local.truerp.desktop",
   "build": {
     "frontendDist": "../splash",
@@ -53,7 +53,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY1RkJFRTU0Q0ExQjhCMTYKUldRV2l4dktWTzc3OVlLdGtmTGdFdndPR2E4NzkvSUh2UTNEN1pnUUlZRlBKR3JpbnhQNmx4L1MK",
       "endpoints": [
-        "https://github.com/ntoric/TruERP/releases/latest/download/latest.json"
+        "https://github.com/ntoric/truerp_tauri/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

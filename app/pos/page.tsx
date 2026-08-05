@@ -737,15 +737,20 @@ export default function POSPage() {
     const printInvoice = async (invoiceId: string) => {
       try {
         const printSettings = await fetchPrintSettings()
+        // POS checkout always prints a thermal receipt (A4 mode is PDF download elsewhere).
         await printDocument({
           documentType: 'invoice',
           documentId: invoiceId,
-          mode: printSettings.invoice_print_mode,
+          mode: 'thermal',
           printSize: printSettings.thermal_print_size,
         })
       } catch (printErr) {
         console.warn('POS print failed:', printErr)
-        notifyError('Sale saved, but print/PDF failed. Check Print Settings.')
+        const detail =
+          printErr instanceof Error && printErr.message
+            ? printErr.message
+            : 'Check Print Settings (thermal printer / paper size).'
+        notifyError(`Sale saved, but print failed: ${detail}`)
       }
     }
 

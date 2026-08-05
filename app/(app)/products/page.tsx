@@ -634,7 +634,7 @@ export default function ProductsPage() {
           notifyError('Label print returned empty content')
           return
         }
-        printHtmlDocument(html, { title: 'Product Labels' })
+        await printHtmlDocument(html, { title: 'Product Labels' })
         setShowPrintDialog(false)
       } else {
         const data = await res.json().catch(() => ({}))

@@ -155,7 +155,11 @@ Workflows:
 | Path | When it runs |
 |------|----------------|
 | [`.github/workflows/desktop-release.yml`](../.github/workflows/desktop-release.yml) | TruERP monorepo (`ntoric/TruERP`) |
-| [`.github/workflows/desktop-release.yml`](./.github/workflows/desktop-release.yml) | If `frontend/` is published as its own repo |
+| [`.github/workflows/desktop-release.yml`](./.github/workflows/desktop-release.yml) | Frontend repo (`ntoric/truerp_tauri`) |
+
+In-app updates read a **public** `latest.json`. The desktop app is configured to poll
+`https://github.com/ntoric/truerp_tauri/releases/latest/download/latest.json`.
+Ship desktop tags from `truerp_tauri` (or otherwise publish that manifest + signed artifacts to a public URL).
 
 ```bash
 git tag v1.2.3
@@ -181,12 +185,12 @@ The workflow syncs `package.json` / `tauri.conf.json` / `Cargo.toml` version fro
 ```bash
 npm run desktop:manifest -- \
   --version 1.0.1 \
-  --base-url https://github.com/ntoric/TruERP/releases/download/v1.0.1 \
+  --base-url https://github.com/ntoric/truerp_tauri/releases/download/v1.0.1 \
   --notes "What changed"
 ```
 
 4. Upload the updater artifacts (`.app.tar.gz` / setup `.exe` + matching `.sig`) and `latest.json` to the GitHub release.
-5. Clients poll `https://github.com/ntoric/TruERP/releases/latest/download/latest.json` (override at runtime with `TRUERP_UPDATE_ENDPOINT`).
+5. Clients poll `https://github.com/ntoric/truerp_tauri/releases/latest/download/latest.json` (override at runtime with `TRUERP_UPDATE_ENDPOINT`).
 
 ## Notes
 
