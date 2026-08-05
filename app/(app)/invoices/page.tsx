@@ -16,7 +16,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
+import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { downloadInvoicePdf } from '@/lib/printDocument'
 import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2 } from 'lucide-react'
@@ -167,30 +167,34 @@ export default function InvoicesPage() {
     return `${diff} days`
   }
 
-  const handleExport = () => {
-    const headers = ['Date', 'Invoice #', 'Party Name', 'Due In', 'Amount', 'Status']
-    const rows = filteredInvoices.map(inv => [
-      formatDate(inv.date),
-      inv.invoice_number,
-      partyLabel(inv),
-      getDueIn(inv.due_date),
-      formatCurrency(inv.total_amount),
-      inv.status
-    ])
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'invoices.csv'
-    a.click()
+  const handleExport = async () => {
+    try {
+      await downloadCsv(
+        `invoices_${accountingExportDateStamp()}.csv`,
+        [
+          ['Date', 'Invoice #', 'Party Name', 'Due In', 'Amount', 'Status'],
+          ...filteredInvoices.map((inv) => [
+            formatDate(inv.date),
+            inv.invoice_number,
+            partyLabel(inv),
+            getDueIn(inv.due_date),
+            formatCurrency(inv.total_amount),
+            inv.status,
+          ]),
+        ],
+        { label: 'Exporting invoices' }
+      )
+      notifySuccess('Invoices exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export invoices')
+    }
   }
 
   const handleDownloadImportTemplate = () => {
-    downloadCsv(`sales_invoices_import_template_${accountingExportDateStamp()}.csv`, [
+    void downloadCsv(`sales_invoices_import_template_${accountingExportDateStamp()}.csv`, [
       INVOICE_IMPORT_HEADERS,
       ...INVOICE_IMPORT_SAMPLE_ROWS,
-    ])
+    ], { label: 'Exporting import template' })
   }
 
   const resetImportDialog = () => {
@@ -332,25 +336,28 @@ export default function InvoicesPage() {
     }
   }
 
-  const handleBulkExportInvoices = () => {
-    const selected = filteredInvoices.filter(inv => selectedInvoices.has(inv.id))
-    const headers = ['Date', 'Invoice #', 'Party Name', 'Due In', 'Amount', 'Status']
-    const rows = selected.map(inv => [
-      formatDate(inv.date),
-      inv.invoice_number,
-      partyLabel(inv),
-      getDueIn(inv.due_date),
-      formatCurrency(inv.total_amount),
-      inv.status
-    ])
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'selected-invoices.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+  const handleBulkExportInvoices = async () => {
+    const selected = filteredInvoices.filter((inv) => selectedInvoices.has(inv.id))
+    try {
+      await downloadCsv(
+        `selected-invoices_${accountingExportDateStamp()}.csv`,
+        [
+          ['Date', 'Invoice #', 'Party Name', 'Due In', 'Amount', 'Status'],
+          ...selected.map((inv) => [
+            formatDate(inv.date),
+            inv.invoice_number,
+            partyLabel(inv),
+            getDueIn(inv.due_date),
+            formatCurrency(inv.total_amount),
+            inv.status,
+          ]),
+        ],
+        { label: 'Exporting selected invoices' }
+      )
+      notifySuccess('Selected invoices exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export invoices')
+    }
   }
 
   const handleBulkCancelInvoices = async () => {

@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
+import { notifyError, notifySuccess } from '@/lib/notify'
 import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Truck } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
@@ -82,23 +84,27 @@ export default function DeliveryChallansPage() {
     return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] || variants.draft}`}>{status}</span>
   }
 
-  const handleExport = () => {
-    const headers = ['Date', 'Challan #', 'Party Name', 'Quantity', 'Amount', 'Status']
-    const rows = filteredChallans.map(challan => [
-      formatDate(challan.date),
-      challan.challan_number,
-      challan.party?.name || 'N/A',
-      challan.total_quantity.toString(),
-      formatCurrency(challan.sub_total),
-      challan.status
-    ])
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'delivery-challans.csv'
-    a.click()
+  const handleExport = async () => {
+    try {
+      await downloadCsv(
+        `delivery-challans_${accountingExportDateStamp()}.csv`,
+        [
+          ['Date', 'Challan #', 'Party Name', 'Quantity', 'Amount', 'Status'],
+          ...filteredChallans.map((challan) => [
+            formatDate(challan.date),
+            challan.challan_number,
+            challan.party?.name || 'N/A',
+            challan.total_quantity,
+            formatCurrency(challan.sub_total),
+            challan.status,
+          ]),
+        ],
+        { label: 'Exporting delivery challans' }
+      )
+      notifySuccess('Delivery challans exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export delivery challans')
+    }
   }
 
   const handleCancelChallan = async (id: string) => {
@@ -148,25 +154,28 @@ export default function DeliveryChallansPage() {
     }
   }
 
-  const handleBulkExportChallans = () => {
-    const selected = filteredChallans.filter(ch => selectedChallans.has(ch.id))
-    const headers = ['Date', 'Challan #', 'Party Name', 'Quantity', 'Amount', 'Status']
-    const rows = selected.map(challan => [
-      formatDate(challan.date),
-      challan.challan_number,
-      challan.party?.name || 'N/A',
-      challan.total_quantity.toString(),
-      formatCurrency(challan.sub_total),
-      challan.status
-    ])
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'selected-delivery-challans.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+  const handleBulkExportChallans = async () => {
+    const selected = filteredChallans.filter((ch) => selectedChallans.has(ch.id))
+    try {
+      await downloadCsv(
+        `selected-delivery-challans_${accountingExportDateStamp()}.csv`,
+        [
+          ['Date', 'Challan #', 'Party Name', 'Quantity', 'Amount', 'Status'],
+          ...selected.map((challan) => [
+            formatDate(challan.date),
+            challan.challan_number,
+            challan.party?.name || 'N/A',
+            challan.total_quantity,
+            formatCurrency(challan.sub_total),
+            challan.status,
+          ]),
+        ],
+        { label: 'Exporting selected challans' }
+      )
+      notifySuccess('Selected delivery challans exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export delivery challans')
+    }
   }
 
   const handleBulkCancelChallans = async () => {

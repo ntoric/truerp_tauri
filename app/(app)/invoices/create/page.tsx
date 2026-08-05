@@ -31,6 +31,7 @@ import WeighingScalePanel from '@/components/WeighingScalePanel'
 import CreateProductDialog, { type CreatedProduct } from '@/components/CreateProductDialog'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
 import { looksLikeScaleBarcode, resolveScaleBarcodeForPos } from '@/lib/weighingScaleBarcode'
+import { fetchProductBatches, formatBatchLabel, type ProductBatchStock } from '@/lib/productBatches'
 
 interface Party {
   id: string
@@ -57,6 +58,7 @@ interface Product {
   stock_qty: number
   category: string
   sale_price_with_tax: boolean
+  enable_batching?: boolean
 }
 
 interface InvoiceItem {
@@ -73,6 +75,9 @@ interface InvoiceItem {
   igst: number
   total: number
   sale_price_with_tax: boolean
+  batch_no: string
+  exp_date: string
+  enable_batching?: boolean
 }
 
 const ITEM_NUMBER_FIELDS: (keyof InvoiceItem)[] = [
@@ -120,8 +125,9 @@ export default function CreateInvoicePage() {
   const { getDepositHint } = usePaymentMethodMappings()
   const [signature, setSignature] = useState('')
   const [items, setItems] = useState<InvoiceItem[]>([
-    { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0 }
+    { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false, batch_no: '', exp_date: '', enable_batching: false }
   ] as InvoiceItem[])
+  const [lineBatches, setLineBatches] = useState<Record<number, ProductBatchStock[]>>({})
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
@@ -314,6 +320,9 @@ export default function CreateInvoicePage() {
       igst: 0,
       total: 0,
       sale_price_with_tax: product.sale_price_with_tax ?? false,
+      batch_no: '',
+      exp_date: '',
+      enable_batching: product.enable_batching ?? false,
     }
     setItems((prev) => {
       const next = [...prev, newItem]
@@ -342,6 +351,24 @@ export default function CreateInvoicePage() {
       next[index].total = taxable + next[index].cgst + next[index].sgst + next[index].igst
       return next
     })
+    if (product.enable_batching) {
+      void (async () => {
+        const batches = await fetchProductBatches(product.id)
+        setItems((prev) => {
+          const target = prev.length - 1
+          setLineBatches((lb) => ({ ...lb, [target]: batches }))
+          if (!batches.length || !prev[target]) return prev
+          const copy = [...prev]
+          copy[target] = {
+            ...copy[target],
+            batch_no: batches[0].batch_no || '',
+            exp_date: batches[0].exp_date ? String(batches[0].exp_date).slice(0, 10) : '',
+            enable_batching: true,
+          }
+          return copy
+        })
+      })()
+    }
     setShowProductModal(false)
     setProductSearch('')
   }
@@ -553,7 +580,7 @@ export default function CreateInvoicePage() {
   }
 
   const addItem = () => {
-    setItems([...items, { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false }])
+    setItems([...items, { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false, batch_no: '', exp_date: '', enable_batching: false }])
   }
 
   const removeItem = (index: number) => {
@@ -761,6 +788,8 @@ export default function CreateInvoicePage() {
             discount: parseItemNumber(item.discount),
             tax_rate: parseItemNumber(item.tax_rate),
             unit: item.unit,
+            batch_no: item.batch_no || '',
+            exp_date: item.exp_date || null,
           })),
           custom_fields: customFieldValues,
           pdf_template: pdfTemplate,
@@ -1056,6 +1085,44 @@ export default function CreateInvoicePage() {
                             className="h-8 w-full"
                             required
                           />
+                          {(item.enable_batching ||
+                            products.find((p) => p.id === item.product_id)?.enable_batching) && (
+                            <select
+                              value={item.batch_no}
+                              onChange={(e) => {
+                                const batches = lineBatches[index] || []
+                                const selected = batches.find((b) => b.batch_no === e.target.value)
+                                const next = [...items]
+                                next[index] = {
+                                  ...next[index],
+                                  batch_no: e.target.value,
+                                  exp_date: selected?.exp_date
+                                    ? String(selected.exp_date).slice(0, 10)
+                                    : '',
+                                }
+                                setItems(next)
+                              }}
+                              onFocus={() => {
+                                if (item.product_id && !lineBatches[index]) {
+                                  void fetchProductBatches(item.product_id).then((batches) => {
+                                    setLineBatches((lb) => ({ ...lb, [index]: batches }))
+                                  })
+                                }
+                              }}
+                              className="mt-1 flex h-7 w-full rounded-md border border-input bg-background px-2 text-xs"
+                            >
+                              <option value="">Select batch (FEFO)</option>
+                              {(lineBatches[index] || []).map((b) => (
+                                <option key={`${b.id}-${b.batch_no}`} value={b.batch_no}>
+                                  {formatBatchLabel(b)}
+                                </option>
+                              ))}
+                              {item.batch_no &&
+                                !(lineBatches[index] || []).some((b) => b.batch_no === item.batch_no) && (
+                                  <option value={item.batch_no}>{item.batch_no}</option>
+                                )}
+                            </select>
+                          )}
                         </td>
                         <td className="py-2 px-1">
                           <Input

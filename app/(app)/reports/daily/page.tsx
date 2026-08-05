@@ -11,8 +11,10 @@ import {
   buildDailyReportShareText,
   dailyReportSections,
   downloadDailyReportJson,
+  downloadDailyReportPdf,
   type DailyReport,
 } from '@/lib/dailyReport'
+import { downloadBlob } from '@/lib/accountingExport'
 import { useToast } from '@/hooks/use-toast'
 import {
   CalendarDays,
@@ -111,22 +113,32 @@ export default function DailyReportPage() {
         return
       }
       const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `daily_report_${reportDate}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
-      toast({ title: 'CSV downloaded' })
+      await downloadBlob(`daily_report_${reportDate}.csv`, blob, {
+        label: 'Exporting daily report CSV',
+      })
+      toast({ title: 'CSV exported' })
     } catch {
       toast({ title: 'Export failed', variant: 'destructive' })
     }
   }
 
-  const exportJson = () => {
+  const exportJson = async () => {
     if (!report) return
-    downloadDailyReportJson(report)
-    toast({ title: 'JSON downloaded' })
+    try {
+      await downloadDailyReportJson(report)
+      toast({ title: 'JSON exported' })
+    } catch {
+      toast({ title: 'Export failed', variant: 'destructive' })
+    }
+  }
+
+  const exportPdf = async () => {
+    try {
+      await downloadDailyReportPdf(reportDate)
+      toast({ title: 'PDF exported' })
+    } catch {
+      toast({ title: 'PDF export failed', variant: 'destructive' })
+    }
   }
 
   return (
@@ -136,7 +148,7 @@ export default function DailyReportPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Daily Report</h1>
             <p className="text-sm text-gray-500">
-              Sales, purchases, credits, expenses, and cash movement for partners
+              Purchase expense, payment out, accounts payable, sales, and cash movement
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -185,8 +197,15 @@ export default function DailyReportPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={exportCsv}>Download CSV</DropdownMenuItem>
-                  <DropdownMenuItem onClick={exportJson}>Download JSON</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void exportPdf()}>
+                    Download PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void exportCsv()}>
+                    Download CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void exportJson()}>
+                    Download JSON
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -198,7 +217,7 @@ export default function DailyReportPage() {
               </div>
             ) : report ? (
               <>
-                <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="rounded-lg border bg-green-50 p-4">
                     <div className="flex items-center gap-2 text-green-800">
                       <TrendingUp className="h-4 w-4" />
@@ -212,17 +231,26 @@ export default function DailyReportPage() {
                   <div className="rounded-lg border bg-orange-50 p-4">
                     <div className="flex items-center gap-2 text-orange-800">
                       <TrendingDown className="h-4 w-4" />
-                      <span className="text-sm font-medium">Purchases & expenses</span>
+                      <span className="text-sm font-medium">Purchase expense</span>
                     </div>
                     <p className="mt-2 text-2xl font-bold text-orange-900">
-                      {formatCurrency(
-                        report.purchases.total_amount +
-                          report.expenses.total_amount +
-                          report.payments_out.total_amount
-                      )}
+                      {formatCurrency(report.purchases.total_amount)}
                     </p>
                     <p className="text-xs text-orange-700">
-                      Purchases {report.purchases.count} · Expenses {report.expenses.count}
+                      {report.purchases.count} bills · full invoice total
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-amber-50 p-4">
+                    <div className="flex items-center gap-2 text-amber-800">
+                      <TrendingDown className="h-4 w-4" />
+                      <span className="text-sm font-medium">Payment out</span>
+                    </div>
+                    <p className="mt-2 text-2xl font-bold text-amber-900">
+                      {formatCurrency(report.payments_out.total_amount)}
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      {report.payments_out.count} payments · AP today{' '}
+                      {formatCurrency(report.accounts_payable?.total_amount || 0)}
                     </p>
                   </div>
                   <div
@@ -279,6 +307,15 @@ export default function DailyReportPage() {
                         )
                       })}
                       <tr className="border-t bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-gray-900">
+                          Accounts Payable (total outstanding)
+                        </td>
+                        <td className="px-4 py-3 text-right">—</td>
+                        <td className="px-4 py-3 text-right font-semibold">
+                          {formatCurrency(report.accounts_payable_total || 0)}
+                        </td>
+                      </tr>
+                      <tr className="border-t bg-gray-50">
                         <td className="px-4 py-3 font-medium text-gray-900">GST collected (sales)</td>
                         <td className="px-4 py-3 text-right">—</td>
                         <td className="px-4 py-3 text-right font-semibold">
@@ -290,8 +327,8 @@ export default function DailyReportPage() {
                 </div>
 
                 <p className="mt-4 text-xs text-gray-500">
-                  Share or export this summary to send to partners, accountants, or co-owners.
-                  Cancelled documents are excluded from counts.
+                  Purchase expense = full bill total; Payment out = amount paid; Accounts payable =
+                  unpaid balance. Cancelled documents are excluded from counts.
                 </p>
               </>
             ) : (

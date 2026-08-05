@@ -57,3 +57,32 @@ export function exclusiveUnitPrice(
   if (!priceIncludesTax || rate <= 0) return roundMoney(amount)
   return roundMoney(amount / (1 + rate / 100))
 }
+
+/** Payable line total (qty × price, adding tax only when price is exclusive). */
+export function linePayableTotal(
+  price: unknown,
+  quantity: unknown,
+  taxRate: unknown,
+  priceIncludesTax: boolean | undefined | null
+): number {
+  const qty = parseItemNumber(quantity)
+  const rate = parseItemNumber(taxRate)
+  const exclusive = exclusiveUnitPrice(price, rate, priceIncludesTax)
+  const taxable = exclusive * qty
+  const tax = rate > 0 ? taxable * (rate / 100) : 0
+  return roundMoney(taxable + tax)
+}
+
+/** Tax portion of a line (extracted if inclusive, added if exclusive). */
+export function lineTaxAmount(
+  price: unknown,
+  quantity: unknown,
+  taxRate: unknown,
+  priceIncludesTax: boolean | undefined | null
+): number {
+  const qty = parseItemNumber(quantity)
+  const rate = parseItemNumber(taxRate)
+  if (rate <= 0) return 0
+  const exclusive = exclusiveUnitPrice(price, rate, priceIncludesTax)
+  return roundMoney(exclusive * qty * (rate / 100))
+}

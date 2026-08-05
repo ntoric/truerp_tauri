@@ -323,7 +323,7 @@ export default function PaymentOutsPage() {
     }
   }
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const rows: (string | number)[][] = [
       [
         'Date',
@@ -350,7 +350,7 @@ export default function PaymentOutsPage() {
         paymentOut.notes || '',
       ]),
     ]
-    downloadCsv(`payment_outs_${accountingExportDateStamp()}.csv`, rows)
+    await downloadCsv(`payment_outs_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting payment outs' })
   }
 
   const hasActiveFilters =

@@ -187,6 +187,16 @@ export default function StoresPage() {
       showErrorToast(firstValidationMessage(errors) || 'Please fix the highlighted fields')
       return
     }
+    if (editActive !== selectedStore.is_active) {
+      if (!(await confirm({
+        title: editActive ? 'Enable store?' : 'Disable store?',
+        description: editActive
+          ? `Enable "${selectedStore.name}"? It will become available for selection.`
+          : `Disable "${selectedStore.name}"? Inactive stores cannot be selected.`,
+        confirmLabel: editActive ? 'Enable' : 'Disable',
+        variant: 'default',
+      }))) return
+    }
     setSaving(true)
     clearErrors()
     try {

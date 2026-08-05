@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { exportReportCsv, exportReportJson } from '@/lib/reportsExport'
+import { notifyError } from '@/lib/notify'
 import { Download } from 'lucide-react'
 
 type ReportExportMenuProps = {
@@ -27,6 +28,24 @@ export function ReportExportMenu({
   size = 'sm',
   onExported,
 }: ReportExportMenuProps) {
+  const runCsv = async () => {
+    try {
+      await exportReportCsv(baseName, csvRows)
+      onExported?.('csv')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export CSV')
+    }
+  }
+
+  const runJson = async () => {
+    try {
+      await exportReportJson(baseName, jsonData)
+      onExported?.('json')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export JSON')
+    }
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -37,17 +56,17 @@ export function ReportExportMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem
-          onClick={() => {
-            exportReportCsv(baseName, csvRows)
-            onExported?.('csv')
+          onSelect={(event) => {
+            event.preventDefault()
+            void runCsv()
           }}
         >
           Download CSV
         </DropdownMenuItem>
         <DropdownMenuItem
-          onClick={() => {
-            exportReportJson(baseName, jsonData)
-            onExported?.('json')
+          onSelect={(event) => {
+            event.preventDefault()
+            void runJson()
           }}
         >
           Download JSON

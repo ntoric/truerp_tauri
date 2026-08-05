@@ -13,6 +13,7 @@ import { Plus, Trash2, Loader2, Save, ArrowLeft, Search, Barcode, X, Package } f
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { notifyError } from '@/lib/notify'
+import { exclusiveUnitPrice, linePayableTotal } from '@/lib/numbers'
 
 interface Party {
   id: string
@@ -56,6 +57,7 @@ interface Product {
   item_code: string
   hsn_code: string
   sale_price: number
+  sale_price_with_tax?: boolean
   tax_rate: number
   unit: string
   stock_qty: number
@@ -256,14 +258,24 @@ export default function CreateSalesReturnPage() {
   }
 
   const addProductToReturn = (product: Product) => {
+    const unitPrice = exclusiveUnitPrice(
+      product.sale_price,
+      product.tax_rate,
+      product.sale_price_with_tax ?? true
+    )
     const newItem: SalesReturnItem = {
       product_id: product.id,
       description: product.name,
       quantity: 1,
-      unit_price: product.sale_price,
+      unit_price: unitPrice,
       tax_rate: product.tax_rate,
       unit: product.unit,
-      total: 0,
+      total: linePayableTotal(
+        product.sale_price,
+        1,
+        product.tax_rate,
+        product.sale_price_with_tax ?? true
+      ),
       reason: ''
     }
     setItems([...items, newItem])
@@ -313,14 +325,19 @@ export default function CreateSalesReturnPage() {
       const product = products.find(p => p.id === value)
       if (product) {
         newItems[index].description = product.name
-        newItems[index].unit_price = product.sale_price
+        newItems[index].unit_price = exclusiveUnitPrice(
+          product.sale_price,
+          product.tax_rate,
+          product.sale_price_with_tax ?? true
+        )
         newItems[index].tax_rate = product.tax_rate
         newItems[index].unit = product.unit
       }
     }
 
-    if (field === 'quantity' || field === 'unit_price' || field === 'tax_rate') {
+    if (field === 'product_id' || field === 'quantity' || field === 'unit_price' || field === 'tax_rate') {
       const item = newItems[index]
+      // unit_price is always tax-exclusive after product selection / edits
       const taxAmount = item.unit_price * item.quantity * (item.tax_rate / 100)
       item.total = item.unit_price * item.quantity + taxAmount
     }
@@ -549,14 +566,7 @@ export default function CreateSalesReturnPage() {
                             <select
                               value={item.product_id}
                               onChange={(e) => {
-                                const product = products.find(p => p.id === e.target.value)
                                 updateItem(index, 'product_id', e.target.value)
-                                if (product) {
-                                  updateItem(index, 'description', product.name)
-                                  updateItem(index, 'unit_price', product.sale_price)
-                                  updateItem(index, 'tax_rate', product.tax_rate)
-                                  updateItem(index, 'unit', product.unit)
-                                }
                               }}
                               className="h-10 flex-1 rounded-md border border-input bg-background px-3"
                               required

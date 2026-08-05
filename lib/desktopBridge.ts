@@ -40,7 +40,7 @@ type DesktopAppBridge = {
     paperSize?: string | null
   ) => Promise<void>
   SavePDF?: (pdfBase64: string, filename: string) => Promise<string>
-  SaveFile?: (dataBase64: string, filename: string) => Promise<string>
+  SaveFile?: (dataBase64: string, filename: string, openAfter?: boolean) => Promise<string>
   PrintThermal?: (
     content: string,
     printerName: string,
@@ -101,10 +101,11 @@ function getDesktopApp(): DesktopAppBridge | null {
           pdfBase64,
           filename: filename || 'document.pdf',
         }) as Promise<string>,
-      SaveFile: (dataBase64, filename) =>
+      SaveFile: (dataBase64, filename, openAfter) =>
         invoke('save_file', {
           dataBase64,
           filename: filename || 'download.bin',
+          openAfter: openAfter ?? false,
         }) as Promise<string>,
       PrintThermal: (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) =>
         invoke('print_thermal', {
@@ -195,12 +196,13 @@ export async function desktopSavePDF(
 /** Save any file bytes via native Downloads folder (CSV/Excel/etc.). */
 export async function desktopSaveFile(
   dataBase64: string,
-  filename: string
+  filename: string,
+  openAfter = false
 ): Promise<boolean> {
   const app = getDesktopApp()
   if (!app?.SaveFile) return false
   try {
-    await app.SaveFile(dataBase64, filename)
+    await app.SaveFile(dataBase64, filename, openAfter)
     return true
   } catch (err) {
     throw new Error(invokeErrorMessage(err))

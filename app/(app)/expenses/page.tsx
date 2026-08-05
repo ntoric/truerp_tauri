@@ -13,12 +13,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, PlusCircle, Loader2, Printer as ThermalPrinter, MoreVertical, Trash2, Download } from 'lucide-react'
+import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
+import { Plus, Search, Tags, Printer as ThermalPrinter, MoreVertical, Trash2, Download } from 'lucide-react'
 import ThermalPrintModal from '@/components/ThermalPrintModal'
-import { notifyError } from '@/lib/notify'
+import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -49,9 +48,6 @@ export default function ExpensesPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
-  const [showCategoryDialog, setShowCategoryDialog] = useState(false)
-  const [newCategory, setNewCategory] = useState({ name: '', description: '' })
-  const [creatingCategory, setCreatingCategory] = useState(false)
   const [thermalPrintOpen, setThermalPrintOpen] = useState(false)
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null)
   const [selectedExpenses, setSelectedExpenses] = useState<Set<string>>(new Set())
@@ -85,30 +81,6 @@ export default function ExpensesPage() {
       if (res.ok) setCategories(await res.json())
     } catch (err) {
       console.error(err)
-    }
-  }
-
-  const handleCreateCategory = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setCreatingCategory(true)
-    try {
-      const res = await apiFetch('/expense-categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCategory)
-      })
-      if (res.ok) {
-        setNewCategory({ name: '', description: '' })
-        setShowCategoryDialog(false)
-        fetchCategories()
-      } else {
-        const data = await res.json()
-        notifyError(data.error || 'Failed to create expense category')
-      }
-    } catch (err) {
-      notifyError('An error occurred')
-    } finally {
-      setCreatingCategory(false)
     }
   }
 
@@ -157,24 +129,27 @@ export default function ExpensesPage() {
     }
   }
 
-  const handleBulkExportExpenses = () => {
-    const selected = expenses.filter(e => selectedExpenses.has(e.id))
-    const headers = ['Date', 'Expense Number', 'Party Name', 'Category', 'Amount']
-    const rows = selected.map(expense => [
-      formatDate(expense.date),
-      expense.expense_number,
-      expense.vendor || '-',
-      expense.category,
-      formatCurrency(expense.amount),
-    ])
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'selected-expenses.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+  const handleBulkExportExpenses = async () => {
+    const selected = expenses.filter((e) => selectedExpenses.has(e.id))
+    try {
+      await downloadCsv(
+        `selected-expenses_${accountingExportDateStamp()}.csv`,
+        [
+          ['Date', 'Expense Number', 'Party Name', 'Category', 'Amount'],
+          ...selected.map((expense) => [
+            formatDate(expense.date),
+            expense.expense_number,
+            expense.vendor || '-',
+            expense.category,
+            formatCurrency(expense.amount),
+          ]),
+        ],
+        { label: 'Exporting expenses' }
+      )
+      notifySuccess('Selected expenses exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export expenses')
+    }
   }
 
   const handleBulkDeleteExpenses = async () => {
@@ -207,39 +182,9 @@ export default function ExpensesPage() {
             <p className="text-sm text-gray-500">Total: {formatCurrency(totalExpenses)}</p>
           </div>
           <div className="flex gap-2">
-            <Dialog open={showCategoryDialog} onOpenChange={setShowCategoryDialog}>
-              <DialogTrigger asChild>
-                <Button variant="outline"><PlusCircle className="mr-2 h-4 w-4" /> Add Expense Category</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create Expense Category</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleCreateCategory} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="cat-name">Expense Category Name *</Label>
-                    <Input
-                      id="cat-name"
-                      value={newCategory.name}
-                      onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cat-desc">Description</Label>
-                    <Input
-                      id="cat-desc"
-                      value={newCategory.description}
-                      onChange={(e) => setNewCategory({ ...newCategory, description: e.target.value })}
-                    />
-                  </div>
-                  <Button type="submit" disabled={creatingCategory} className="w-full">
-                    {creatingCategory ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                    Create Expense Category
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <Link href="/expense-categories">
+              <Button variant="outline"><Tags className="mr-2 h-4 w-4" /> Expense Categories</Button>
+            </Link>
             <Link href="/expenses/create">
               <Button><Plus className="mr-2 h-4 w-4" /> Add Expense</Button>
             </Link>

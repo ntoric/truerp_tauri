@@ -292,6 +292,18 @@ export default function UserManagementPage() {
     }
   }
 
+  const handleToggleUserActive = async (u: AppUser, checked: boolean) => {
+    if (!(await confirm({
+      title: checked ? 'Enable user?' : 'Disable user?',
+      description: checked
+        ? `Enable ${u.name || u.email}? They will be able to sign in again.`
+        : `Disable ${u.name || u.email}? They will not be able to sign in.`,
+      confirmLabel: checked ? 'Enable' : 'Disable',
+      variant: 'default',
+    }))) return
+    await handleUpdateUser(u, { is_active: checked })
+  }
+
   const handleDeleteUser = async (id: string) => {
     if (!(await confirm({
       title: 'Delete user?',
@@ -535,8 +547,8 @@ export default function UserManagementPage() {
                 <TableCell>
                   <Switch
                     checked={u.is_active}
-                    disabled={isSuperAdmin(u.role)}
-                    onCheckedChange={(checked) => handleUpdateUser(u, { is_active: checked })}
+                    disabled={isSuperAdmin(u.role) || saving}
+                    onCheckedChange={(checked) => handleToggleUserActive(u, checked)}
                   />
                 </TableCell>
                 <TableCell className="text-right">

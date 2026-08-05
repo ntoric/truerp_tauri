@@ -58,10 +58,11 @@ const BRIDGE_JS: &str = r#"
         filename: filename || 'document.pdf'
       });
     },
-    SaveFile: function (dataBase64, filename) {
+    SaveFile: function (dataBase64, filename, openAfter) {
       return invoke('save_file', {
         dataBase64: dataBase64 || '',
-        filename: filename || 'download.bin'
+        filename: filename || 'download.bin',
+        openAfter: openAfter === true
       });
     },
     PrintThermal: function (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) {

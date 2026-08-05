@@ -259,6 +259,16 @@ export default function CreateProductDialog({
       return
     }
 
+    if (
+      newItem.enable_batching &&
+      newItem.inventory.quantity > 0 &&
+      !String(newItem.inventory.batch_no || '').trim()
+    ) {
+      setError('batch_no', 'Batch number is required when batching is enabled')
+      setCreateTab('inventory')
+      return
+    }
+
     setCreating(true)
     clearErrors()
     try {
@@ -885,7 +895,12 @@ export default function CreateProductDialog({
                   checked={newItem.enable_batching}
                   onCheckedChange={(checked) => updateNewItem({ enable_batching: checked as boolean })}
                 />
-                <Label htmlFor="create_enable_batching">Enable Batching</Label>
+                <div>
+                  <Label htmlFor="create_enable_batching">Enable Batching</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Track stock by batch number (required on purchase; picked on sale/POS).
+                  </p>
+                </div>
               </div>
             </TabsContent>
           </Tabs>

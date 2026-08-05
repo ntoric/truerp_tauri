@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { accountingExportDateStamp, downloadCsv, downloadJson, rowsToCsv } from '@/lib/accountingExport'
+import { accountingExportDateStamp, downloadBlob, downloadCsv, downloadJson, rowsToCsv } from '@/lib/accountingExport'
 import { useToast } from '@/hooks/use-toast'
 import {
   DropdownMenu,
@@ -136,7 +136,13 @@ const emptyJournalLine = (): JournalLineForm => ({
   description: '',
 })
 
-function ExportActions({ onCsv, onJson }: { onCsv: () => void; onJson: () => void }) {
+function ExportActions({
+  onCsv,
+  onJson,
+}: {
+  onCsv: () => void | Promise<void>
+  onJson: () => void | Promise<void>
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -146,8 +152,22 @@ function ExportActions({ onCsv, onJson }: { onCsv: () => void; onJson: () => voi
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onCsv}>Download CSV</DropdownMenuItem>
-        <DropdownMenuItem onClick={onJson}>Download JSON</DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
+            void onCsv()
+          }}
+        >
+          Download CSV
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
+            void onJson()
+          }}
+        >
+          Download JSON
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -450,12 +470,12 @@ export default function AccountingPage() {
     }
   }
 
-  const handleBulkExportAccounts = () => {
+  const handleBulkExportAccounts = async () => {
     const selected = accounts.filter(a => selectedAccounts.has(a.id))
-    downloadCsv(`selected-accounts-${exportStamp}.csv`, [
+    await downloadCsv(`selected-accounts-${exportStamp}.csv`, [
       ['Code', 'Name', 'Type', 'Balance'],
       ...selected.map(a => [a.code, a.name, a.account_type, a.balance]),
-    ])
+    ], { label: 'Exporting selected accounts' })
     notifyExported('Selected accounts')
   }
 
@@ -508,7 +528,7 @@ export default function AccountingPage() {
     }
   }
 
-  const handleBulkExportJournals = () => {
+  const handleBulkExportJournals = async () => {
     const selected = journalEntries.filter(j => selectedJournals.has(j.id))
     const rows: (string | number)[][] = [
       ['Entry Number', 'Entry Date', 'Description', 'Status', 'Debit', 'Credit'],
@@ -516,7 +536,9 @@ export default function AccountingPage() {
     for (const j of selected) {
       rows.push([j.entry_number, j.entry_date, j.description, j.status, j.total_debit, j.total_credit])
     }
-    downloadCsv(`selected-journal-entries-${exportStamp}.csv`, rows)
+    await downloadCsv(`selected-journal-entries-${exportStamp}.csv`, rows, {
+      label: 'Exporting selected journals',
+    })
     notifyExported('Selected journal entries')
   }
 
@@ -551,9 +573,9 @@ export default function AccountingPage() {
     }
   }
 
-  const handleBulkExportReconciliations = () => {
+  const handleBulkExportReconciliations = async () => {
     const selected = reconciliations.filter(r => selectedReconciliations.has(r.id))
-    downloadCsv(`selected-bank-reconciliation-${exportStamp}.csv`, [
+    await downloadCsv(`selected-bank-reconciliation-${exportStamp}.csv`, [
       ['Statement Date', 'Bank Account', 'Statement Balance', 'Book Balance', 'Difference', 'Status', 'Notes'],
       ...selected.map(r => [
         r.statement_date,
@@ -564,7 +586,7 @@ export default function AccountingPage() {
         r.status,
         r.notes,
       ]),
-    ])
+    ], { label: 'Exporting reconciliations' })
     notifyExported('Selected reconciliations')
   }
 
@@ -712,44 +734,50 @@ export default function AccountingPage() {
   const notifyExported = (label: string) => toast({ title: `${label} exported` })
 
   const exportAllAccountingZip = async () => {
-    const zip = new JSZip()
-    zip.file('chart-of-accounts.csv', rowsToCsv(chartOfAccountsCsvRows()))
-    zip.file('journal-entries.csv', rowsToCsv(journalCsvRows()))
-    zip.file('ledger.csv', rowsToCsv(ledgerCsvRows()))
-    zip.file('trial-balance.csv', rowsToCsv(trialBalanceCsvRows()))
-    zip.file('profit-and-loss.csv', rowsToCsv(profitLossCsvRows()))
-    zip.file('balance-sheet.csv', rowsToCsv(balanceSheetCsvRows()))
-    zip.file('bank-reconciliation.csv', rowsToCsv(bankReconCsvRows()))
-    if (generalLedger?.account && generalLedger.entries.length >= 0) {
-      const safe = generalLedger.account.code.replace(/[^a-zA-Z0-9-_]/g, '_')
-      zip.file(`general-ledger-${safe}.csv`, rowsToCsv(generalLedgerCsvRows()))
-    }
-    zip.file(
-      'summary.json',
-      JSON.stringify(
-        {
-          exported_at: new Date().toISOString(),
-          accounts,
-          journal_entries: journalEntries,
-          ledger: ledgerEntries,
-          trial_balance: { items: trialBalance, ...trialTotals },
-          profit_loss: profitLoss,
-          balance_sheet: balanceSheet,
-          bank_reconciliations: reconciliations,
-          general_ledger: generalLedger,
-        },
-        null,
-        2
+    try {
+      const zip = new JSZip()
+      zip.file('chart-of-accounts.csv', rowsToCsv(chartOfAccountsCsvRows()))
+      zip.file('journal-entries.csv', rowsToCsv(journalCsvRows()))
+      zip.file('ledger.csv', rowsToCsv(ledgerCsvRows()))
+      zip.file('trial-balance.csv', rowsToCsv(trialBalanceCsvRows()))
+      zip.file('profit-and-loss.csv', rowsToCsv(profitLossCsvRows()))
+      zip.file('balance-sheet.csv', rowsToCsv(balanceSheetCsvRows()))
+      zip.file('bank-reconciliation.csv', rowsToCsv(bankReconCsvRows()))
+      if (generalLedger?.account && generalLedger.entries.length >= 0) {
+        const safe = generalLedger.account.code.replace(/[^a-zA-Z0-9-_]/g, '_')
+        zip.file(`general-ledger-${safe}.csv`, rowsToCsv(generalLedgerCsvRows()))
+      }
+      zip.file(
+        'summary.json',
+        JSON.stringify(
+          {
+            exported_at: new Date().toISOString(),
+            accounts,
+            journal_entries: journalEntries,
+            ledger: ledgerEntries,
+            trial_balance: { items: trialBalance, ...trialTotals },
+            profit_loss: profitLoss,
+            balance_sheet: balanceSheet,
+            bank_reconciliations: reconciliations,
+            general_ledger: generalLedger,
+          },
+          null,
+          2
+        )
       )
-    )
-    const blob = await zip.generateAsync({ type: 'blob' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `accounting-export-${exportStamp}.zip`
-    a.click()
-    URL.revokeObjectURL(url)
-    notifyExported('Accounting bundle')
+      const blob = await zip.generateAsync({ type: 'blob' })
+      await downloadBlob(`accounting-export-${exportStamp}.zip`, blob, {
+        label: 'Exporting accounting bundle',
+      })
+      notifyExported('Accounting bundle')
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Export failed',
+        description: err instanceof Error ? err.message : undefined,
+        variant: 'destructive',
+      })
+    }
   }
 
   if (authLoading || loading) {
@@ -856,12 +884,12 @@ export default function AccountingPage() {
               <CardHeader className="flex flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-base">Chart of accounts</CardTitle>
                 <ExportActions
-                  onCsv={() => {
-                    downloadCsv(`chart-of-accounts-${exportStamp}.csv`, chartOfAccountsCsvRows())
+                  onCsv={async () => {
+                    await downloadCsv(`chart-of-accounts-${exportStamp}.csv`, chartOfAccountsCsvRows())
                     notifyExported('Chart of accounts')
                   }}
-                  onJson={() => {
-                    downloadJson(`chart-of-accounts-${exportStamp}.json`, accounts)
+                  onJson={async () => {
+                    await downloadJson(`chart-of-accounts-${exportStamp}.json`, accounts)
                     notifyExported('Chart of accounts')
                   }}
                 />
@@ -962,12 +990,12 @@ export default function AccountingPage() {
               <CardHeader className="flex flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-base">Journal entries</CardTitle>
                 <ExportActions
-                  onCsv={() => {
-                    downloadCsv(`journal-entries-${exportStamp}.csv`, journalCsvRows())
+                  onCsv={async () => {
+                    await downloadCsv(`journal-entries-${exportStamp}.csv`, journalCsvRows())
                     notifyExported('Journal entries')
                   }}
-                  onJson={() => {
-                    downloadJson(`journal-entries-${exportStamp}.json`, journalEntries)
+                  onJson={async () => {
+                    await downloadJson(`journal-entries-${exportStamp}.json`, journalEntries)
                     notifyExported('Journal entries')
                   }}
                 />
@@ -1084,12 +1112,12 @@ export default function AccountingPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <CardTitle className="text-base">Ledger management</CardTitle>
                   <ExportActions
-                    onCsv={() => {
-                      downloadCsv(`ledger-${exportStamp}.csv`, ledgerCsvRows())
+                    onCsv={async () => {
+                      await downloadCsv(`ledger-${exportStamp}.csv`, ledgerCsvRows())
                       notifyExported('Ledger')
                     }}
-                    onJson={() => {
-                      downloadJson(`ledger-${exportStamp}.json`, ledgerEntries)
+                    onJson={async () => {
+                      await downloadJson(`ledger-${exportStamp}.json`, ledgerEntries)
                       notifyExported('Ledger')
                     }}
                   />
@@ -1167,21 +1195,21 @@ export default function AccountingPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <CardTitle className="text-base">General ledger (account statement)</CardTitle>
                   <ExportActions
-                    onCsv={() => {
+                    onCsv={async () => {
                       if (!glAccountId) {
                         toast({ title: 'Select an account first', variant: 'destructive' })
                         return
                       }
                       const code = generalLedger?.account?.code || 'account'
-                      downloadCsv(`general-ledger-${code}-${exportStamp}.csv`, generalLedgerCsvRows())
+                      await downloadCsv(`general-ledger-${code}-${exportStamp}.csv`, generalLedgerCsvRows())
                       notifyExported('General ledger')
                     }}
-                    onJson={() => {
+                    onJson={async () => {
                       if (!glAccountId) {
                         toast({ title: 'Select an account first', variant: 'destructive' })
                         return
                       }
-                      downloadJson(`general-ledger-${exportStamp}.json`, generalLedger)
+                      await downloadJson(`general-ledger-${exportStamp}.json`, generalLedger)
                       notifyExported('General ledger')
                     }}
                   />
@@ -1273,12 +1301,12 @@ export default function AccountingPage() {
                     )}
                   </div>
                   <ExportActions
-                    onCsv={() => {
-                      downloadCsv(`trial-balance-${exportStamp}.csv`, trialBalanceCsvRows())
+                    onCsv={async () => {
+                      await downloadCsv(`trial-balance-${exportStamp}.csv`, trialBalanceCsvRows())
                       notifyExported('Trial balance')
                     }}
-                    onJson={() => {
-                      downloadJson(`trial-balance-${exportStamp}.json`, {
+                    onJson={async () => {
+                      await downloadJson(`trial-balance-${exportStamp}.json`, {
                         items: trialBalance,
                         total_debit: trialTotals.debit,
                         total_credit: trialTotals.credit,
@@ -1331,12 +1359,12 @@ export default function AccountingPage() {
           <TabsContent value="pnl">
             <div className="mb-4 flex justify-end">
               <ExportActions
-                onCsv={() => {
-                  downloadCsv(`profit-and-loss-${exportStamp}.csv`, profitLossCsvRows())
+                onCsv={async () => {
+                  await downloadCsv(`profit-and-loss-${exportStamp}.csv`, profitLossCsvRows())
                   notifyExported('Profit & loss')
                 }}
-                onJson={() => {
-                  downloadJson(`profit-and-loss-${exportStamp}.json`, profitLoss)
+                onJson={async () => {
+                  await downloadJson(`profit-and-loss-${exportStamp}.json`, profitLoss)
                   notifyExported('Profit & loss')
                 }}
               />
@@ -1412,12 +1440,12 @@ export default function AccountingPage() {
           <TabsContent value="balance-sheet">
             <div className="mb-4 flex justify-end">
               <ExportActions
-                onCsv={() => {
-                  downloadCsv(`balance-sheet-${exportStamp}.csv`, balanceSheetCsvRows())
+                onCsv={async () => {
+                  await downloadCsv(`balance-sheet-${exportStamp}.csv`, balanceSheetCsvRows())
                   notifyExported('Balance sheet')
                 }}
-                onJson={() => {
-                  downloadJson(`balance-sheet-${exportStamp}.json`, balanceSheet)
+                onJson={async () => {
+                  await downloadJson(`balance-sheet-${exportStamp}.json`, balanceSheet)
                   notifyExported('Balance sheet')
                 }}
               />
@@ -1523,12 +1551,12 @@ export default function AccountingPage() {
           <TabsContent value="bank-recon">
             <div className="mb-4 flex flex-wrap justify-end gap-2">
               <ExportActions
-                onCsv={() => {
-                  downloadCsv(`bank-reconciliation-${exportStamp}.csv`, bankReconCsvRows())
+                onCsv={async () => {
+                  await downloadCsv(`bank-reconciliation-${exportStamp}.csv`, bankReconCsvRows())
                   notifyExported('Bank reconciliation')
                 }}
-                onJson={() => {
-                  downloadJson(`bank-reconciliation-${exportStamp}.json`, reconciliations)
+                onJson={async () => {
+                  await downloadJson(`bank-reconciliation-${exportStamp}.json`, reconciliations)
                   notifyExported('Bank reconciliation')
                 }}
               />

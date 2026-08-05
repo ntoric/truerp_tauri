@@ -383,7 +383,7 @@ export default function PayrollPage() {
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val)
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const exportList =
       selectedPayrolls.size > 0
         ? filteredPayrolls.filter((payroll) => selectedPayrolls.has(payroll.id))
@@ -439,7 +439,7 @@ export default function PayrollPage() {
         payroll.updated_at ? formatDate(payroll.updated_at) : '',
       ]),
     ]
-    downloadCsv(`payroll_${accountingExportDateStamp()}.csv`, rows)
+    await downloadCsv(`payroll_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting payroll' })
   }
 
   if (authLoading || loading) return <div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>

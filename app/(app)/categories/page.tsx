@@ -65,8 +65,6 @@ export default function CategoriesPage() {
   const [loadingDraft, setLoadingDraft] = useState(false)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set())
-  const [isBulkStatusConfirmOpen, setIsBulkStatusConfirmOpen] = useState(false)
-  const [bulkStatusAction, setBulkStatusAction] = useState<'enable' | 'disable'>('disable')
   const [formData, setFormData] = useState({ name: '', description: '', is_active: true })
 
   useEffect(() => {
@@ -86,6 +84,20 @@ export default function CategoriesPage() {
 
   const handleSubmit = async () => {
     if (!validateRequired(formData, { name: 'Name' })) return
+    if (
+      editingCategory &&
+      formData.is_active !== editingCategory.is_active
+    ) {
+      const enabling = formData.is_active
+      if (!(await confirm({
+        title: enabling ? 'Enable category?' : 'Disable category?',
+        description: enabling
+          ? 'Enable this category? This will also enable all products in this category.'
+          : 'Disable this category? This will also disable all products in this category.',
+        confirmLabel: enabling ? 'Enable' : 'Disable',
+        variant: 'default',
+      }))) return
+    }
     try {
       const url = editingCategory ? `/categories/${editingCategory.id}` : '/categories'
       const method = editingCategory ? 'PUT' : 'POST'
@@ -226,7 +238,9 @@ export default function CategoriesPage() {
       ]),
     ]
     try {
-      await downloadCsv(`categories_${accountingExportDateStamp()}.csv`, rows)
+      await downloadCsv(`categories_${accountingExportDateStamp()}.csv`, rows, {
+        label: 'Exporting categories',
+      })
       notifySuccess(
         selectedCategories.size > 0
           ? `Exported ${exportList.length} selected categories`
@@ -274,25 +288,28 @@ export default function CategoriesPage() {
     }
   }
 
-  const handleBulkStatus = (action: 'enable' | 'disable') => {
+  const handleBulkStatus = async (action: 'enable' | 'disable') => {
     if (selectedCategories.size === 0) return
-    setBulkStatusAction(action)
-    setIsBulkStatusConfirmOpen(true)
-  }
-
-  const confirmBulkStatus = async () => {
+    const count = selectedCategories.size
+    if (!(await confirm({
+      title: action === 'enable' ? 'Enable categories?' : 'Disable categories?',
+      description: action === 'enable'
+        ? `Enable ${count} selected categor${count === 1 ? 'y' : 'ies'} and their products?`
+        : `Disable ${count} selected categor${count === 1 ? 'y' : 'ies'} and their products?`,
+      confirmLabel: action === 'enable' ? 'Enable' : 'Disable',
+      variant: 'default',
+    }))) return
     try {
       const res = await apiFetch('/categories/bulk/update-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ids: Array.from(selectedCategories),
-          is_active: bulkStatusAction === 'enable',
+          is_active: action === 'enable',
         }),
       })
       if (res.ok) {
         setSelectedCategories(new Set())
-        setIsBulkStatusConfirmOpen(false)
         fetchCategories()
       }
     } catch (err) {
@@ -491,26 +508,6 @@ export default function CategoriesPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isBulkStatusConfirmOpen} onOpenChange={setIsBulkStatusConfirmOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {bulkStatusAction === 'enable' ? 'Enable Categories' : 'Disable Categories'}
-              </DialogTitle>
-            </DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              {bulkStatusAction === 'enable'
-                ? `Enable ${selectedCategories.size} selected categories and their products?`
-                : `Disable ${selectedCategories.size} selected categories and their products?`}
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsBulkStatusConfirmOpen(false)}>Cancel</Button>
-              <Button onClick={confirmBulkStatus}>
-                {bulkStatusAction === 'enable' ? 'Enable' : 'Disable'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
         {confirmDialog}
       </div>
     </DashboardLayout>

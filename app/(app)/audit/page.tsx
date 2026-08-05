@@ -11,6 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Search, Filter, Download, Trash2, Settings, Archive, BarChart3, Activity, Users, Clock, ArrowLeft, Loader2 } from 'lucide-react'
 import { notifySuccess, notifyError } from '@/lib/notify'
+import { accountingExportDateStamp, downloadBlob } from '@/lib/accountingExport'
+import { runWithExportProgress } from '@/lib/exportProgress'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { isSuperAdmin } from '@/lib/roles'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
@@ -106,29 +108,29 @@ export default function AuditDashboard() {
 
   const exportLogs = async () => {
     try {
-      const params = new URLSearchParams()
-      if (actionFilter !== 'all') params.append('action', actionFilter)
-      if (entityFilter !== 'all') params.append('entity_type', entityFilter)
-      if (statusFilter !== 'all') params.append('status', statusFilter)
+      await runWithExportProgress('Exporting audit logs', async (update) => {
+        update(10, 'Fetching logs…')
+        const params = new URLSearchParams()
+        if (actionFilter !== 'all') params.append('action', actionFilter)
+        if (entityFilter !== 'all') params.append('entity_type', entityFilter)
+        if (statusFilter !== 'all') params.append('status', statusFilter)
 
-      const response = await apiFetch(`/audit/logs/export?${params}`)
-      if (response.ok) {
+        const response = await apiFetch(`/audit/logs/export?${params}`)
+        if (!response.ok) {
+          throw new Error('Failed to export logs')
+        }
+        update(50, 'Receiving file…')
         const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `audit_logs_${new Date().toISOString().split('T')[0]}.csv`
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
-        notifySuccess('Audit logs exported')
-      } else {
-        notifyError('Failed to export logs')
-      }
+        update(75, 'Saving…')
+        await downloadBlob(`audit_logs_${accountingExportDateStamp()}.csv`, blob, {
+          skipProgress: true,
+        })
+        update(100, 'Saved')
+      })
+      notifySuccess('Audit logs exported')
     } catch (error) {
       console.error('Failed to export logs:', error)
-      notifyError('Failed to export logs')
+      notifyError(error instanceof Error ? error.message : 'Failed to export logs')
     }
   }
 

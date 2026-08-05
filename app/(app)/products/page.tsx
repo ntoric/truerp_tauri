@@ -24,6 +24,7 @@ import { asArray, cn, skuFromProductName } from '@/lib/utils'
 import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
+import { runWithExportProgress } from '@/lib/exportProgress'
 import ProductImageField from '@/components/ProductImageField'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
@@ -487,16 +488,23 @@ export default function ProductsPage() {
 
   const handleExportCSV = async () => {
     try {
-      const params = new URLSearchParams()
-      if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
-      if (searchQuery) params.append('search', searchQuery)
-      const res = await apiFetch(`/products/export/csv?${params.toString()}`)
-      if (!res.ok) {
-        notifyError('Failed to export products CSV')
-        return
-      }
-      const blob = await res.blob()
-      await downloadBlob(`products_${accountingExportDateStamp()}.csv`, blob)
+      await runWithExportProgress('Exporting products CSV', async (update) => {
+        update(10, 'Fetching products…')
+        const params = new URLSearchParams()
+        if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
+        if (searchQuery) params.append('search', searchQuery)
+        const res = await apiFetch(`/products/export/csv?${params.toString()}`)
+        if (!res.ok) {
+          throw new Error('Failed to export products CSV')
+        }
+        update(45, 'Receiving file…')
+        const blob = await res.blob()
+        update(75, 'Saving…')
+        await downloadBlob(`products_${accountingExportDateStamp()}.csv`, blob, {
+          skipProgress: true,
+        })
+        update(100, 'Saved')
+      })
       notifySuccess('Products CSV exported')
     } catch (err) {
       console.error(err)
@@ -506,16 +514,23 @@ export default function ProductsPage() {
 
   const handleExportExcel = async () => {
     try {
-      const params = new URLSearchParams()
-      if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
-      if (searchQuery) params.append('search', searchQuery)
-      const res = await apiFetch(`/products/export/excel?${params.toString()}`)
-      if (!res.ok) {
-        notifyError('Failed to export products Excel')
-        return
-      }
-      const blob = await res.blob()
-      await downloadBlob(`products_${accountingExportDateStamp()}.xlsx`, blob)
+      await runWithExportProgress('Exporting products Excel', async (update) => {
+        update(10, 'Fetching products…')
+        const params = new URLSearchParams()
+        if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
+        if (searchQuery) params.append('search', searchQuery)
+        const res = await apiFetch(`/products/export/excel?${params.toString()}`)
+        if (!res.ok) {
+          throw new Error('Failed to export products Excel')
+        }
+        update(45, 'Receiving file…')
+        const blob = await res.blob()
+        update(75, 'Saving…')
+        await downloadBlob(`products_${accountingExportDateStamp()}.xlsx`, blob, {
+          skipProgress: true,
+        })
+        update(100, 'Saved')
+      })
       notifySuccess('Products Excel exported')
     } catch (err) {
       console.error(err)
@@ -524,10 +539,10 @@ export default function ProductsPage() {
   }
 
   const handleDownloadImportTemplate = () => {
-    downloadCsv(`products_import_template_${accountingExportDateStamp()}.csv`, [
+    void downloadCsv(`products_import_template_${accountingExportDateStamp()}.csv`, [
       PRODUCT_IMPORT_HEADERS,
       PRODUCT_IMPORT_SAMPLE_ROW,
-    ])
+    ], { label: 'Exporting import template' })
   }
 
   const resetImportDialog = () => {

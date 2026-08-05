@@ -77,6 +77,9 @@ interface InventoryStock {
   product?: { name: string; sku: string }
   outlet_id: string
   outlet_name: string
+  batch_no?: string
+  mfg_date?: string | null
+  exp_date?: string | null
   quantity: number
   reserved_qty: number
   available_qty: number
@@ -391,10 +394,11 @@ export default function InventoryPage() {
   }
 
   const handleDownloadBulkStockUpdateTemplate = () => {
-    downloadCsv(`stock_bulk_update_template_${accountingExportDateStamp()}.csv`, [
-      STOCK_BULK_UPDATE_HEADERS,
-      STOCK_BULK_UPDATE_SAMPLE_ROW,
-    ])
+    void downloadCsv(
+      `stock_bulk_update_template_${accountingExportDateStamp()}.csv`,
+      [STOCK_BULK_UPDATE_HEADERS, STOCK_BULK_UPDATE_SAMPLE_ROW],
+      { label: 'Exporting stock template' }
+    )
   }
 
   const resetBulkStockUpdateDialog = () => {
@@ -1465,6 +1469,8 @@ export default function InventoryPage() {
                     <TableRow>
                       <TableHead>Product</TableHead>
                       <TableHead>SKU</TableHead>
+                      <TableHead>Batch</TableHead>
+                      <TableHead>Expiry</TableHead>
                       <TableHead>Quantity</TableHead>
                       <TableHead>Reserved</TableHead>
                       <TableHead>Available</TableHead>
@@ -1476,7 +1482,7 @@ export default function InventoryPage() {
                   <TableBody>
                     {stocksPagination.paginatedItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-8 text-center text-gray-500">
+                        <TableCell colSpan={10} className="py-8 text-center text-gray-500">
                           {stocks.length === 0
                             ? 'No inventory stock records'
                             : 'No inventory stock records updated in the selected period'}
@@ -1487,6 +1493,12 @@ export default function InventoryPage() {
                         <TableRow key={stock.id}>
                           <TableCell className="font-medium">{stock.product?.name || '-'}</TableCell>
                           <TableCell>{stock.product?.sku || '-'}</TableCell>
+                          <TableCell>{stock.batch_no || '-'}</TableCell>
+                          <TableCell>
+                            {stock.exp_date
+                              ? new Date(stock.exp_date).toLocaleDateString('en-IN')
+                              : '-'}
+                          </TableCell>
                           <TableCell>{stock.quantity}</TableCell>
                           <TableCell>{stock.reserved_qty}</TableCell>
                           <TableCell className="font-medium text-green-600">{stock.available_qty}</TableCell>

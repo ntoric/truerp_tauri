@@ -444,7 +444,7 @@ export default function AttendancePage() {
   const formatTime = (iso?: string) =>
     iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const exportList =
       selectedStaffIds.size > 0
         ? filteredStaffs.filter((staff) => selectedStaffIds.has(staff.id))
@@ -477,7 +477,7 @@ export default function AttendancePage() {
         ]
       }),
     ]
-    downloadCsv(`attendance_${selectedDate}_${accountingExportDateStamp()}.csv`, rows)
+    await downloadCsv(`attendance_${selectedDate}_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting attendance' })
   }
 
   if (authLoading || loading) return <div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>

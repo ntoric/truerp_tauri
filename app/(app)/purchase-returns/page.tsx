@@ -74,7 +74,7 @@ export default function PurchaseReturnsPage() {
   const getVendorName = (ret: PurchaseReturn) =>
     ret.party?.name || ret.vendor?.name || 'N/A'
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const rows: (string | number)[][] = [
       ['Date', 'Purchase Return #', 'Vendor Name', 'Bill #', 'Amount', 'Status'],
       ...filteredReturns.map((ret) => [
@@ -86,7 +86,7 @@ export default function PurchaseReturnsPage() {
         ret.status,
       ]),
     ]
-    downloadCsv(`purchase_returns_${accountingExportDateStamp()}.csv`, rows)
+    await downloadCsv(`purchase_returns_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting purchase returns' })
   }
 
   const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(filteredReturns)

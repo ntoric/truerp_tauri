@@ -24,8 +24,10 @@ export function formatCurrency(amount: number): string {
   }).format(amount)
 }
 
-export function formatDate(date: string | Date): string {
+export function formatDate(date: string | Date | null | undefined): string {
+  if (date == null || date === '') return ''
   const d = typeof date === 'string' ? new Date(date) : date
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return ''
   return d.toLocaleDateString('en-IN', {
     day: '2-digit',
     month: 'short',

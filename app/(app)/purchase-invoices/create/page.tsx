@@ -41,6 +41,7 @@ interface Product {
   stock_qty: number
   category: string
   purchase_price_with_tax: boolean
+  enable_batching?: boolean
 }
 
 interface Warehouse {
@@ -65,6 +66,10 @@ interface PurchaseBillItem {
   tax_amount: number
   total: number
   purchase_price_with_tax: boolean
+  batch_no: string
+  mfg_date: string
+  exp_date: string
+  enable_batching?: boolean
 }
 
 const ITEM_NUMBER_FIELDS: (keyof PurchaseBillItem)[] = [
@@ -204,6 +209,10 @@ export default function CreatePurchaseInvoicePage() {
             tax_amount: 0,
             total: 0,
             purchase_price_with_tax: withTax,
+            batch_no: item.batch_no || '',
+            mfg_date: item.mfg_date ? String(item.mfg_date).slice(0, 10) : '',
+            exp_date: item.exp_date ? String(item.exp_date).slice(0, 10) : '',
+            enable_batching: matchedProduct?.enable_batching ?? Boolean(item.batch_no),
           })
         })
         setItems(parsedItems)
@@ -290,6 +299,10 @@ export default function CreatePurchaseInvoicePage() {
               tax_amount: parseItemNumber(item.tax_amount),
               total: parseItemNumber(item.total),
               purchase_price_with_tax: prod?.purchase_price_with_tax ?? false,
+              batch_no: item.batch_no || '',
+              mfg_date: item.mfg_date ? String(item.mfg_date).slice(0, 10) : '',
+              exp_date: item.exp_date ? String(item.exp_date).slice(0, 10) : '',
+              enable_batching: prod?.enable_batching ?? Boolean(item.batch_no),
             })
           })
         )
@@ -376,6 +389,10 @@ export default function CreatePurchaseInvoicePage() {
           tax_amount: 0,
           total: 0,
           purchase_price_with_tax: product.purchase_price_with_tax ?? false,
+          batch_no: '',
+          mfg_date: '',
+          exp_date: '',
+          enable_batching: product.enable_batching ?? false,
         })
         setToast({ message: `Added: ${product.name}`, type: 'success' })
         setTimeout(() => setToast(null), 2000)
@@ -543,6 +560,12 @@ export default function CreatePurchaseInvoicePage() {
         newItems[index].unit = product.unit
         newItems[index].hsn_code = product.hsn_code || ''
         newItems[index].purchase_price_with_tax = product.purchase_price_with_tax ?? false
+        newItems[index].enable_batching = product.enable_batching ?? false
+        if (!(product.enable_batching ?? false)) {
+          newItems[index].batch_no = ''
+          newItems[index].mfg_date = ''
+          newItems[index].exp_date = ''
+        }
       }
     }
 
@@ -552,7 +575,7 @@ export default function CreatePurchaseInvoicePage() {
   }
 
   const addItem = () => {
-    setItems([...items, { product_id: '', item_code: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, mrp: 0, sale_price: 0, unit: 'PCS', tax_amount: 0, total: 0, purchase_price_with_tax: false }])
+    setItems([...items, { product_id: '', item_code: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, mrp: 0, sale_price: 0, unit: 'PCS', tax_amount: 0, total: 0, purchase_price_with_tax: false, batch_no: '', mfg_date: '', exp_date: '', enable_batching: false }])
   }
 
   const removeItem = (index: number) => {
@@ -583,6 +606,17 @@ export default function CreatePurchaseInvoicePage() {
     if (!asDraft && items.some(i => !i.description)) {
       setError('items', 'Please fill all item details')
       showErrorToast('Please fill all item details')
+      return
+    }
+    const missingBatch = items.find((i) => {
+      const batched =
+        Boolean(i.enable_batching) ||
+        Boolean(products.find((p) => p.id === i.product_id)?.enable_batching)
+      return batched && !String(i.batch_no || '').trim()
+    })
+    if (!asDraft && missingBatch) {
+      setError('items', `Batch number is required for ${missingBatch.description || 'batched product'}`)
+      showErrorToast(`Batch number is required for ${missingBatch.description || 'batched product'}`)
       return
     }
     setSaving(true)
@@ -619,9 +653,9 @@ export default function CreatePurchaseInvoicePage() {
             mrp: parseMoney(item.mrp),
             sale_price: parseMoney(item.sale_price),
             hsn_code: item.hsn_code,
-            batch_no: '',
-            mfg_date: null,
-            exp_date: null,
+            batch_no: item.batch_no || '',
+            mfg_date: item.mfg_date || null,
+            exp_date: item.exp_date || null,
           })),
         }),
       })
@@ -790,6 +824,8 @@ export default function CreatePurchaseInvoicePage() {
                     <tr className="border-b text-left text-gray-500">
                       <th className="pb-2 font-medium w-48">Item</th>
                       <th className="pb-2 font-medium w-24">HSN</th>
+                      <th className="pb-2 font-medium w-28">Batch</th>
+                      <th className="pb-2 font-medium w-28">Expiry</th>
                       <th className="pb-2 font-medium text-right w-24">Quantity</th>
                       <th className="pb-2 font-medium text-right w-28">Unit Price</th>
                       <th className="pb-2 font-medium text-right w-24">Discount %</th>
@@ -799,7 +835,11 @@ export default function CreatePurchaseInvoicePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item, index) => (
+                    {items.map((item, index) => {
+                      const needsBatch =
+                        Boolean(item.enable_batching) ||
+                        Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
+                      return (
                       <tr key={index} className="border-b">
                         <td className="py-2 w-48">
                           <select
@@ -815,6 +855,23 @@ export default function CreatePurchaseInvoicePage() {
                           <Input
                             value={item.hsn_code}
                             onChange={(e) => updateItem(index, 'hsn_code', e.target.value)}
+                            className="h-8 w-full"
+                          />
+                        </td>
+                        <td className="py-2 w-28">
+                          <Input
+                            value={item.batch_no}
+                            onChange={(e) => updateItem(index, 'batch_no', e.target.value)}
+                            placeholder={needsBatch ? 'Required' : 'Optional'}
+                            className={`h-8 w-full ${needsBatch && !item.batch_no ? 'border-amber-500' : ''}`}
+                            required={needsBatch}
+                          />
+                        </td>
+                        <td className="py-2 w-28">
+                          <Input
+                            type="date"
+                            value={item.exp_date}
+                            onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
                             className="h-8 w-full"
                           />
                         </td>
@@ -868,7 +925,8 @@ export default function CreatePurchaseInvoicePage() {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

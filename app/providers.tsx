@@ -5,6 +5,7 @@ import { AuthProvider } from '@/hooks/useAuth'
 import { StoreProvider } from '@/hooks/useStore'
 import { PageFeaturesProvider } from '@/hooks/usePageFeatures'
 import { Toaster } from '@/components/ui/toaster'
+import ExportProgressOverlay from '@/components/ExportProgressOverlay'
 
 /** Enable keyboard focus outlines only after Tab; pointer clicks stay ring-free. */
 function useKeyboardNavFocus() {
@@ -41,6 +42,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <PageFeaturesProvider>
           {children}
           <Toaster />
+          <ExportProgressOverlay />
         </PageFeaturesProvider>
       </StoreProvider>
     </AuthProvider>

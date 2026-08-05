@@ -140,7 +140,7 @@ export default function PartiesPage() {
 
   const categories = mergePartyCategories(parties.map((p) => p.category))
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const rows: (string | number)[][] = [
       [
         'Name',
@@ -183,7 +183,7 @@ export default function PartiesPage() {
         p.updated_at ? formatDate(p.updated_at) : '',
       ]),
     ]
-    downloadCsv(`parties_${accountingExportDateStamp()}.csv`, rows)
+    await downloadCsv(`parties_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting parties' })
   }
 
   const handleSelectParty = (id: string) => {

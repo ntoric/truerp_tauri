@@ -8,10 +8,12 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, asArray } from '@/lib/utils'
+import { accountingExportDateStamp, downloadBlob, downloadCsv, rowsToCsv } from '@/lib/accountingExport'
+import { runWithExportProgress } from '@/lib/exportProgress'
 import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2 } from 'lucide-react'
 import JSZip from 'jszip'
-import { notifyError } from '@/lib/notify'
+import { notifyError, notifySuccess } from '@/lib/notify'
 import { downloadPurchaseBillPdf, printHtmlDocument } from '@/lib/printDocument'
 import { printBarcodeLabels, type BarcodeLabelsPayload } from '@/lib/barcodeLabelPrint'
 import { usePagination } from '@/hooks/usePagination'
@@ -84,6 +86,7 @@ export default function PurchaseInvoicesPage() {
     margin: 0,
   })
   const [generatingLabels, setGeneratingLabels] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const paperDimensions: Record<string, { width: number; height: number }> = {
     a4: { width: 210, height: 297 },
@@ -129,15 +132,15 @@ export default function PurchaseInvoicesPage() {
       if (params.toString()) url += `?${params.toString()}`
       const res = await apiFetch(url)
       if (res.ok) {
-        const data = await res.json()
-        // Fetch items for each bill
+        const data = asArray<PurchaseBill>(await res.json())
+        // Fetch items for each bill (needed for barcode labels)
         const billsWithItems = await Promise.all(
-          data.map(async (bill: PurchaseBill) => {
+          data.map(async (bill) => {
             try {
               const itemRes = await apiFetch(`/purchase/bills/${bill.id}`)
               if (itemRes.ok) {
                 const billWithItems = await itemRes.json()
-                return billWithItems
+                return billWithItems as PurchaseBill
               }
               return bill
             } catch {
@@ -169,10 +172,14 @@ export default function PurchaseInvoicesPage() {
     }
   }
 
-  const filteredBills = bills.filter(bill =>
-    bill.bill_number.toLowerCase().includes(search.toLowerCase()) ||
-    bill.party?.name?.toLowerCase().includes(search.toLowerCase())
-  )
+  const filteredBills = bills.filter((bill) => {
+    const query = search.toLowerCase()
+    if (!query) return true
+    return (
+      (bill.bill_number || '').toLowerCase().includes(query) ||
+      (bill.party?.name || '').toLowerCase().includes(query)
+    )
+  })
 
   const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(filteredBills)
 
@@ -222,23 +229,38 @@ export default function PurchaseInvoicesPage() {
     return `${diff} days`
   }
 
-  const handleExport = () => {
-    const headers = ['Date', 'Purchase Invoice #', 'Party Name', 'Due In', 'Amount', 'Status']
-    const rows = filteredBills.map(bill => [
-      formatDate(bill.bill_date),
-      bill.bill_number,
+  const buildExportRows = (list: PurchaseBill[]): (string | number)[][] => [
+    ['Date', 'Purchase Invoice #', 'Party Name', 'Due In', 'Amount', 'Status'],
+    ...list.map((bill) => [
+      bill.bill_date ? formatDate(bill.bill_date) : '',
+      bill.bill_number || '',
       bill.party?.name || 'N/A',
       getDueIn(bill.due_date),
-      formatCurrency(bill.total_amount),
-      bill.status
-    ])
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'purchase-invoices.csv'
-    a.click()
+      typeof bill.total_amount === 'number' ? bill.total_amount : Number(bill.total_amount) || 0,
+      bill.status || '',
+    ]),
+  ]
+
+  const handleExport = async () => {
+    if (exporting) return
+    if (filteredBills.length === 0) {
+      notifyError('No purchase invoices to export')
+      return
+    }
+    setExporting(true)
+    try {
+      await downloadCsv(
+        `purchase-invoices_${accountingExportDateStamp()}.csv`,
+        buildExportRows(filteredBills),
+        { label: 'Exporting purchase invoices' }
+      )
+      notifySuccess(`Exported ${filteredBills.length} purchase invoice${filteredBills.length === 1 ? '' : 's'}`)
+    } catch (err) {
+      console.error(err)
+      notifyError(err instanceof Error ? err.message : 'Failed to export purchase invoices')
+    } finally {
+      setExporting(false)
+    }
   }
 
   const handleMarkPaid = async (id: string) => {
@@ -326,45 +348,41 @@ export default function PurchaseInvoicesPage() {
   }
 
   const handleBulkExport = async () => {
-    const selected = filteredBills.filter(b => selectedBills.has(b.id))
-    const zip = new JSZip()
+    const selected = filteredBills.filter((b) => selectedBills.has(b.id))
+    if (selected.length === 0) {
+      notifyError('No purchase invoices selected')
+      return
+    }
+    if (exporting) return
+    setExporting(true)
+    try {
+      await runWithExportProgress('Exporting purchase invoices', async (update) => {
+        update(10, 'Building ZIP…')
+        const zip = new JSZip()
+        zip.file('summary.csv', '\uFEFF' + rowsToCsv(buildExportRows(selected)))
 
-    // Summary CSV
-    const summaryHeaders = ['Date', 'Purchase Invoice #', 'Party Name', 'Due In', 'Amount', 'Status']
-    const summaryRows = selected.map(bill => [
-      formatDate(bill.bill_date),
-      bill.bill_number,
-      bill.party?.name || 'N/A',
-      getDueIn(bill.due_date),
-      formatCurrency(bill.total_amount),
-      bill.status
-    ])
-    const summaryCsv = [summaryHeaders.join(','), ...summaryRows.map(r => r.join(','))].join('\n')
-    zip.file('summary.csv', summaryCsv)
+        selected.forEach((bill, index) => {
+          const safeName =
+            (bill.bill_number || `invoice-${index + 1}`).replace(/[^a-zA-Z0-9-_]/g, '_') ||
+            `invoice-${index + 1}`
+          zip.file(`${safeName}.csv`, '\uFEFF' + rowsToCsv(buildExportRows([bill])))
+        })
 
-    // Individual CSV per invoice
-    selected.forEach(bill => {
-      const headers = ['Date', 'Purchase Invoice #', 'Party Name', 'Due In', 'Amount', 'Status']
-      const rows = [[
-        formatDate(bill.bill_date),
-        bill.bill_number,
-        bill.party?.name || 'N/A',
-        getDueIn(bill.due_date),
-        formatCurrency(bill.total_amount),
-        bill.status
-      ]]
-      const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-      const safeName = bill.bill_number.replace(/[^a-zA-Z0-9-_]/g, '_')
-      zip.file(`${safeName}.csv`, csv)
-    })
-
-    const blob = await zip.generateAsync({ type: 'blob' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'purchase-invoices.zip'
-    a.click()
-    URL.revokeObjectURL(url)
+        update(55, 'Compressing…')
+        const blob = await zip.generateAsync({ type: 'blob' })
+        update(80, 'Saving…')
+        await downloadBlob(`purchase-invoices_${accountingExportDateStamp()}.zip`, blob, {
+          skipProgress: true,
+        })
+        update(100, 'Saved')
+      })
+      notifySuccess(`Exported ${selected.length} purchase invoice${selected.length === 1 ? '' : 's'}`)
+    } catch (err) {
+      console.error(err)
+      notifyError(err instanceof Error ? err.message : 'Failed to export purchase invoices')
+    } finally {
+      setExporting(false)
+    }
   }
 
   const handleBulkDelete = async () => {
@@ -538,8 +556,18 @@ export default function PurchaseInvoicesPage() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Purchase Invoices</h1>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleExport}>
-              <Download className="mr-2 h-4 w-4" /> Export
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleExport()}
+              disabled={exporting || loading || filteredBills.length === 0}
+            >
+              {exporting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
+              Export
             </Button>
             <Link href="/purchase-invoices/create">
               <Button><Plus className="mr-2 h-4 w-4" /> New Purchase Invoice</Button>
@@ -624,8 +652,19 @@ export default function PurchaseInvoicesPage() {
                       {selectedBills.size} selected
                     </span>
                     <div className="ml-auto flex gap-2">
-                      <Button variant="outline" size="sm" onClick={handleBulkExport}>
-                        <Download className="mr-1 h-3.5 w-3.5" /> Export
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleBulkExport()}
+                        disabled={exporting}
+                      >
+                        {exporting ? (
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Download className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        Export
                       </Button>
                       <Button variant="outline" size="sm" onClick={handleBulkMarkPaid}>
                         Mark as Paid

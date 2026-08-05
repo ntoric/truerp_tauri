@@ -18,6 +18,7 @@ import { ArrowLeft, Save, Search } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import ProductImageField from '@/components/ProductImageField'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import {
   WEIGHING_ITEM_CODE_MAX_LEN,
   isWeightBasedUnit,
@@ -68,9 +69,11 @@ export default function EditProductPage() {
     showSuccessToast,
     showErrorToast,
   } = useFormErrors()
+  const { confirm, confirmDialog } = useConfirmDialog()
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [initialIsActive, setInitialIsActive] = useState(true)
   const [categories, setCategories] = useState<Category[]>([])
   const [hsnSearchResults, setHsnSearchResults] = useState<any[]>([])
   const [showHsnDropdown, setShowHsnDropdown] = useState(false)
@@ -119,6 +122,7 @@ export default function EditProductPage() {
       if (res.ok) {
         const data = await res.json()
         setFormData(data)
+        setInitialIsActive(Boolean(data.is_active))
       } else {
         console.error('Failed to fetch product:', res.status)
       }
@@ -222,6 +226,17 @@ export default function EditProductPage() {
       setError('item_code', itemCodeErr)
       setActiveTab('basic')
       return
+    }
+
+    if (formData.is_active !== initialIsActive) {
+      if (!(await confirm({
+        title: formData.is_active ? 'Enable product?' : 'Disable product?',
+        description: formData.is_active
+          ? `Enable "${formData.name}"?`
+          : `Disable "${formData.name}"?`,
+        confirmLabel: formData.is_active ? 'Enable' : 'Disable',
+        variant: 'default',
+      }))) return
     }
 
     setSaving(true)
@@ -644,7 +659,12 @@ export default function EditProductPage() {
                       checked={formData.enable_batching}
                       onCheckedChange={(checked) => handleChange('enable_batching', checked)}
                     />
-                    <Label htmlFor="enable_batching">Enable Batching</Label>
+                    <div>
+                      <Label htmlFor="enable_batching">Enable Batching</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Track stock by batch number on purchase and sales.
+                      </p>
+                    </div>
                   </div>
                 </TabsContent>
               </Tabs>
@@ -764,6 +784,7 @@ export default function EditProductPage() {
           </div>
         </DialogContent>
       </Dialog>
+      {confirmDialog}
     </DashboardLayout>
   )
 }

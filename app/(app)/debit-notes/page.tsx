@@ -129,7 +129,7 @@ export default function DebitNotesPage() {
     )
   }
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const rows: (string | number)[][] = [
       ['Note #', 'Vendor', 'Purchase Bill', 'Date', 'Status', 'Amount', 'Reason'],
       ...filteredDebitNotes.map((note) => [
@@ -142,7 +142,7 @@ export default function DebitNotesPage() {
         note.reason || '',
       ]),
     ]
-    downloadCsv(`debit_notes_${accountingExportDateStamp()}.csv`, rows)
+    await downloadCsv(`debit_notes_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting debit notes' })
   }
 
   const hasActiveFilters =

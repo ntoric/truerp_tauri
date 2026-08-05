@@ -113,7 +113,7 @@ fn sanitize_download_filename(filename: &str, default_ext: &str) -> String {
     }
 }
 
-fn write_downloads_file(name: &str, data: &[u8]) -> Result<String, String> {
+fn write_downloads_file(name: &str, data: &[u8], open_after: bool) -> Result<String, String> {
     let dir = dirs::download_dir()
         .or_else(dirs::document_dir)
         .unwrap_or_else(std::env::temp_dir);
@@ -129,7 +129,9 @@ fn write_downloads_file(name: &str, data: &[u8]) -> Result<String, String> {
     }
 
     fs::write(&path, data).map_err(|e| format!("write file: {e}"))?;
-    open_saved_file(&path)?;
+    if open_after {
+        open_saved_file(&path)?;
+    }
     Ok(path.display().to_string())
 }
 
@@ -138,18 +140,23 @@ fn write_downloads_file(name: &str, data: &[u8]) -> Result<String, String> {
 pub fn save_pdf(pdf_base64: String, filename: String) -> Result<String, String> {
     let data = decode_pdf_base64(&pdf_base64)?;
     let name = sanitize_download_filename(&filename, "pdf");
-    write_downloads_file(&name, &data)
+    write_downloads_file(&name, &data, true)
 }
 
-/// Save arbitrary bytes (CSV/Excel/etc.) to Downloads — same WKWebView limitation as PDFs.
+/// Save arbitrary bytes (CSV/Excel/etc.) to Downloads.
+/// Exports should pass `open_after: false` so nothing opens Finder/Excel (in-app only).
 #[tauri::command]
-pub fn save_file(data_base64: String, filename: String) -> Result<String, String> {
+pub fn save_file(
+    data_base64: String,
+    filename: String,
+    open_after: Option<bool>,
+) -> Result<String, String> {
     let data = decode_bytes_base64(&data_base64)?;
     if data.is_empty() {
         return Err("empty file content".into());
     }
     let name = sanitize_download_filename(&filename, "bin");
-    write_downloads_file(&name, &data)
+    write_downloads_file(&name, &data, open_after.unwrap_or(false))
 }
 
 #[cfg(target_os = "macos")]

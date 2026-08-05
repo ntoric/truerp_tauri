@@ -182,11 +182,15 @@ export default function WarehousesPage() {
     }
   }
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const exportList =
       selectedWarehouses.size > 0
         ? filteredWarehouses.filter((warehouse) => selectedWarehouses.has(warehouse.id))
         : filteredWarehouses
+    if (exportList.length === 0) {
+      showErrorToast('No warehouses to export')
+      return
+    }
     const rows: (string | number)[][] = [
       [
         'Code',
@@ -204,8 +208,8 @@ export default function WarehousesPage() {
         'Created',
       ],
       ...exportList.map((warehouse) => [
-        warehouse.code,
-        warehouse.name,
+        warehouse.code || '',
+        warehouse.name || '',
         warehouse.address || '',
         warehouse.city || '',
         warehouse.state || '',
@@ -219,7 +223,19 @@ export default function WarehousesPage() {
         warehouse.created_at ? formatDate(warehouse.created_at) : '',
       ]),
     ]
-    downloadCsv(`warehouses_${accountingExportDateStamp()}.csv`, rows)
+    try {
+      await downloadCsv(`warehouses_${accountingExportDateStamp()}.csv`, rows, {
+        label: 'Exporting warehouses',
+      })
+      showSuccessToast(
+        selectedWarehouses.size > 0
+          ? `Exported ${exportList.length} selected warehouse${exportList.length === 1 ? '' : 's'}`
+          : `Exported ${exportList.length} warehouse${exportList.length === 1 ? '' : 's'}`
+      )
+    } catch (err) {
+      console.error(err)
+      showErrorToast(err instanceof Error ? err.message : 'Failed to export warehouses')
+    }
   }
 
   const fetchWarehouses = async () => {

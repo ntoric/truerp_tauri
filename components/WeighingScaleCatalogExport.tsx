@@ -46,9 +46,9 @@ export default function WeighingScaleCatalogExport({
         return
       }
       const stamp = new Date().toISOString().slice(0, 10)
-      downloadScaleCatalogCsv(`scale-product-catalog-${stamp}.csv`, csv)
+      await downloadScaleCatalogCsv(`scale-product-catalog-${stamp}.csv`, csv)
       setLastExport({ rows: rowCount, skipped: skippedNoCode })
-      notifySuccess(`Downloaded ${rowCount} product(s) for scale CSV import`)
+      notifySuccess(`Exported ${rowCount} product(s) for scale CSV import`)
     } catch {
       notifyError('Failed to generate scale catalog CSV')
     } finally {

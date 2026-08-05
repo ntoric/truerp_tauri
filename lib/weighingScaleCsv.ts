@@ -5,6 +5,7 @@ import {
   type WeighingScaleCsvItemMatchField,
   type WeighingScaleSettings,
 } from '@/lib/weighingScale'
+import { downloadBlob } from '@/lib/accountingExport'
 
 export interface WeighingScaleProductRef {
   id: string
@@ -203,10 +204,5 @@ export function buildScaleCatalogCsv(
 
 export function downloadScaleCatalogCsv(filename: string, csv: string) {
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
+  return downloadBlob(filename, blob, { label: 'Exporting scale catalog' })
 }

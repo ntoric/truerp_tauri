@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
@@ -353,26 +354,28 @@ export default function CashBankPage() {
     }
   }
 
-  const handleExport = () => {
-    const csv = [
-      ['Date', 'Type', 'Account', 'Amount', 'Description', 'Reference', 'Linked'].join(','),
-      ...transactions.map(t => [
-        formatDate(t.date),
-        t.transaction_type,
-        t.account?.account_name || 'Cash',
-        t.amount,
-        t.description,
-        t.reference,
-        t.is_linked ? 'Yes' : 'No',
-      ].join(',')),
-    ].join('\n')
-
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `cash-bank-transactions-${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
+  const handleExport = async () => {
+    try {
+      await downloadCsv(
+        `cash-bank-transactions-${accountingExportDateStamp()}.csv`,
+        [
+          ['Date', 'Type', 'Account', 'Amount', 'Description', 'Reference', 'Linked'],
+          ...transactions.map((t) => [
+            formatDate(t.date),
+            t.transaction_type,
+            t.account?.account_name || 'Cash',
+            t.amount,
+            t.description,
+            t.reference,
+            t.is_linked ? 'Yes' : 'No',
+          ]),
+        ],
+        { label: 'Exporting cash & bank' }
+      )
+      notifySuccess('Transactions exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export transactions')
+    }
   }
 
   if (authLoading || loading) {

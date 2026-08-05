@@ -170,7 +170,7 @@ export default function CreateExpensePage() {
                         fieldErrors.category && 'border-red-500'
                       )} required>
                       {categories.length === 0 ? (
-                        <option value="">No expense categories — add one from Expenses</option>
+                        <option value="">No expense categories — add one first</option>
                       ) : (
                         categories.map(cat => (
                           <option key={cat.id} value={cat.name}>{cat.name}</option>
@@ -182,7 +182,7 @@ export default function CreateExpensePage() {
                   {categories.length === 0 && !loading && (
                     <p className="text-xs text-gray-500">
                       Create expense categories from the{' '}
-                      <Link href="/expenses" className="text-blue-600 hover:underline">Expenses</Link>
+                      <Link href="/expense-categories" className="text-blue-600 hover:underline">Expense Categories</Link>
                       {' '}page. Product categories are managed separately.
                     </p>
                   )}

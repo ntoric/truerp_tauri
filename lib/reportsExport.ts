@@ -3,11 +3,15 @@ import { accountingExportDateStamp, downloadCsv, downloadJson, rowsToCsv } from 
 export const reportsExportDateStamp = accountingExportDateStamp
 
 export async function exportReportCsv(baseName: string, rows: (string | number | null | undefined)[][]) {
-  await downloadCsv(`${baseName}-${reportsExportDateStamp()}`, rows)
+  await downloadCsv(`${baseName}-${reportsExportDateStamp()}`, rows, {
+    label: `Exporting ${baseName}`,
+  })
 }
 
 export async function exportReportJson(baseName: string, data: unknown) {
-  await downloadJson(`${baseName}-${reportsExportDateStamp()}`, data)
+  await downloadJson(`${baseName}-${reportsExportDateStamp()}`, data, {
+    label: `Exporting ${baseName}`,
+  })
 }
 
 export function salesReportCsvRows(data: {

@@ -21,6 +21,8 @@ import { isWeightBasedUnit } from '@/lib/weighingScale'
 import { resolveScaleBarcodeForPos, looksLikeScaleBarcode } from '@/lib/weighingScaleBarcode'
 import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/components/ui/BarcodeScannerInput'
 import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
+import { exclusiveUnitPrice, linePayableTotal, lineTaxAmount } from '@/lib/numbers'
+import { fetchProductBatches, pickDefaultBatch } from '@/lib/productBatches'
 
 interface Product {
   id: string
@@ -28,10 +30,12 @@ interface Product {
   sku: string
   item_code: string
   sale_price: number
+  sale_price_with_tax?: boolean
   stock_qty: number
   unit: string
   tax_rate: number
   category: string
+  enable_batching?: boolean
 }
 
 interface Party {
@@ -46,7 +50,12 @@ interface CartItem {
   product: Product
   quantity: number
   total: number
+  batch_no?: string
+  exp_date?: string | null
 }
+
+const cartLineKey = (productId: string, batchNo?: string) => `${productId}::${batchNo || ''}`
+
 
 interface POSSession {
   id: string
@@ -338,14 +347,42 @@ export default function POSPage() {
     }
   }
 
-  const addToCartWithQuantity = (product: Product, quantity: number) => {
+  const cartLineTotal = (product: Product, quantity: number) =>
+    linePayableTotal(
+      product.sale_price,
+      quantity,
+      product.tax_rate,
+      product.sale_price_with_tax ?? true
+    )
+
+  const addToCartWithQuantity = async (product: Product, quantity: number) => {
     const q = Math.max(quantity, 0.001)
-    const existingItem = activeTab.cart.find(item => item.product.id === product.id)
+    let batch_no = ''
+    let exp_date: string | null = null
+
+    if (product.enable_batching) {
+      const batches = await fetchProductBatches(product.id)
+      const picked = pickDefaultBatch(batches)
+      if (!picked) {
+        notifyError(`No batch stock for ${product.name}. Add purchase stock with a batch first.`)
+        return
+      }
+      batch_no = picked.batch_no || ''
+      exp_date = picked.exp_date ?? null
+    }
+
+    const key = cartLineKey(product.id, batch_no)
+    const existingItem = activeTab.cart.find(
+      (item) => cartLineKey(item.product.id, item.batch_no) === key
+    )
     if (existingItem) {
-      updateQuantity(product.id, existingItem.quantity + q)
+      updateQuantity(product.id, existingItem.quantity + q, batch_no)
     } else {
       updateTab(activeTabId, {
-        cart: [...activeTab.cart, { product, quantity: q, total: product.sale_price * q }]
+        cart: [
+          ...activeTab.cart,
+          { product, quantity: q, total: cartLineTotal(product, q), batch_no, exp_date },
+        ],
       })
     }
   }
@@ -363,7 +400,7 @@ export default function POSPage() {
         }
       }
     }
-    addToCartWithQuantity(product, quantity)
+    void addToCartWithQuantity(product, quantity)
   }
 
   const handlePosItemCodeScan = (raw: string) => {
@@ -409,28 +446,29 @@ export default function POSPage() {
     barcodeInputRef.current?.focus()
   }, [barcodeScannerEnabled, activeTabId])
 
-  const applyScaleWeightToCartItem = (productId: string, unit: string) => {
+  const applyScaleWeightToCartItem = (productId: string, unit: string, batchNo?: string) => {
     const qty = getQuantityForProduct(unit)
     if (qty === null) {
       notifyError('No stable weight reading available')
       return
     }
-    updateQuantity(productId, qty)
+    updateQuantity(productId, qty, batchNo)
     notifySuccess(`Applied weight: ${qty} ${unit}`)
   }
 
-  const updateQuantity = (productId: string, quantity: number) => {
+  const updateQuantity = (productId: string, quantity: number, batchNo?: string) => {
     if (quantity <= 0) {
-      removeFromCart(productId)
+      removeFromCart(productId, batchNo)
       return
     }
+    const key = cartLineKey(productId, batchNo)
     updateTab(activeTabId, {
-      cart: activeTab.cart.map(item => {
-        if (item.product.id === productId) {
-          return { ...item, quantity, total: item.product.sale_price * quantity }
+      cart: activeTab.cart.map((item) => {
+        if (cartLineKey(item.product.id, item.batch_no) === key) {
+          return { ...item, quantity, total: cartLineTotal(item.product, quantity) }
         }
         return item
-      })
+      }),
     })
   }
 
@@ -439,23 +477,24 @@ export default function POSPage() {
       ? item.quantity.toFixed(scaleSettings.decimal_places)
       : String(item.quantity)
 
-  const commitQuantityEdit = (productId: string, raw: string, unit: string) => {
+  const commitQuantityEdit = (productId: string, raw: string, unit: string, batchNo?: string) => {
     const parsed = parseFloat(raw)
     if (!Number.isFinite(parsed) || parsed <= 0) {
       setEditingQty(null)
-      removeFromCart(productId)
+      removeFromCart(productId, batchNo)
       return
     }
     const quantity = isWeightBasedUnit(unit)
       ? Math.round(parsed * Math.pow(10, scaleSettings.decimal_places)) / Math.pow(10, scaleSettings.decimal_places)
       : Math.round(parsed * 1000) / 1000
-    updateQuantity(productId, quantity)
+    updateQuantity(productId, quantity, batchNo)
     setEditingQty(null)
   }
 
-  const removeFromCart = (productId: string) => {
+  const removeFromCart = (productId: string, batchNo?: string) => {
+    const key = cartLineKey(productId, batchNo)
     updateTab(activeTabId, {
-      cart: activeTab.cart.filter(item => item.product.id !== productId)
+      cart: activeTab.cart.filter((item) => cartLineKey(item.product.id, item.batch_no) !== key),
     })
   }
 
@@ -465,8 +504,15 @@ export default function POSPage() {
 
   const getTaxTotal = () => {
     return activeTab.cart.reduce((sum, item) => {
-      const taxAmount = (item.total * item.product.tax_rate) / (100 + item.product.tax_rate)
-      return sum + taxAmount
+      return (
+        sum +
+        lineTaxAmount(
+          item.product.sale_price,
+          item.quantity,
+          item.product.tax_rate,
+          item.product.sale_price_with_tax ?? true
+        )
+      )
     }, 0)
   }
 
@@ -593,7 +639,10 @@ export default function POSPage() {
 
   const loadDraft = async (draft: POSDraft) => {
     try {
-      const cartData = JSON.parse(draft.cart_data)
+      const cartData = (JSON.parse(draft.cart_data) as CartItem[]).map((item) => ({
+        ...item,
+        total: cartLineTotal(item.product, item.quantity),
+      }))
       const party = parties.find(p => p.id === draft.party_id)
       
       const newTab: POSTab = {
@@ -716,9 +765,16 @@ export default function POSPage() {
         product_id: item.product.id,
         description: item.product.name,
         quantity: item.quantity,
-        unit_price: item.product.sale_price,
+        // Backend always treats unit_price as tax-exclusive and adds GST on top.
+        unit_price: exclusiveUnitPrice(
+          item.product.sale_price,
+          item.product.tax_rate,
+          item.product.sale_price_with_tax ?? true
+        ),
         tax_rate: item.product.tax_rate,
         unit: item.product.unit || 'pcs',
+        batch_no: item.batch_no || '',
+        exp_date: item.exp_date || null,
       })),
     })
 
@@ -775,6 +831,7 @@ export default function POSPage() {
       if (res.ok) {
         const created = await res.json().catch(() => null)
         await completeSaleLocally()
+        await loadProducts()
         notifySuccess('Sale completed successfully')
         const invoiceId = created?.id as string | undefined
         if (shouldPrint && invoiceId) {
@@ -1169,10 +1226,18 @@ export default function POSPage() {
           {/* Cart Items - Scrollable */}
           <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
             {activeTab.cart.map((item) => (
-              <div key={item.product.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded border">
+              <div key={cartLineKey(item.product.id, item.batch_no)} className="flex items-center gap-2 p-2 bg-gray-50 rounded border">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900 text-xs truncate">{item.product.name}</p>
                   <p className="text-xs text-gray-500">{formatCurrency(item.product.sale_price)}</p>
+                  {item.product.enable_batching && (
+                    <p className="text-[10px] text-amber-700 truncate">
+                      Batch: {item.batch_no || '—'}
+                      {item.exp_date
+                        ? ` · Exp ${new Date(item.exp_date).toLocaleDateString('en-IN')}`
+                        : ''}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   <Button
@@ -1180,7 +1245,7 @@ export default function POSPage() {
                     variant="outline"
                     onClick={() => {
                       setEditingQty(null)
-                      updateQuantity(item.product.id, item.quantity - 1)
+                      updateQuantity(item.product.id, item.quantity - 1, item.batch_no)
                     }}
                     className="h-6 w-6 p-0"
                   >
@@ -1192,16 +1257,22 @@ export default function POSPage() {
                     min={0.001}
                     step={isWeightBasedUnit(item.product.unit) ? Math.pow(10, -scaleSettings.decimal_places) : 1}
                     value={
-                      editingQty?.productId === item.product.id
+                      editingQty?.productId === cartLineKey(item.product.id, item.batch_no)
                         ? editingQty.value
                         : formatCartQuantity(item)
                     }
                     onFocus={(e) => {
-                      setEditingQty({ productId: item.product.id, value: formatCartQuantity(item) })
+                      setEditingQty({
+                        productId: cartLineKey(item.product.id, item.batch_no),
+                        value: formatCartQuantity(item),
+                      })
                       e.target.select()
                     }}
                     onChange={(e) => {
-                      setEditingQty({ productId: item.product.id, value: e.target.value })
+                      setEditingQty({
+                        productId: cartLineKey(item.product.id, item.batch_no),
+                        value: e.target.value,
+                      })
                     }}
                     onBlur={() => {
                       if (qtyEditCancelledRef.current) {
@@ -1209,8 +1280,13 @@ export default function POSPage() {
                         setEditingQty(null)
                         return
                       }
-                      if (editingQty?.productId === item.product.id) {
-                        commitQuantityEdit(item.product.id, editingQty.value, item.product.unit)
+                      if (editingQty?.productId === cartLineKey(item.product.id, item.batch_no)) {
+                        commitQuantityEdit(
+                          item.product.id,
+                          editingQty.value,
+                          item.product.unit,
+                          item.batch_no
+                        )
                       }
                     }}
                     onKeyDown={(e) => {
@@ -1230,7 +1306,9 @@ export default function POSPage() {
                       size="sm"
                       variant="ghost"
                       title="Apply scale weight"
-                      onClick={() => applyScaleWeightToCartItem(item.product.id, item.product.unit)}
+                      onClick={() =>
+                        applyScaleWeightToCartItem(item.product.id, item.product.unit, item.batch_no)
+                      }
                       className="h-6 w-6 p-0"
                     >
                       <Scale className="h-3 w-3" />
@@ -1241,7 +1319,7 @@ export default function POSPage() {
                     variant="outline"
                     onClick={() => {
                       setEditingQty(null)
-                      updateQuantity(item.product.id, item.quantity + 1)
+                      updateQuantity(item.product.id, item.quantity + 1, item.batch_no)
                     }}
                     className="h-6 w-6 p-0"
                   >
@@ -1251,7 +1329,7 @@ export default function POSPage() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => removeFromCart(item.product.id)}
+                  onClick={() => removeFromCart(item.product.id, item.batch_no)}
                   className="h-6 w-6 p-0"
                 >
                   <Trash2 className="h-3 w-3 text-red-500" />

@@ -60,10 +60,6 @@ export default function StaffPage() {
   const [selectedStaff, setSelectedStaff] = useState<Set<string>>(new Set())
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null)
-  const [isBulkStatusConfirmOpen, setIsBulkStatusConfirmOpen] = useState(false)
-  const [bulkStatusAction, setBulkStatusAction] = useState<'enable' | 'disable'>('disable')
-  const [isStatusConfirmOpen, setIsStatusConfirmOpen] = useState(false)
-  const [staffToToggle, setStaffToToggle] = useState<Staff | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -184,25 +180,26 @@ export default function StaffPage() {
     } catch (err) { console.error(err) }
   }
 
-  const handleToggleActive = (s: Staff) => {
-    setStaffToToggle(s)
-    setIsStatusConfirmOpen(true)
-  }
-
-  const confirmToggleActive = async () => {
-    if (!staffToToggle) return
+  const handleToggleActive = async (s: Staff) => {
+    const enabling = !s.is_active
+    if (!(await confirm({
+      title: enabling ? 'Enable staff?' : 'Disable staff?',
+      description: enabling
+        ? `Enable ${s.name}?`
+        : `Disable ${s.name}?`,
+      confirmLabel: enabling ? 'Enable' : 'Disable',
+      variant: 'default',
+    }))) return
     try {
       const res = await apiFetch('/staff/bulk/update-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ids: [staffToToggle.id],
-          is_active: !staffToToggle.is_active,
+          ids: [s.id],
+          is_active: enabling,
         }),
       })
       if (res.ok) {
-        setIsStatusConfirmOpen(false)
-        setStaffToToggle(null)
         fetchStaffs()
       }
     } catch (err) { console.error(err) }
@@ -242,25 +239,28 @@ export default function StaffPage() {
     } catch (err) { console.error(err) }
   }
 
-  const handleBulkStatus = (action: 'enable' | 'disable') => {
+  const handleBulkStatus = async (action: 'enable' | 'disable') => {
     if (selectedStaff.size === 0) return
-    setBulkStatusAction(action)
-    setIsBulkStatusConfirmOpen(true)
-  }
-
-  const confirmBulkStatus = async () => {
+    const count = selectedStaff.size
+    if (!(await confirm({
+      title: action === 'enable' ? 'Enable staff?' : 'Disable staff?',
+      description: action === 'enable'
+        ? `Enable ${count} selected staff member${count === 1 ? '' : 's'}?`
+        : `Disable ${count} selected staff member${count === 1 ? '' : 's'}?`,
+      confirmLabel: action === 'enable' ? 'Enable' : 'Disable',
+      variant: 'default',
+    }))) return
     try {
       const res = await apiFetch('/staff/bulk/update-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ids: Array.from(selectedStaff),
-          is_active: bulkStatusAction === 'enable',
+          is_active: action === 'enable',
         }),
       })
       if (res.ok) {
         setSelectedStaff(new Set())
-        setIsBulkStatusConfirmOpen(false)
         fetchStaffs()
       }
     } catch (err) { console.error(err) }
@@ -304,7 +304,7 @@ export default function StaffPage() {
   const departments = [...new Set(staffs.map((s) => s.department).filter(Boolean))].sort()
   const designations = [...new Set(staffs.map((s) => s.designation).filter(Boolean))].sort()
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const exportList =
       selectedStaff.size > 0
         ? filteredStaffs.filter((s) => selectedStaff.has(s.id))
@@ -352,7 +352,7 @@ export default function StaffPage() {
         s.updated_at ? formatDate(s.updated_at) : '',
       ]),
     ]
-    downloadCsv(`staff_${accountingExportDateStamp()}.csv`, rows)
+    await downloadCsv(`staff_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting staff' })
   }
 
   const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(filteredStaffs)
@@ -572,35 +572,6 @@ export default function StaffPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={isBulkStatusConfirmOpen} onOpenChange={setIsBulkStatusConfirmOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Confirm Bulk {bulkStatusAction === 'enable' ? 'Enable' : 'Disable'}</DialogTitle>
-            </DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Are you sure you want to {bulkStatusAction} {selectedStaff.size} staff members?
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsBulkStatusConfirmOpen(false)}>Cancel</Button>
-              <Button onClick={confirmBulkStatus}>{bulkStatusAction === 'enable' ? 'Enable' : 'Disable'}</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={isStatusConfirmOpen} onOpenChange={setIsStatusConfirmOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Confirm {staffToToggle?.is_active ? 'Disable' : 'Enable'}</DialogTitle>
-            </DialogHeader>
-            <p className="py-4 text-sm text-gray-600">
-              Are you sure you want to {staffToToggle?.is_active ? 'disable' : 'enable'} {staffToToggle?.name}?
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsStatusConfirmOpen(false)}>Cancel</Button>
-              <Button onClick={confirmToggleActive}>{staffToToggle?.is_active ? 'Disable' : 'Enable'}</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
         {confirmDialog}
       </div>
     </DashboardLayout>

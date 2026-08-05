@@ -26,7 +26,7 @@ import {
   salesReportCsvRows,
   taxReportCsvRows,
 } from '@/lib/reportsExport'
-import { rowsToCsv } from '@/lib/accountingExport'
+import { downloadBlob, rowsToCsv } from '@/lib/accountingExport'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 import JSZip from 'jszip'
@@ -66,6 +66,9 @@ interface ReportWidgets {
   month_tax: number
   payments_in_month: number
   payments_out_month: number
+  purchase_expense_month: number
+  accounts_payable: number
+  accounts_payable_count: number
   month_net_profit: number
 }
 
@@ -567,12 +570,9 @@ export default function ReportsPage() {
       if (customResult) add('custom', customReportCsvRows(customResult), customResult)
 
       const blob = await zip.generateAsync({ type: 'blob' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `reports-analytics-${stamp}.zip`
-      a.click()
-      URL.revokeObjectURL(url)
+      await downloadBlob(`reports-analytics-${stamp}.zip`, blob, {
+        label: 'Exporting all reports',
+      })
       notifyExported('All reports')
     } catch (err) {
       console.error(err)
@@ -653,11 +653,18 @@ export default function ReportsPage() {
                     { label: 'Lifetime paid sales', value: formatCurrency(widgets?.total_sales || 0) },
                     { label: 'This month revenue', value: formatCurrency(widgets?.month_revenue || 0), tone: 'success' },
                     { label: 'Receivables', value: formatCurrency(widgets?.outstanding_amount || 0), hint: `${widgets?.outstanding_count ?? 0} open`, tone: 'danger' },
+                    { label: 'Purchase expense (month)', value: formatCurrency(widgets?.purchase_expense_month || 0), tone: 'warning' },
+                    {
+                      label: 'Accounts payable',
+                      value: formatCurrency(widgets?.accounts_payable || 0),
+                      hint: `${widgets?.accounts_payable_count ?? 0} open bills`,
+                      tone: 'danger',
+                    },
                     { label: 'Inventory (cost)', value: formatCurrency(widgets?.inventory_value || 0) },
                     { label: 'Net profit (ledger)', value: formatCurrency(widgets?.month_net_profit || 0) },
                     { label: 'GST this month', value: formatCurrency(widgets?.month_tax || 0) },
                     { label: 'Cash in (month)', value: formatCurrency(widgets?.payments_in_month || 0), tone: 'success' },
-                    { label: 'Cash out (month)', value: formatCurrency(widgets?.payments_out_month || 0), tone: 'warning' },
+                    { label: 'Payment out (month)', value: formatCurrency(widgets?.payments_out_month || 0), tone: 'warning' },
                   ]}
                 />
                 <div className="grid gap-6 lg:grid-cols-2">
@@ -1581,6 +1588,7 @@ export default function ReportsPage() {
                     <option value="sales">Paid sales (daily)</option>
                     <option value="payments_in">Payments in (daily)</option>
                     <option value="payments_out">Payments out (daily)</option>
+                    <option value="accounts_payable">Accounts payable (daily)</option>
                     <option value="expenses">Expenses by category</option>
                     <option value="purchases">Purchases (daily)</option>
                   </select>
