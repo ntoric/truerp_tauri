@@ -741,7 +741,6 @@ export default function ProductsPage() {
         },
         body: JSON.stringify({
           quantity: printQuantity,
-          label_size: isThermal ? printLabelSize : undefined,
           format: isThermal ? 'json' : 'html',
           start_position: isThermal ? undefined : printStartPosition,
         }),
@@ -1601,66 +1600,55 @@ export default function ProductsPage() {
                 onChange={(e) => setPrintQuantity(parseInt(e.target.value) || 1)}
               />
             </div>
-            {printBarcodeMode === 'label' ? (
-              <div className="space-y-2">
-                <Label>Thermal paper size</Label>
-                <Select
-                  value={printLabelSize}
-                  onValueChange={(value) => setPrintLabelSize(value as BarcodeLabelSize)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select size" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BARCODE_LABEL_SIZE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {BARCODE_LABEL_SIZE_OPTIONS.find((o) => o.value === printLabelSize)?.description}
+            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              {printBarcodeMode === 'label' ? (
+                <>
+                  Thermal label ·{' '}
+                  <span className="font-medium text-foreground">
+                    {BARCODE_LABEL_SIZE_OPTIONS.find((o) => o.value === printLabelSize)?.label ??
+                      printLabelSize}
+                  </span>
                   {' · '}
-                  Default size can be saved in Settings → Print → Barcode.
+                  {BARCODE_LABEL_SIZE_OPTIONS.find((o) => o.value === printLabelSize)?.description}
+                </>
+              ) : (
+                <>
+                  A4 sheet ·{' '}
+                  <span className="font-medium text-foreground">
+                    {A4_LABEL_SHEET_PRESETS.find((p) => p.key === printSheetPreset)?.label ??
+                      `${printSheetColumns}×${printSheetRows} grid`}
+                  </span>
+                  {' · '}
+                  {printLabelsPerSheet} labels per sheet
+                </>
+              )}
+              <p className="mt-1 text-xs">
+                Print mode and paper size are configured in Settings → Print → Barcode.
+              </p>
+            </div>
+            {printBarcodeMode === 'a4' ? (
+              <div className="space-y-2">
+                <Label htmlFor="printStartPosition">Starting sticker (1–{printLabelsPerSheet})</Label>
+                <Input
+                  id="printStartPosition"
+                  type="number"
+                  min={1}
+                  max={printLabelsPerSheet}
+                  value={printStartPosition}
+                  onChange={(e) => {
+                    const raw = e.target.value
+                    if (raw === '') return
+                    const n = Number(raw)
+                    if (!Number.isFinite(n)) return
+                    setPrintStartPosition(Math.min(printLabelsPerSheet, Math.max(1, Math.round(n))))
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use when reusing a partially printed sheet. First label prints at row{' '}
+                  {printStartHint.row}, column {printStartHint.col} (numbered left-to-right, top-to-bottom).
                 </p>
               </div>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  <Label>Sticker sheet</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {A4_LABEL_SHEET_PRESETS.find((p) => p.key === printSheetPreset)?.label ??
-                      `${printSheetColumns}×${printSheetRows} grid`}{' '}
-                    · {printLabelsPerSheet} labels per A4 sheet
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Layout is configured in Settings → Print → Barcode → A4 Sheet Print.
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="printStartPosition">Starting sticker (1–{printLabelsPerSheet})</Label>
-                  <Input
-                    id="printStartPosition"
-                    type="number"
-                    min={1}
-                    max={printLabelsPerSheet}
-                    value={printStartPosition}
-                    onChange={(e) => {
-                      const raw = e.target.value
-                      if (raw === '') return
-                      const n = Number(raw)
-                      if (!Number.isFinite(n)) return
-                      setPrintStartPosition(Math.min(printLabelsPerSheet, Math.max(1, Math.round(n))))
-                    }}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Use when reusing a partially printed sheet. First label prints at row{' '}
-                    {printStartHint.row}, column {printStartHint.col} (numbered left-to-right, top-to-bottom).
-                  </p>
-                </div>
-              </>
-            )}
+            ) : null}
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <Label>

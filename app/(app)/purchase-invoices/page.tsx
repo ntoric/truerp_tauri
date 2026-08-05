@@ -106,28 +106,11 @@ export default function PurchaseInvoicesPage() {
   const labelPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [exporting, setExporting] = useState(false)
 
-  const paperDimensions: Record<string, { width: number; height: number }> = {
-    a4: { width: 210, height: 297 },
-    letter: { width: 216, height: 279 },
-    a5: { width: 148, height: 210 },
-    ...THERMAL_LABEL_DIMENSIONS,
-  }
-
-  const autoCalculateLabelSize = (paperSize: string, cols: number, rows: number, margin: number) => {
-    if (isThermalLabelSize(paperSize)) {
-      const dims = THERMAL_LABEL_DIMENSIONS[paperSize]
-      return { labelWidth: dims.width, labelHeight: dims.height }
-    }
-    const paper = paperDimensions[paperSize] || paperDimensions.a4
-    const labelWidth = Math.max(10, (paper.width - 2 * margin) / cols)
-    const labelHeight = Math.max(10, (paper.height - 2 * margin) / rows)
-    return { labelWidth: Math.round(labelWidth * 100) / 100, labelHeight: Math.round(labelHeight * 100) / 100 }
-  }
+  const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
 
   const isThermalSelected = isThermalLabelSize(labelConfig.paperSize)
   const sheetLabelsPerPage = labelsPerSheet({ columns: labelConfig.cols, rows: labelConfig.rows })
   const startHint = stickerPositionToRowCol(labelConfig.startPosition, labelConfig.cols)
-  const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
 
   useEffect(() => {
     fetchBills()
@@ -1105,244 +1088,61 @@ export default function PurchaseInvoicesPage() {
               </button>
             </div>
             <div className="p-4 space-y-4">
-              {/* Paper Size Selection */}
-              <div>
-                <Label className="text-sm font-medium">Paper Size</Label>
-                <select
-                  value={labelConfig.paperSize}
-                  onChange={(e) => {
-                    const paperSize = e.target.value
-                    if (isThermalLabelSize(paperSize)) {
-                      const dims = THERMAL_LABEL_DIMENSIONS[paperSize]
-                      setLabelConfig({
-                        ...labelConfig,
-                        paperSize,
-                        labelWidth: dims.width,
-                        labelHeight: dims.height,
-                        cols: 1,
-                        rows: 1,
-                        margin: 0,
-                      })
-                      return
-                    }
-                    const cols = labelConfig.cols || 4
-                    const rows = labelConfig.rows || 8
-                    const margin = labelConfig.margin || 10
-                    const { labelWidth, labelHeight } = autoCalculateLabelSize(paperSize, cols, rows, margin)
-                    setLabelConfig({ ...labelConfig, paperSize, labelWidth, labelHeight, cols, rows, margin })
-                  }}
-                  className="mt-1 w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <optgroup label="Sheet paper">
-                    <option value="a4">A4 (210 x 297 mm)</option>
-                    <option value="letter">Letter (216 x 279 mm)</option>
-                    <option value="a5">A5 (148 x 210 mm)</option>
-                  </optgroup>
-                  <optgroup label="Thermal label printer">
-                    {BARCODE_LABEL_SIZE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-                {isThermalSelected && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {BARCODE_LABEL_SIZE_OPTIONS.find((o) => o.value === labelConfig.paperSize)?.description}
+              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                {isThermalSelected ? (
+                  <>
+                    Thermal label ·{' '}
+                    <span className="font-medium text-foreground">
+                      {BARCODE_LABEL_SIZE_OPTIONS.find((o) => o.value === labelConfig.paperSize)?.label ??
+                        labelConfig.paperSize}
+                    </span>
                     {' · '}
-                    Name → barcode → MRP / price · prints directly to the thermal printer
-                  </p>
+                    {labelConfig.labelWidth} × {labelConfig.labelHeight} mm
+                  </>
+                ) : (
+                  <>
+                    A4 sheet ·{' '}
+                    <span className="font-medium text-foreground">
+                      {A4_LABEL_SHEET_PRESETS.find((p) => p.key === labelConfig.sheetPreset)?.label ??
+                        `${labelConfig.cols}×${labelConfig.rows} grid`}
+                    </span>
+                    {' · '}
+                    {sheetLabelsPerPage} labels per sheet
+                  </>
                 )}
+                <p className="mt-1 text-xs">
+                  Print mode and paper size are configured in Settings → Print → Barcode.
+                </p>
               </div>
 
-              {!isThermalSelected && (
-                <>
-                  <div>
-                    <Label className="text-sm font-medium">Sticker sheet preset</Label>
-                    <select
-                      value={labelConfig.sheetPreset}
-                      onChange={(e) => {
-                        const preset = normalizeA4SheetPreset(e.target.value)
-                        if (preset === 'custom') {
-                          setLabelConfig({ ...labelConfig, sheetPreset: 'custom' })
-                          return
-                        }
-                        applySheetLayout(layoutFromPresetKey(preset), preset)
-                      }}
-                      className="mt-1 w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      {A4_LABEL_SHEET_PRESETS.map((preset) => (
-                        <option key={preset.key} value={preset.key}>
-                          {preset.label}
-                        </option>
-                      ))}
-                      <option value="custom">Custom layout</option>
-                    </select>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {A4_LABEL_SHEET_PRESETS.find((p) => p.key === labelConfig.sheetPreset)?.description ??
-                        `${sheetLabelsPerPage} labels per sheet`}
-                    </p>
-                  </div>
-
-                  {/* Label Dimensions */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-sm font-medium">Label Width (mm)</Label>
-                      <Input
-                        type="number"
-                        value={labelConfig.labelWidth}
-                        onChange={(e) => setLabelConfig({ ...labelConfig, labelWidth: Number(e.target.value) })}
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">Label Height (mm)</Label>
-                      <Input
-                        type="number"
-                        value={labelConfig.labelHeight}
-                        onChange={(e) => setLabelConfig({ ...labelConfig, labelHeight: Number(e.target.value) })}
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Grid Configuration */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-sm font-medium">Columns</Label>
-                      <Input
-                        type="number"
-                        value={labelConfig.cols}
-                        onChange={(e) => {
-                          const cols = Number(e.target.value)
-                          const { labelWidth, labelHeight } = autoCalculateLabelSize(labelConfig.paperSize, cols, labelConfig.rows, labelConfig.margin)
-                          setLabelConfig({ ...labelConfig, cols, labelWidth, labelHeight })
-                        }}
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">Rows</Label>
-                      <Input
-                        type="number"
-                        value={labelConfig.rows}
-                        onChange={(e) => {
-                          const rows = Number(e.target.value)
-                          const { labelWidth, labelHeight } = autoCalculateLabelSize(labelConfig.paperSize, labelConfig.cols, rows, labelConfig.margin)
-                          setLabelConfig({ ...labelConfig, rows, labelWidth, labelHeight })
-                        }}
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Margin (even on all sides) */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-sm font-medium">Side margin (mm)</Label>
-                      <Input
-                        type="number"
-                        step={0.1}
-                        value={labelConfig.marginLeft}
-                        onChange={(e) => {
-                          const marginLeft = Number(e.target.value)
-                          setLabelConfig({
-                            ...labelConfig,
-                            sheetPreset: 'custom',
-                            marginLeft,
-                            margin: marginLeft,
-                          })
-                        }}
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">Top/bottom margin (mm)</Label>
-                      <Input
-                        type="number"
-                        step={0.1}
-                        value={labelConfig.marginTop}
-                        onChange={(e) => {
-                          setLabelConfig({
-                            ...labelConfig,
-                            sheetPreset: 'custom',
-                            marginTop: Number(e.target.value),
-                          })
-                        }}
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">Horizontal gap (mm)</Label>
-                      <Input
-                        type="number"
-                        step={0.1}
-                        value={labelConfig.gapH}
-                        onChange={(e) =>
-                          setLabelConfig({
-                            ...labelConfig,
-                            sheetPreset: 'custom',
-                            gapH: Number(e.target.value),
-                          })
-                        }
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">Vertical gap (mm)</Label>
-                      <Input
-                        type="number"
-                        step={0.1}
-                        value={labelConfig.gapV}
-                        onChange={(e) =>
-                          setLabelConfig({
-                            ...labelConfig,
-                            sheetPreset: 'custom',
-                            gapV: Number(e.target.value),
-                          })
-                        }
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label className="text-sm font-medium">
-                      Starting sticker (1–{sheetLabelsPerPage})
-                    </Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={sheetLabelsPerPage}
-                      value={labelConfig.startPosition}
-                      onChange={(e) => {
-                        const raw = e.target.value
-                        if (raw === '') return
-                        const n = Number(raw)
-                        if (!Number.isFinite(n)) return
-                        setLabelConfig({
-                          ...labelConfig,
-                          startPosition: Math.min(sheetLabelsPerPage, Math.max(1, Math.round(n))),
-                        })
-                      }}
-                      className="mt-1"
-                    />
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      For partially used sheets — first label prints at row {startHint.row}, column{' '}
-                      {startHint.col}.
-                    </p>
-                  </div>
-                </>
-              )}
-
-              {isThermalSelected && (
-                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                  Label size:{' '}
-                  <span className="font-medium text-foreground">
-                    {labelConfig.labelWidth} × {labelConfig.labelHeight} mm
-                  </span>
+              {!isThermalSelected ? (
+                <div>
+                  <Label className="text-sm font-medium">
+                    Starting sticker (1–{sheetLabelsPerPage})
+                  </Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={sheetLabelsPerPage}
+                    value={labelConfig.startPosition}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      if (raw === '') return
+                      const n = Number(raw)
+                      if (!Number.isFinite(n)) return
+                      setLabelConfig({
+                        ...labelConfig,
+                        startPosition: Math.min(sheetLabelsPerPage, Math.max(1, Math.round(n))),
+                      })
+                    }}
+                    className="mt-1"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    For partially used sheets — first label prints at row {startHint.row}, column{' '}
+                    {startHint.col}.
+                  </p>
                 </div>
-              )}
+              ) : null}
 
               {/* Item Quantities */}
               <div>
