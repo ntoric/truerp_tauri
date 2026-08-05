@@ -17,3 +17,21 @@ export function notifySuccess(message: string, title = 'Success') {
     variant: 'success',
   })
 }
+
+/** Show an info toast. */
+export function notifyInfo(message: string, title = 'Info') {
+  toast({
+    title,
+    description: message,
+    variant: 'info',
+  })
+}
+
+/** Show a warning toast. */
+export function notifyWarning(message: string, title = 'Warning') {
+  toast({
+    title,
+    description: message,
+    variant: 'warning',
+  })
+}

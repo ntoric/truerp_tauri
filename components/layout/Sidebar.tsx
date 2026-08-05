@@ -173,7 +173,12 @@ export default function Sidebar() {
   const { logout, user } = useAuth()
   const { isPageEnabled } = usePageFeatures()
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
+  const [hovered, setHovered] = useState(false)
   const visibleNavItems = useMemo(() => filterNavForRole(navItems, user?.role), [user?.role])
+
+  // POS keeps the always-expanded sidebar; other pages collapse until hover.
+  const isPosPage = pathname === '/pos' || pathname.startsWith('/pos/')
+  const isExpanded = isPosPage || hovered
 
   // Warm the route ahead of click (Next disables automatic Link prefetch in dev).
   const prefetchHref = useCallback(
@@ -213,10 +218,30 @@ export default function Sidebar() {
   }, [pathname, visibleNavItems])
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-white">
+    <aside
+      className={cn(
+        'fixed left-0 top-0 z-40 h-screen overflow-hidden border-r bg-white transition-[width] duration-200 ease-out',
+        isExpanded ? 'w-64 shadow-lg' : 'w-16'
+      )}
+      onMouseEnter={() => {
+        if (!isPosPage) setHovered(true)
+      }}
+      onMouseLeave={() => {
+        if (!isPosPage) setHovered(false)
+      }}
+    >
       <div className="flex h-full flex-col">
-        <div className="flex h-16 items-center border-b px-6">
-          <Link href="/dashboard" className="flex items-center gap-2.5">
+        <div
+          className={cn(
+            'flex h-16 items-center border-b',
+            isExpanded ? 'px-6' : 'justify-center px-2'
+          )}
+        >
+          <Link
+            href="/dashboard"
+            className={cn('flex items-center', isExpanded ? 'gap-2.5' : 'justify-center')}
+            title="TruERP"
+          >
             <img
               src="/logo.png"
               alt="TruERP"
@@ -224,39 +249,46 @@ export default function Sidebar() {
               width={32}
               height={32}
             />
-            <span className="text-xl font-bold text-gray-900">TruERP</span>
+            {isExpanded && (
+              <span className="whitespace-nowrap text-xl font-bold text-gray-900">TruERP</span>
+            )}
           </Link>
         </div>
 
-        <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
+        <nav className={cn('flex-1 space-y-1 overflow-y-auto py-4', isExpanded ? 'px-3' : 'px-2')}>
           {visibleNavItems.map((item) => {
             if (item.children) {
               const Icon = item.icon
-              const isExpanded = expandedItems.has(item.name)
+              const isGroupOpen = isExpanded && expandedItems.has(item.name)
               const hasActiveChild = navGroupHasActiveChild(pathname, item.children)
 
               return (
                 <div key={item.name}>
                   <button
-                    onClick={() => toggleExpanded(item.name)}
+                    onClick={() => {
+                      if (isExpanded) toggleExpanded(item.name)
+                    }}
+                    title={item.name}
                     className={cn(
-                      'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                      'flex w-full items-center rounded-lg py-2.5 text-sm font-medium transition-colors',
+                      isExpanded ? 'justify-between px-3' : 'justify-center px-2',
                       hasActiveChild
                         ? 'bg-blue-50 text-blue-700'
                         : 'text-gray-700 hover:bg-gray-50'
                     )}
                   >
-                    <div className="flex items-center gap-3">
-                      <Icon className={cn('h-5 w-5', hasActiveChild ? 'text-blue-600' : 'text-gray-500')} />
-                      {item.name}
+                    <div className={cn('flex items-center', isExpanded ? 'gap-3' : '')}>
+                      <Icon className={cn('h-5 w-5 shrink-0', hasActiveChild ? 'text-blue-600' : 'text-gray-500')} />
+                      {isExpanded && <span className="whitespace-nowrap">{item.name}</span>}
                     </div>
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-gray-500" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-gray-500" />
-                    )}
+                    {isExpanded &&
+                      (expandedItems.has(item.name) ? (
+                        <ChevronDown className="h-4 w-4 shrink-0 text-gray-500" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 shrink-0 text-gray-500" />
+                      ))}
                   </button>
-                  {isExpanded && (
+                  {isGroupOpen && (
                     <div className="ml-6 mt-1 space-y-1">
                       {item.children.map((child) => {
                         const ChildIcon = child.icon
@@ -279,7 +311,7 @@ export default function Sidebar() {
                             )}
                           >
                             <ChildIcon className={cn('h-4 w-4', isChildActive ? 'text-blue-600' : 'text-gray-400')} />
-                            <span className="flex-1">{child.name}</span>
+                            <span className="flex-1 whitespace-nowrap">{child.name}</span>
                             {!childEnabled && (
                               <span className="text-[10px] font-normal uppercase tracking-wide text-gray-400">Soon</span>
                             )}
@@ -300,10 +332,12 @@ export default function Sidebar() {
                 key={item.name}
                 href={item.href || '#'}
                 prefetch
+                title={item.name}
                 onMouseEnter={() => prefetchHref(item.href)}
                 onFocus={() => prefetchHref(item.href)}
                 className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                  'flex items-center rounded-lg py-2.5 text-sm font-medium transition-colors',
+                  isExpanded ? 'gap-3 px-3' : 'justify-center px-2',
                   isActive
                     ? 'bg-blue-50 text-blue-700'
                     : itemEnabled
@@ -311,23 +345,31 @@ export default function Sidebar() {
                       : 'text-gray-400 hover:bg-gray-50'
                 )}
               >
-                <Icon className={cn('h-5 w-5', isActive ? 'text-blue-600' : 'text-gray-500')} />
-                <span className="flex-1">{item.name}</span>
-                {!itemEnabled && (
-                  <span className="text-[10px] font-normal uppercase tracking-wide text-gray-400">Soon</span>
+                <Icon className={cn('h-5 w-5 shrink-0', isActive ? 'text-blue-600' : 'text-gray-500')} />
+                {isExpanded && (
+                  <>
+                    <span className="flex-1 whitespace-nowrap">{item.name}</span>
+                    {!itemEnabled && (
+                      <span className="text-[10px] font-normal uppercase tracking-wide text-gray-400">Soon</span>
+                    )}
+                  </>
                 )}
               </Link>
             )
           })}
         </nav>
 
-        <div className="border-t p-3">
+        <div className={cn('border-t', isExpanded ? 'p-3' : 'p-2')}>
           <button
             onClick={logout}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+            title="Logout"
+            className={cn(
+              'flex w-full items-center rounded-lg py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50',
+              isExpanded ? 'gap-3 px-3' : 'justify-center px-2'
+            )}
           >
-            <LogOut className="h-5 w-5" />
-            Logout
+            <LogOut className="h-5 w-5 shrink-0" />
+            {isExpanded && <span className="whitespace-nowrap">Logout</span>}
           </button>
         </div>
       </div>

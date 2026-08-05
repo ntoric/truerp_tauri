@@ -2,7 +2,19 @@ export type WeighingScaleProtocol = 'generic' | 'cas' | 'toledo' | 'legacy_fixed
 export type WeighingScaleConnection = 'serial' | 'keyboard'
 export type ScaleWeightUnit = 'kg' | 'g'
 export type WeighingScaleCsvDelimiter = ',' | ';' | 'tab'
+/** How POS matches scale PLU to products (CSV item_code always uses barcode). */
 export type WeighingScaleCsvItemMatchField = 'auto' | 'sku' | 'item_code'
+export type WeighingScaleCsvExtraField =
+  | 'category'
+  | 'mrp'
+  | 'purchase_price'
+  | 'hsn_code'
+  | 'description'
+  | 'tax_rate'
+  | 'discount'
+  | 'min_stock'
+  | 'item_type'
+  | 'id'
 
 export interface WeighingScaleSettings {
   enabled: boolean
@@ -25,10 +37,14 @@ export interface WeighingScaleSettings {
   csv_delimiter: WeighingScaleCsvDelimiter
   csv_item_match_field: WeighingScaleCsvItemMatchField
   csv_item_code_column: string
+  /** Header for slug column (product SKU). */
+  csv_slug_column: string
   csv_name_column: string
   csv_unit_column: string
   csv_price_column: string
   csv_export_weight_items_only: boolean
+  /** Optional product fields appended after core CSV columns. */
+  csv_extra_fields: WeighingScaleCsvExtraField[]
   barcode_scan_enabled: boolean
   /** Leading character(s) on scale labels, e.g. "w" → w0000112500 */
   barcode_prefix: string
@@ -38,6 +54,46 @@ export interface WeighingScaleSettings {
   barcode_plu_digits: number
   barcode_payload_digits: number
   barcode_payload_type: 'weight_grams' | 'weight_kg_thousandths' | 'price_paise'
+}
+
+const VALID_CSV_EXTRA_FIELDS = new Set<WeighingScaleCsvExtraField>([
+  'category',
+  'mrp',
+  'purchase_price',
+  'hsn_code',
+  'description',
+  'tax_rate',
+  'discount',
+  'min_stock',
+  'item_type',
+  'id',
+])
+
+export function parseCsvExtraFields(
+  value: unknown
+): WeighingScaleCsvExtraField[] {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (v): v is WeighingScaleCsvExtraField =>
+        typeof v === 'string' && VALID_CSV_EXTRA_FIELDS.has(v as WeighingScaleCsvExtraField)
+    )
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (Array.isArray(parsed)) return parseCsvExtraFields(parsed)
+    } catch {
+      /* comma-separated fallback */
+    }
+    return value
+      .split(',')
+      .map((s) => s.trim())
+      .filter(
+        (v): v is WeighingScaleCsvExtraField =>
+          VALID_CSV_EXTRA_FIELDS.has(v as WeighingScaleCsvExtraField)
+      )
+  }
+  return []
 }
 
 export const DEFAULT_WEIGHING_SCALE_SETTINGS: WeighingScaleSettings = {
@@ -59,12 +115,14 @@ export const DEFAULT_WEIGHING_SCALE_SETTINGS: WeighingScaleSettings = {
   csv_import_enabled: true,
   csv_has_header: true,
   csv_delimiter: ',',
-  csv_item_match_field: 'auto',
+  csv_item_match_field: 'item_code',
   csv_item_code_column: '',
+  csv_slug_column: '',
   csv_name_column: '',
   csv_unit_column: '',
   csv_price_column: '',
   csv_export_weight_items_only: true,
+  csv_extra_fields: [],
   barcode_scan_enabled: true,
   barcode_prefix: 'w',
   barcode_prefix_start: 20,
@@ -166,6 +224,10 @@ export function mergeWeighingScaleSettings(
   if (!merged.barcode_prefix?.trim()) {
     merged.barcode_prefix = DEFAULT_WEIGHING_SCALE_SETTINGS.barcode_prefix
   }
+  merged.csv_extra_fields = parseCsvExtraFields(
+    (partial as { csv_extra_fields?: unknown } | null | undefined)?.csv_extra_fields ??
+      merged.csv_extra_fields
+  )
   return merged
 }
 

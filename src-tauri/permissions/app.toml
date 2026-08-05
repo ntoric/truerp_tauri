@@ -29,6 +29,11 @@ description = "Allow printing a PDF document"
 commands.allow = ["print_pdf"]
 
 [[permission]]
+identifier = "allow-save-pdf"
+description = "Allow saving a PDF document to Downloads"
+commands.allow = ["save_pdf"]
+
+[[permission]]
 identifier = "allow-print-thermal"
 description = "Allow silent ESC/POS thermal printing"
 commands.allow = ["print_thermal"]

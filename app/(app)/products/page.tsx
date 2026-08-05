@@ -21,6 +21,7 @@ import { Package, Plus, Search, Trash2, Download, Upload, Printer, Edit, MoreVer
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { asArray, cn } from '@/lib/utils'
+import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import ProductImageField from '@/components/ProductImageField'
@@ -168,7 +169,7 @@ export default function ProductsPage() {
   const [newItem, setNewItem] = useState({
     name: '',
     sku: '',
-    category: '',
+    category: DEFAULT_CATEGORY_NAME,
     unit: 'PCS',
     purchase_price: 0,
     sale_price: 0,
@@ -225,7 +226,14 @@ export default function ProductsPage() {
     try {
       const res = await apiFetch('/categories')
       if (res.ok) {
-        setCategories(asArray(await res.json()))
+        const data = asArray(await res.json())
+        setCategories(data)
+        const defaultName = pickDefaultCategoryName(data)
+        setNewItem((prev) =>
+          !prev.category || prev.category === DEFAULT_CATEGORY_NAME
+            ? { ...prev, category: defaultName }
+            : prev
+        )
       }
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
@@ -707,7 +715,7 @@ export default function ProductsPage() {
   const emptyProductForm = {
     name: '',
     sku: '',
-    category: '',
+    category: pickDefaultCategoryName(categories),
     unit: 'PCS',
     purchase_price: 0,
     sale_price: 0,

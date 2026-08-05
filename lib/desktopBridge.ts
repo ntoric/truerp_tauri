@@ -21,6 +21,7 @@ type DesktopAppBridge = {
     paperWidthMm?: number | null,
     paperSize?: string | null
   ) => Promise<void>
+  SavePDF?: (pdfBase64: string, filename: string) => Promise<string>
   PrintThermal?: (
     content: string,
     printerName: string,
@@ -73,6 +74,11 @@ function getDesktopApp(): DesktopAppBridge | null {
           paperWidthMm: paperWidthMm ?? null,
           paperSize: paperSize ?? null,
         }) as Promise<void>,
+      SavePDF: (pdfBase64, filename) =>
+        invoke('save_pdf', {
+          pdfBase64,
+          filename: filename || 'document.pdf',
+        }) as Promise<string>,
       PrintThermal: (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) =>
         invoke('print_thermal', {
           content,
@@ -138,6 +144,21 @@ export async function desktopPrintPDF(
   if (!app?.PrintPDF) return false
   try {
     await app.PrintPDF(pdfBase64, printerName, jobTitle, paperWidthMm, paperSize)
+    return true
+  } catch (err) {
+    throw new Error(invokeErrorMessage(err))
+  }
+}
+
+/** Save PDF via native Downloads folder (desktop WKWebView cannot use `<a download>`). */
+export async function desktopSavePDF(
+  pdfBase64: string,
+  filename: string
+): Promise<boolean> {
+  const app = getDesktopApp()
+  if (!app?.SavePDF) return false
+  try {
+    await app.SavePDF(pdfBase64, filename)
     return true
   } catch (err) {
     throw new Error(invokeErrorMessage(err))

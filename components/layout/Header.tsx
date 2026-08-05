@@ -1,8 +1,10 @@
 'use client'
 
+import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { useStore } from '@/hooks/useStore'
-import { Store, User } from 'lucide-react'
+import { ShoppingCart, Store, User } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import NotificationBell from './NotificationBell'
 import {
   Select,
@@ -48,7 +50,13 @@ export default function Header() {
           </div>
         ) : null}
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        <Button asChild size="sm" className="gap-2 bg-blue-600 hover:bg-blue-700">
+          <Link href="/pos" title="Open POS">
+            <ShoppingCart className="h-4 w-4" />
+            <span>POS</span>
+          </Link>
+        </Button>
         <NotificationBell />
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-blue-700">

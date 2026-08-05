@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
+import { downloadInvoicePdf } from '@/lib/printDocument'
 import { Button } from '@/components/ui/button'
 import { Download, Loader2 } from 'lucide-react'
 
@@ -23,8 +24,11 @@ export default function InvoicePDFPage() {
       try {
         const res = await apiFetch(`/invoices/${id}/pdf`)
         if (!res.ok) throw new Error('Failed to load invoice PDF')
-        const blob = await res.blob()
+        const buffer = await res.arrayBuffer()
         if (cancelled) return
+        const copy = new Uint8Array(buffer.byteLength)
+        copy.set(new Uint8Array(buffer))
+        const blob = new Blob([copy], { type: 'application/pdf' })
         objectUrl = URL.createObjectURL(blob)
         setPdfUrl(objectUrl)
         setStatus('')
@@ -43,15 +47,12 @@ export default function InvoicePDFPage() {
   }, [id])
 
   const handleDownload = async () => {
-    if (!pdfUrl || downloading) return
+    if (!id || downloading) return
     setDownloading(true)
     try {
-      const a = document.createElement('a')
-      a.href = pdfUrl
-      a.download = `Invoice_${id}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadInvoicePdf(id)
+    } catch {
+      setError('Failed to download invoice PDF')
     } finally {
       setDownloading(false)
     }

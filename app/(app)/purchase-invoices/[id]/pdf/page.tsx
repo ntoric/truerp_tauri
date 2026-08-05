@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
+import { downloadPurchaseBillPdf } from '@/lib/printDocument'
 import { Button } from '@/components/ui/button'
 import { Download, Loader2 } from 'lucide-react'
 
@@ -23,8 +24,11 @@ export default function PurchaseBillPDFPage() {
       try {
         const res = await apiFetch(`/purchase/bills/${id}/download-pdf`)
         if (!res.ok) throw new Error('Failed to load purchase invoice PDF')
-        const blob = await res.blob()
+        const buffer = await res.arrayBuffer()
         if (cancelled) return
+        const copy = new Uint8Array(buffer.byteLength)
+        copy.set(new Uint8Array(buffer))
+        const blob = new Blob([copy], { type: 'application/pdf' })
         objectUrl = URL.createObjectURL(blob)
         setPdfUrl(objectUrl)
         setStatus('')
@@ -42,16 +46,13 @@ export default function PurchaseBillPDFPage() {
     }
   }, [id])
 
-  const handleDownload = () => {
-    if (!pdfUrl || downloading) return
+  const handleDownload = async () => {
+    if (!id || downloading) return
     setDownloading(true)
     try {
-      const a = document.createElement('a')
-      a.href = pdfUrl
-      a.download = `Purchase_Invoice_${id}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadPurchaseBillPdf(id)
+    } catch {
+      setError('Failed to download purchase invoice PDF')
     } finally {
       setDownloading(false)
     }
@@ -79,7 +80,7 @@ export default function PurchaseBillPDFPage() {
   return (
     <div className="relative h-screen w-screen">
       <div className="absolute right-4 top-4 z-10">
-        <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading}>
+        <Button variant="outline" size="sm" onClick={() => void handleDownload()} disabled={downloading}>
           {downloading ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (

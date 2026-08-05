@@ -74,11 +74,16 @@ export default function DashboardLayout({
     )
   }
 
+  // POS keeps a permanently expanded sidebar; elsewhere content sits beside the
+  // collapsed rail and the menu overlays when hovered.
+  const isPosPage = pathname === '/pos' || pathname.startsWith('/pos/')
+  const contentOffset = isPosPage ? 'ml-64' : 'ml-16'
+
   return (
     <DashboardShellContext.Provider value={true}>
       <div className="min-h-screen bg-gray-50">
         <Sidebar />
-        <div className="ml-64">
+        <div className={contentOffset}>
           <Header />
           <main className="p-8">{content}</main>
         </div>

@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { cn, formatCurrency } from '@/lib/utils'
+import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
 import { Save, Loader2, Plus, Trash2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
@@ -35,7 +36,7 @@ export default function CreateExpensePage() {
   const router = useRouter()
   const { fieldErrors, clearFieldError, handleApiError, showErrorToast } = useFormErrors()
   const [form, setForm] = useState({
-    category: '',
+    category: DEFAULT_CATEGORY_NAME,
     description: '',
     original_invoice_num: '',
     date: new Date().toISOString().split('T')[0],
@@ -62,9 +63,10 @@ export default function CreateExpensePage() {
       if (res.ok) {
         const data = await res.json()
         setCategories(data)
-        if (data.length > 0) {
-          setForm(prev => ({ ...prev, category: data[0].name }))
-        }
+        setForm((prev) => ({
+          ...prev,
+          category: pickDefaultCategoryName(data, prev.category || DEFAULT_CATEGORY_NAME),
+        }))
       }
     } catch (err) {
       console.error(err)

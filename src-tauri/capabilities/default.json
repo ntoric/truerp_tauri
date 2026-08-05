@@ -24,6 +24,7 @@
     "allow-has-native-printing",
     "allow-list-printers",
     "allow-print-pdf",
+    "allow-save-pdf",
     "allow-print-thermal",
     "allow-print-raw-base64",
     "allow-app-version",

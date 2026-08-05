@@ -52,6 +52,12 @@ const BRIDGE_JS: &str = r#"
         paperSize: paperSize || null
       });
     },
+    SavePDF: function (pdfBase64, filename) {
+      return invoke('save_pdf', {
+        pdfBase64: pdfBase64 || '',
+        filename: filename || 'document.pdf'
+      });
+    },
     PrintThermal: function (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) {
       return invoke('print_thermal', {
         content: content || '',
@@ -99,6 +105,7 @@ pub fn run() {
             print::has_native_printing,
             print::list_printers,
             print::print_pdf,
+            print::save_pdf,
             thermal::print_thermal,
             thermal::print_raw_base64,
             #[cfg(desktop)]

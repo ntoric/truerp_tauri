@@ -1,6 +1,7 @@
 import { apiFetch } from '@/hooks/useAuth'
 import {
   desktopPrintThermal,
+  desktopSavePDF,
   hasNativePrinting,
   isDesktopApp,
 } from '@/lib/desktopBridge'
@@ -95,19 +96,54 @@ function base64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return bytes
 }
 
-function triggerBlobDownload(blob: Blob, filename: string): void {
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const slice = bytes.subarray(i, i + chunk)
+    for (let j = 0; j < slice.length; j += 1) {
+      binary += String.fromCharCode(slice[j])
+    }
+  }
+  return btoa(binary)
+}
+
+async function pdfBlobFromResponse(res: Response): Promise<Blob> {
+  const buffer = await res.arrayBuffer()
+  // Copy into a plain ArrayBuffer-backed view — required for BlobPart typing / WKWebView.
+  const copy = new Uint8Array(buffer.byteLength)
+  copy.set(new Uint8Array(buffer))
+  return new Blob([copy], { type: 'application/pdf' })
+}
+
+async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
+  const safeName = filename.endsWith('.pdf') ? filename : `${filename}.pdf`
+
+  if (isDesktopApp()) {
+    const buffer = await blob.arrayBuffer()
+    const bytes = new Uint8Array(buffer)
+    const saved = await desktopSavePDF(uint8ToBase64(bytes), safeName)
+    if (saved) return
+  }
+
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = filename
+  a.download = safeName
+  a.rel = 'noopener'
+  a.style.display = 'none'
   document.body.appendChild(a)
   a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
+  // Do not revoke immediately — browsers (and WKWebView) often start the
+  // download asynchronously after click(); early revoke cancels it silently.
+  setTimeout(() => {
+    a.remove()
+    URL.revokeObjectURL(url)
+  }, 60_000)
 }
 
 /** Download a PDF from base64 (A4 documents — no printer). */
-export function downloadPdfBase64(pdfBase64: string, filename: string): void {
+export async function downloadPdfBase64(pdfBase64: string, filename: string): Promise<void> {
   if (!pdfBase64) {
     throw new Error('PDF was empty')
   }
@@ -116,7 +152,7 @@ export function downloadPdfBase64(pdfBase64: string, filename: string): void {
   const copy = new Uint8Array(bytes.byteLength)
   copy.set(bytes)
   const blob = new Blob([copy], { type: 'application/pdf' })
-  triggerBlobDownload(blob, filename.endsWith('.pdf') ? filename : `${filename}.pdf`)
+  await triggerBlobDownload(blob, filename.endsWith('.pdf') ? filename : `${filename}.pdf`)
 }
 
 /** Download invoice PDF from API. */
@@ -129,14 +165,14 @@ export async function downloadInvoicePdf(
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || 'Failed to download invoice PDF')
   }
-  const blob = await res.blob()
+  const blob = await pdfBlobFromResponse(res)
   if (!blob.size) {
     throw new Error('Invoice PDF was empty')
   }
   const name = options?.invoiceNumber
     ? `Invoice_${options.invoiceNumber}.pdf`
     : `Invoice_${invoiceId}.pdf`
-  triggerBlobDownload(blob, name)
+  await triggerBlobDownload(blob, name)
 }
 
 /** Download purchase invoice PDF from API. */
@@ -149,14 +185,14 @@ export async function downloadPurchaseBillPdf(
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || 'Failed to download purchase invoice PDF')
   }
-  const blob = await res.blob()
+  const blob = await pdfBlobFromResponse(res)
   if (!blob.size) {
     throw new Error('Purchase invoice PDF was empty')
   }
   const name = options?.billNumber
     ? `Purchase_Invoice_${options.billNumber}.pdf`
     : `Purchase_Invoice_${billId}.pdf`
-  triggerBlobDownload(blob, name)
+  await triggerBlobDownload(blob, name)
 }
 
 function thermalReceiptHtml(content: string, widthMm: number, logoUrl?: string): string {
@@ -434,7 +470,7 @@ export async function printDocument(options: {
   const filename = payload.title?.trim()
     ? `${payload.title.replace(/[^\w\-]+/g, '_')}.pdf`
     : `${options.documentType}_${options.documentId}.pdf`
-  downloadPdfBase64(payload.pdf_base64, filename)
+  await downloadPdfBase64(payload.pdf_base64, filename)
   return payload
 }
 

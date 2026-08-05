@@ -7,6 +7,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::thermal;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrinterInfo {
     pub name: String,
@@ -31,14 +36,7 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
         .collect())
 }
 
-#[tauri::command]
-pub fn print_pdf(
-    pdf_base64: String,
-    printer_name: String,
-    job_title: String,
-    paper_width_mm: Option<i32>,
-    paper_size: Option<String>,
-) -> Result<(), String> {
+fn decode_pdf_base64(pdf_base64: &str) -> Result<Vec<u8>, String> {
     let mut raw = pdf_base64.trim().to_string();
     if raw.is_empty() {
         return Err("empty PDF content".into());
@@ -52,6 +50,18 @@ pub fn print_pdf(
     if data.len() < 5 || &data[..4] != b"%PDF" {
         return Err("content is not a PDF".into());
     }
+    Ok(data)
+}
+
+#[tauri::command]
+pub fn print_pdf(
+    pdf_base64: String,
+    printer_name: String,
+    job_title: String,
+    paper_width_mm: Option<i32>,
+    paper_size: Option<String>,
+) -> Result<(), String> {
+    let data = decode_pdf_base64(&pdf_base64)?;
 
     let title = {
         let t = job_title.trim();
@@ -66,6 +76,67 @@ pub fn print_pdf(
     let result = print_pdf_file(&path, printer_name.trim(), &title, media.as_deref());
     let _ = fs::remove_file(&path);
     result
+}
+
+/// Save a PDF to the user's Downloads folder and open it (WKWebView cannot rely on `<a download>`).
+#[tauri::command]
+pub fn save_pdf(pdf_base64: String, filename: String) -> Result<String, String> {
+    let data = decode_pdf_base64(&pdf_base64)?;
+    let stem = {
+        let trimmed = filename.trim();
+        let without_ext = trimmed
+            .strip_suffix(".pdf")
+            .or_else(|| trimmed.strip_suffix(".PDF"))
+            .unwrap_or(trimmed);
+        sanitize_file_stem(without_ext)
+    };
+    let name = format!("{stem}.pdf");
+
+    let dir = dirs::download_dir()
+        .or_else(dirs::document_dir)
+        .unwrap_or_else(std::env::temp_dir);
+    fs::create_dir_all(&dir).map_err(|e| format!("create downloads dir: {e}"))?;
+
+    let mut path = dir.join(&name);
+    if path.exists() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        path = dir.join(format!("{nanos}-{name}"));
+    }
+
+    fs::write(&path, &data).map_err(|e| format!("write PDF: {e}"))?;
+    open_saved_file(&path)?;
+    Ok(path.display().to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn open_saved_file(path: &std::path::Path) -> Result<(), String> {
+    Command::new("open")
+        .arg(path)
+        .spawn()
+        .map_err(|e| format!("open PDF: {e}"))?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn open_saved_file(path: &std::path::Path) -> Result<(), String> {
+    Command::new("cmd")
+        .args(["/C", "start", "", &path.display().to_string()])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|e| format!("open PDF: {e}"))?;
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn open_saved_file(path: &std::path::Path) -> Result<(), String> {
+    Command::new("xdg-open")
+        .arg(path)
+        .spawn()
+        .map_err(|e| format!("open PDF: {e}"))?;
+    Ok(())
 }
 
 /// Prefer explicit paper size (A4/Letter/Legal); otherwise custom thermal width in mm.
@@ -196,11 +267,6 @@ fn print_pdf_file(
     }
     Ok(())
 }
-
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-#[cfg(target_os = "windows")]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn print_pdf_file(

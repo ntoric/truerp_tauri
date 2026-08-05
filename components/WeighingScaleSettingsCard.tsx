@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   DEFAULT_WEIGHING_SCALE_SETTINGS,
@@ -14,6 +15,7 @@ import {
   mergeWeighingScaleSettings,
   type WeighingScaleSettings,
 } from '@/lib/weighingScale'
+import { SCALE_CSV_EXTRA_FIELD_OPTIONS } from '@/lib/weighingScaleCsv'
 import { Loader2, Save, Scale } from 'lucide-react'
 import WeighingScaleCatalogExport from '@/components/WeighingScaleCatalogExport'
 
@@ -431,9 +433,9 @@ export default function WeighingScaleSettingsCard() {
             </details>
 
             <p className="text-xs text-muted-foreground">
-              Item code is matched to product SKU/item code using the same rule as CSV export below. Export
-              the catalog CSV, import it on the weighing machine, then scan printed labels on POS or sales
-              invoices.
+              Scale PLU is matched to product barcode (item code) by default — same value exported as
+              item_code in the catalog CSV. Export the catalog, import it on the weighing machine, then
+              scan printed labels on POS or sales invoices.
             </p>
           </div>
 
@@ -443,6 +445,7 @@ export default function WeighingScaleSettingsCard() {
                 <p className="font-medium text-gray-900">CSV catalog for scale import</p>
                 <p className="text-xs text-muted-foreground">
                   Generate a product file to import on the weighing machine (not uploaded from the scale).
+                  Item code = barcode, slug = SKU, price = sale price.
                 </p>
               </div>
               <Switch
@@ -454,7 +457,7 @@ export default function WeighingScaleSettingsCard() {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Item code in CSV comes from</Label>
+                <Label>Match scale PLU to product by</Label>
                 <Select
                   value={settings.csv_item_match_field}
                   onValueChange={(value) =>
@@ -465,9 +468,9 @@ export default function WeighingScaleSettingsCard() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">Auto (SKU, then item code)</SelectItem>
-                    <SelectItem value="sku">SKU only</SelectItem>
-                    <SelectItem value="item_code">Item code only</SelectItem>
+                    <SelectItem value="item_code">Barcode (item code)</SelectItem>
+                    <SelectItem value="auto">Auto (barcode, then slug/SKU)</SelectItem>
+                    <SelectItem value="sku">Slug (SKU) only</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -495,7 +498,16 @@ export default function WeighingScaleSettingsCard() {
                   id="csv_item_code_column"
                   value={settings.csv_item_code_column}
                   onChange={(e) => update('csv_item_code_column', e.target.value)}
-                  placeholder="Default: item_code"
+                  placeholder="Default: item_code (barcode)"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="csv_slug_column">Slug column header</Label>
+                <Input
+                  id="csv_slug_column"
+                  value={settings.csv_slug_column}
+                  onChange={(e) => update('csv_slug_column', e.target.value)}
+                  placeholder="Default: slug (SKU)"
                 />
               </div>
               <div className="space-y-2">
@@ -517,13 +529,42 @@ export default function WeighingScaleSettingsCard() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="csv_price_column">Price column header</Label>
+                <Label htmlFor="csv_price_column">Sale price column header</Label>
                 <Input
                   id="csv_price_column"
                   value={settings.csv_price_column}
                   onChange={(e) => update('csv_price_column', e.target.value)}
-                  placeholder="Default: price"
+                  placeholder="Default: price (sale price)"
                 />
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-md border p-3">
+              <Label>Additional product fields</Label>
+              <p className="text-xs text-muted-foreground">
+                Optional columns appended after item_code, slug, name, unit, and sale price.
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {SCALE_CSV_EXTRA_FIELD_OPTIONS.map(({ key, label }) => {
+                  const checked = settings.csv_extra_fields.includes(key)
+                  return (
+                    <label
+                      key={key}
+                      className="flex cursor-pointer items-center gap-2 text-sm text-gray-800"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(value) => {
+                          const next = value
+                            ? [...settings.csv_extra_fields, key]
+                            : settings.csv_extra_fields.filter((f) => f !== key)
+                          update('csv_extra_fields', next)
+                        }}
+                      />
+                      {label}
+                    </label>
+                  )
+                })}
               </div>
             </div>
 

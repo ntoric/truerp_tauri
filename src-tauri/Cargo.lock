@@ -4253,7 +4253,7 @@ dependencies = [
 
 [[package]]
 name = "truerp"
-version = "0.0.17"
+version = "0.0.19"
 dependencies = [
  "base64 0.22.1",
  "bytes",

@@ -41,7 +41,7 @@ export default function WeighingScaleCatalogExport({
       const { csv, rowCount, skippedNoCode } = buildScaleCatalogCsv(data, settings)
       if (rowCount === 0) {
         notifyError(
-          'No products to export. Add SKU/item code and KG/GM items, or turn off "weight items only".'
+          'No products to export. Add barcodes (item code) and KG/GM items, or turn off "weight items only".'
         )
         return
       }
@@ -64,8 +64,12 @@ export default function WeighingScaleCatalogExport({
             Product catalog CSV (for scale import)
           </p>
           <p className="text-xs text-muted-foreground">
-            Download a file and import it on the weighing machine so PLU / item codes match your
-            products. Sales still use scale barcodes or live weight on POS.
+            Download a file and import it on the weighing machine so PLU / barcodes match your products.
+            Columns: item_code (barcode), slug (SKU), name, unit, sale price
+            {settings.csv_extra_fields.length > 0
+              ? `, plus ${settings.csv_extra_fields.length} extra field(s)`
+              : ''}
+            .
           </p>
         </div>
         <Button
@@ -87,7 +91,7 @@ export default function WeighingScaleCatalogExport({
       {lastExport && (
         <p className="text-xs text-gray-600">
           Last file: {lastExport.rows} row(s)
-          {lastExport.skipped > 0 ? ` · ${lastExport.skipped} skipped (no item code)` : ''}
+          {lastExport.skipped > 0 ? ` · ${lastExport.skipped} skipped (no barcode)` : ''}
         </p>
       )}
     </div>

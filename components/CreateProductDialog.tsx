@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { asArray, cn } from '@/lib/utils'
+import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
 import { notifySuccess } from '@/lib/notify'
 import ProductImageField from '@/components/ProductImageField'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
@@ -79,7 +80,7 @@ export type ProductFormState = {
 const emptyProductForm = (): ProductFormState => ({
   name: '',
   sku: '',
-  category: '',
+  category: DEFAULT_CATEGORY_NAME,
   unit: 'PCS',
   purchase_price: 0,
   sale_price: 0,
@@ -186,7 +187,18 @@ export default function CreateProductDialog({
           apiFetch('/business'),
         ])
         if (cancelled) return
-        if (catRes.ok) setCategories(asArray(await catRes.json()))
+        if (catRes.ok) {
+          const cats = asArray(await catRes.json())
+          setCategories(cats)
+          const defaultName = pickDefaultCategoryName(cats)
+          setNewItem((prev) => {
+            if (initialValues?.category) return prev
+            if (!prev.category || prev.category === DEFAULT_CATEGORY_NAME) {
+              return { ...prev, category: defaultName }
+            }
+            return prev
+          })
+        }
         if (whRes.ok) setWarehouses(asArray(await whRes.json()))
         if (bizRes.ok) {
           const data = await bizRes.json()
