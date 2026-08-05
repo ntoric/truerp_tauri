@@ -266,28 +266,27 @@ async function renderLabelCanvas(
   ctx.fillStyle = '#000000'
   ctx.textBaseline = 'top'
 
-  const nameSize = Math.max(10, Math.round(height * 0.16))
-  const priceSize = Math.max(10, Math.round(height * 0.18))
-  const metaSize = Math.max(8, Math.round(height * 0.13))
-  const codeSize = Math.max(8, Math.round(height * 0.12))
+  // Barcode digits are smallest; name / MRP / sale price share one size a bit larger.
+  const codeSize = Math.max(7, Math.round(height * 0.095))
+  const bodySize = Math.max(codeSize + 2, Math.round(height * 0.11))
+  const gap = 2
 
-  // 1) Product name — up to 2 wrapped lines, normal weight, no ellipsis truncation
+  // 1) Product name — up to 2 wrapped lines, same size as price row
   let y = pad
-  ctx.font = `${nameSize}px Arial, Helvetica, sans-serif`
+  ctx.font = `${bodySize}px Arial, Helvetica, sans-serif`
   ctx.textAlign = 'center'
   const nameLines = wrapTextLines(ctx, item.name || 'Item', contentW, 2)
   for (const line of nameLines) {
     ctx.fillText(line, width / 2, y)
-    y += nameSize + 1
+    y += bodySize + 1
   }
-  y += 2
+  y += gap
 
-  // 2) Barcode (full width) + human-readable code (no truncation)
+  // 2) Barcode (full width) + human-readable code
   const barcodeCode = (item.barcode || '0000000000').trim() || '0000000000'
-  const priceRowH = priceSize + 2
-  const codeH = codeSize + 2
-  const barcodeMaxH = Math.max(20, height - y - pad - priceRowH - codeH - 2)
-  // Prefer fitting full barcode bars in width (module width may shrink for long codes)
+  const priceRowH = bodySize + gap
+  const codeH = codeSize + 1
+  const barcodeMaxH = Math.max(16, height - y - pad - priceRowH - codeH - gap)
   let moduleW = 2
   let barcodeUrl = code128DataUrl(barcodeCode, moduleW, barcodeMaxH)
   try {
@@ -309,27 +308,46 @@ async function renderLabelCanvas(
 
   ctx.font = `${codeSize}px "Courier New", Courier, monospace`
   ctx.textAlign = 'center'
-  // Wrap barcode text if needed — never ellipsize
-  const codeLines = wrapTextLines(ctx, barcodeCode, contentW, 3)
+  const codeLines = wrapTextLines(ctx, barcodeCode, contentW, 2)
   for (const line of codeLines) {
     ctx.fillText(line, width / 2, y)
     y += codeSize + 1
   }
 
-  // 3) MRP left · sale price right
-  const bottomY = height - pad - priceSize
-  ctx.font = `${metaSize}px Arial, Helvetica, sans-serif`
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'alphabetic'
-  if (item.mrp && item.mrp > 0) {
-    ctx.fillText(`MRP: ${formatPrice(item.mrp)}`, pad, bottomY + priceSize)
-  } else if (item.sku) {
-    ctx.fillText(`SKU: ${item.sku}`, pad, bottomY + priceSize)
-  }
+  // 3) MRP left · sale price right — same body size; shrink only if they collide
+  const leftText =
+    item.mrp && item.mrp > 0
+      ? `MRP: ${formatPrice(item.mrp)}`
+      : item.sku
+        ? `SKU: ${item.sku}`
+        : ''
+  const rightText = formatPrice(item.price)
+  let rowSize = bodySize
+  const halfGap = Math.max(4, Math.round(contentW * 0.04))
+  const maxSide = Math.floor((contentW - halfGap) / 2)
 
-  ctx.font = `bold ${priceSize}px Arial, Helvetica, sans-serif`
+  const fitRowFont = () => {
+    while (rowSize > codeSize) {
+      ctx.font = `${rowSize}px Arial, Helvetica, sans-serif`
+      const leftW = leftText ? ctx.measureText(leftText).width : 0
+      ctx.font = `bold ${rowSize}px Arial, Helvetica, sans-serif`
+      const rightW = ctx.measureText(rightText).width
+      if (leftW <= maxSide && rightW <= maxSide) return
+      rowSize -= 1
+    }
+  }
+  fitRowFont()
+
+  const bottomY = height - pad - rowSize
+  ctx.textBaseline = 'alphabetic'
+  if (leftText) {
+    ctx.font = `${rowSize}px Arial, Helvetica, sans-serif`
+    ctx.textAlign = 'left'
+    ctx.fillText(leftText, pad, bottomY + rowSize, maxSide)
+  }
+  ctx.font = `bold ${rowSize}px Arial, Helvetica, sans-serif`
   ctx.textAlign = 'right'
-  ctx.fillText(formatPrice(item.price), width - pad, bottomY + priceSize)
+  ctx.fillText(rightText, width - pad, bottomY + rowSize, maxSide)
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
 
@@ -427,19 +445,28 @@ html, body { width: ${w}mm; margin: 0; padding: 0; font-family: Arial, Helvetica
 }
 .label:last-child { page-break-after: auto; break-after: auto; }
 .product-name {
-  font-size: 11px; font-weight: 400; line-height: 1.15; text-align: center;
+  font-size: 9px; font-weight: 400; line-height: 1.15; text-align: center;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   overflow: hidden; word-break: break-word; overflow-wrap: anywhere;
 }
 .product-barcode { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
 .product-barcode .barcode-img { max-width: 100%; max-height: ${Math.max(8, h * 0.42)}mm; height: auto; display: block; margin: 0 auto; }
 .barcode-text {
-  font-family: "Courier New", monospace; font-size: 8px; text-align: center;
+  font-family: "Courier New", monospace; font-size: 7px; text-align: center;
   width: 100%; word-break: break-all; overflow-wrap: anywhere; white-space: normal;
 }
-.price-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1mm; width: 100%; }
-.product-mrp, .product-sku { font-size: 9px; color: #333; text-align: left; word-break: break-word; }
-.product-price { font-size: 12px; font-weight: 700; text-align: right; white-space: nowrap; }
+.price-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 1.5mm; width: 100%; min-width: 0;
+}
+.product-mrp, .product-sku {
+  font-size: 9px; color: #333; text-align: left; min-width: 0; flex: 1 1 50%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.product-price {
+  font-size: 9px; font-weight: 700; text-align: right; white-space: nowrap;
+  flex: 0 1 50%; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
 @media print {
   html, body { width: ${w}mm !important; margin: 0 !important; }
   .label { width: ${w}mm !important; height: ${h}mm !important; }
