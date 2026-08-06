@@ -37,6 +37,7 @@ interface InventoryItemOption {
   enable_batching?: boolean
 }
 
+interface StockBalance {
   product_id: string
   product_name: string
   sku: string
