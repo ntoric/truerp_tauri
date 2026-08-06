@@ -12,15 +12,17 @@ interface User {
   phone: string
   role: string
   store_id?: string | null
+  must_change_password?: boolean
 }
 
 interface AuthContextType {
   user: User | null
   token: string | null
-  login: (email: string, password: string, totpCode?: string) => Promise<void>
+  login: (email: string, password: string, totpCode?: string) => Promise<{ requiresPasswordChange: boolean }>
   register: (name: string, email: string, password: string, phone?: string) => Promise<void>
   logout: () => void
   loading: boolean
+  refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -30,7 +32,7 @@ function clearAuthAndRedirect() {
   clearActiveStoreId()
   if (typeof window === 'undefined') return
   const path = window.location.pathname
-  if (path === '/login' || path === '/register' || path === '/forgot-password' || path.startsWith('/reset-password')) return
+  if (path === '/login' || path === '/register' || path === '/forgot-password' || path.startsWith('/reset-password') || path === '/change-password-required') return
   if (path.startsWith('/portal')) return
   window.location.href = `/login?next=${encodeURIComponent(path)}`
 }
@@ -68,7 +70,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           phone: data.phone,
           role: data.role,
           store_id: data.store_id || data.active_store?.id || null,
+          must_change_password: data.must_change_password,
         })
+        if (data.must_change_password && typeof window !== 'undefined' && window.location.pathname !== '/change-password-required') {
+          window.location.href = '/change-password-required'
+          return
+        }
         if (data.active_store?.id) {
           setActiveStoreId(data.active_store.id)
         } else if (data.stores?.length && !getActiveStoreId()) {
@@ -100,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let data: {
       error?: string
       requires_2fa?: boolean
+      requires_password_change?: boolean
       token?: string
       user?: User
       store?: { id: string }
@@ -128,6 +136,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else if (data.stores?.length) {
       setActiveStoreId(data.stores[0].id)
     }
+
+    return { requiresPasswordChange: Boolean(data.requires_password_change || data.user?.must_change_password) }
+  }
+
+  const refreshProfile = async () => {
+    const authToken = getAuthToken()
+    if (!authToken) return
+    await fetchProfile(authToken)
   }
 
   const register = async (name: string, email: string, password: string, phone?: string) => {
@@ -169,7 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, register, logout, loading, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )
@@ -199,6 +215,16 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   })
   if (res.status === 401) {
     clearAuthAndRedirect()
+  }
+  if (res.status === 403) {
+    try {
+      const data = await res.clone().json()
+      if (data.requires_password_change && typeof window !== 'undefined' && window.location.pathname !== '/change-password-required') {
+        window.location.href = '/change-password-required'
+      }
+    } catch {
+      // ignore JSON parse errors
+    }
   }
   // Header names are case-insensitive; sync if middleware corrected a stale store.
   const activeStoreHeader =

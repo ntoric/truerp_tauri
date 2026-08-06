@@ -15,7 +15,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Switch } from '@/components/ui/switch'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
 import { Package, Plus, Search, Trash2, Download, Upload, Printer, Edit, MoreVertical, Eye, Power, Barcode, Loader2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
@@ -167,29 +166,14 @@ export default function ProductsPage() {
   const [showHsnSearchModal, setShowHsnSearchModal] = useState(false)
   const [hsnSearchQuery, setHsnSearchQuery] = useState('')
   const [hsnSearchLoading, setHsnSearchLoading] = useState(false)
-  const [warehouses, setWarehouses] = useState<any[]>([])
   const [inventoryItems, setInventoryItems] = useState<any[]>([])
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false)
-  const [showAddWarehouseModal, setShowAddWarehouseModal] = useState(false)
   const [creatingCategory, setCreatingCategory] = useState(false)
-  const [creatingWarehouse, setCreatingWarehouse] = useState(false)
   const [newCategory, setNewCategory] = useState({ name: '', description: '' })
-  const [newWarehouse, setNewWarehouse] = useState({
-    name: '',
-    code: '',
-    address: '',
-    city: '',
-    state: '',
-    pincode: '',
-    contact_person: '',
-    contact_phone: '',
-    contact_email: '',
-    is_default: false,
-    notes: '',
-  })
   const [newItem, setNewItem] = useState({
     name: '',
     sku: '',
+    item_code: '',
     category: DEFAULT_CATEGORY_NAME,
     unit: 'PCS',
     purchase_price: 0,
@@ -206,15 +190,6 @@ export default function ProductsPage() {
     sale_price_with_tax: true,
     purchase_price_with_tax: true,
     image_url: '',
-    inventory: {
-      outlet_id: '',
-      quantity: 0,
-      cost_price: 0,
-      batch_no: '',
-      item_code: '',
-      mfg_date: '',
-      exp_date: ''
-    }
   })
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
   const [showImportDialog, setShowImportDialog] = useState(false)
@@ -241,7 +216,6 @@ export default function ProductsPage() {
     resetPage()
   }, [selectedCategory, searchQuery])
   useEffect(() => { if (showDraftsModal && user) fetchDrafts() }, [showDraftsModal, user])
-  useEffect(() => { if (!authLoading && user) fetchWarehouses() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchInventoryItems() }, [authLoading, user])
 
   const fetchCategories = async () => {
@@ -268,15 +242,6 @@ export default function ProductsPage() {
         const data = await res.json()
         setBusinessSettings(data)
         setUseAISearch(data.enable_ai_hsn_search || false)
-      }
-    } catch (err) { console.error(err) }
-  }
-
-  const fetchWarehouses = async () => {
-    try {
-      const res = await apiFetch('/warehouses?is_active=true')
-      if (res.ok) {
-        setWarehouses(asArray(await res.json()))
       }
     } catch (err) { console.error(err) }
   }
@@ -313,57 +278,6 @@ export default function ProductsPage() {
       showErrorToast('Failed to create category')
     } finally {
       setCreatingCategory(false)
-    }
-  }
-
-  const handleCreateWarehouse = async () => {
-    if (!newWarehouse.name.trim() || !newWarehouse.code.trim()) {
-      showErrorToast('Warehouse name and code are required')
-      return
-    }
-    setCreatingWarehouse(true)
-    try {
-      const res = await apiFetch('/warehouses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newWarehouse,
-          name: newWarehouse.name.trim(),
-          code: newWarehouse.code.trim().toUpperCase(),
-        }),
-      })
-      if (res.ok) {
-        const created = await res.json()
-        setWarehouses((prev) => [...prev, created])
-        setNewItem((prev) => ({
-          ...prev,
-          inventory: { ...prev.inventory, outlet_id: created.id },
-        }))
-        clearFieldError('inventory.outlet_id')
-        setNewWarehouse({
-          name: '',
-          code: '',
-          address: '',
-          city: '',
-          state: '',
-          pincode: '',
-          contact_person: '',
-          contact_phone: '',
-          contact_email: '',
-          is_default: false,
-          notes: '',
-        })
-        setShowAddWarehouseModal(false)
-        showSuccessToast('Warehouse created')
-      } else {
-        const err = await res.json().catch(() => ({}))
-        showErrorToast(err.error || 'Failed to create warehouse')
-      }
-    } catch (err) {
-      console.error(err)
-      showErrorToast('Failed to create warehouse')
-    } finally {
-      setCreatingWarehouse(false)
     }
   }
 
@@ -423,8 +337,13 @@ export default function ProductsPage() {
       if (res.ok) {
         const d = await res.json()
         const draftData = JSON.parse(d.data)
+        const { inventory, ...rest } = draftData
         skuManuallyEdited.current = Boolean(draftData?.sku?.trim())
-        setNewItem(draftData)
+        setNewItem({
+          ...emptyProductForm,
+          ...rest,
+          item_code: rest.item_code ?? inventory?.item_code ?? '',
+        })
         setShowDraftsModal(false)
         setShowCreateModal(true)
       }
@@ -845,6 +764,7 @@ export default function ProductsPage() {
   const emptyProductForm = {
     name: '',
     sku: '',
+    item_code: '',
     category: pickDefaultCategoryName(categories),
     unit: 'PCS',
     purchase_price: 0,
@@ -861,15 +781,6 @@ export default function ProductsPage() {
     sale_price_with_tax: true,
     purchase_price_with_tax: true,
     image_url: '',
-    inventory: {
-      outlet_id: '',
-      quantity: 0,
-      cost_price: 0,
-      batch_no: '',
-      item_code: '',
-      mfg_date: '',
-      exp_date: ''
-    }
   }
 
   const handleCreateItem = async () => {
@@ -878,38 +789,20 @@ export default function ProductsPage() {
       return
     }
 
-    const itemCodeErr = weighingItemCodeError(newItem.unit, newItem.inventory.item_code)
+    const itemCodeErr = weighingItemCodeError(newItem.unit, newItem.item_code)
     if (itemCodeErr) {
       setError('item_code', itemCodeErr)
-      setCreateTab('inventory')
+      setCreateTab('basic')
       return
     }
 
     setCreating(true)
     clearErrors()
     try {
-      const { inventory, ...productFields } = newItem
-      const payload: Record<string, unknown> = {
-        ...productFields,
-        item_code: inventory.item_code || '',
-      }
-
-      // Only include inventory when opening stock is being set; omit empty outlet_id
-      if (inventory.quantity > 0 || inventory.outlet_id || inventory.batch_no || inventory.mfg_date || inventory.exp_date) {
-        payload.inventory = {
-          ...(inventory.outlet_id ? { outlet_id: inventory.outlet_id } : {}),
-          quantity: inventory.quantity,
-          cost_price: inventory.cost_price || productFields.purchase_price,
-          batch_no: inventory.batch_no,
-          ...(inventory.mfg_date ? { mfg_date: inventory.mfg_date } : {}),
-          ...(inventory.exp_date ? { exp_date: inventory.exp_date } : {}),
-        }
-      }
-
       const res = await apiFetch('/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(newItem)
       })
       if (res.ok) {
         setShowCreateModal(false)
@@ -922,13 +815,12 @@ export default function ProductsPage() {
         const { fields } = await handleApiError(res, {
           toastTitle: 'Could not create product',
           switchTab: (field) => {
-            if (field.startsWith('inventory')) setCreateTab('inventory')
-            else if (['sale_price', 'purchase_price', 'mrp', 'tax_rate', 'discount'].includes(field)) setCreateTab('pricing')
+            if (['sale_price', 'purchase_price', 'mrp', 'tax_rate', 'discount'].includes(field)) setCreateTab('pricing')
             else if (['hsn_code', 'min_stock'].includes(field)) setCreateTab('settings')
             else setCreateTab('basic')
           },
         })
-        if (fields['inventory.outlet_id']) setCreateTab('inventory')
+        if (fields.item_code) setCreateTab('basic')
       }
     } catch (err) {
       console.error(err)
@@ -980,11 +872,10 @@ export default function ProductsPage() {
                   </div>
                 )}
                 <Tabs value={createTab} onValueChange={setCreateTab} className="w-full">
-                  <TabsList className="grid w-full grid-cols-5">
+                  <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="basic">Basic Details</TabsTrigger>
                     <TabsTrigger value="image">Image</TabsTrigger>
                     <TabsTrigger value="pricing">Pricing</TabsTrigger>
-                    <TabsTrigger value="inventory">Inventory</TabsTrigger>
                     <TabsTrigger value="settings">Settings</TabsTrigger>
                   </TabsList>
                   
@@ -1040,6 +931,43 @@ export default function ProductsPage() {
                         className={cn(fieldErrors.sku && 'border-red-500')}
                       />
                       <FieldError message={fieldErrors.sku} />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="item_code">Item code</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="item_code"
+                          value={newItem.item_code}
+                          maxLength={
+                            isWeightBasedUnit(newItem.unit) ? WEIGHING_ITEM_CODE_MAX_LEN : undefined
+                          }
+                          onChange={(e) => {
+                            clearFieldError('item_code')
+                            updateNewItem({ item_code: e.target.value })
+                          }}
+                          placeholder={
+                            isWeightBasedUnit(newItem.unit)
+                              ? `Max ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
+                              : 'Enter item code or scan'
+                          }
+                          className={cn(fieldErrors.item_code && 'border-red-500')}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setShowBarcodeScanner(true)}
+                        >
+                          <Barcode className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {isWeightBasedUnit(newItem.unit) && (
+                        <p className="text-xs text-muted-foreground">
+                          Weighing items: max {WEIGHING_ITEM_CODE_MAX_LEN} characters
+                        </p>
+                      )}
+                      <FieldError message={fieldErrors.item_code} />
                     </div>
                     
                     <div className="space-y-2">
@@ -1189,127 +1117,6 @@ export default function ProductsPage() {
                         Enter percentage (e.g., 10%) for percentage discount, or amount (e.g., 100) for fixed amount discount
                       </p>
                     </div>
-                  </TabsContent>
-
-                  <TabsContent value="inventory" className="space-y-4 mt-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="inventory_warehouse">Warehouse</Label>
-                      <SearchableSelect
-                        value={newItem.inventory.outlet_id}
-                        onValueChange={(value) => {
-                          setNewItem({ ...newItem, inventory: { ...newItem.inventory, outlet_id: value } })
-                          clearFieldError('inventory.outlet_id')
-                        }}
-                        options={warehouses.map((wh) => ({
-                          value: wh.id,
-                          label: `${wh.name} (${wh.code})`,
-                        }))}
-                        placeholder="Select warehouse (optional)"
-                        searchPlaceholder="Search warehouses..."
-                        emptyMessage="No warehouses found"
-                        onAddNew={() => setShowAddWarehouseModal(true)}
-                        addNewLabel="Add New Warehouse"
-                        className={cn(fieldErrors['inventory.outlet_id'] && 'border-red-500')}
-                      />
-                      <FieldError message={fieldErrors['inventory.outlet_id']} />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="inventory_quantity">Opening Stock Quantity</Label>
-                      <Input
-                        id="inventory_quantity"
-                        type="number"
-                        value={newItem.inventory.quantity}
-                        onChange={(e) => setNewItem({ ...newItem, inventory: { ...newItem.inventory, quantity: parseFloat(e.target.value) || 0 } })}
-                        placeholder="0"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="inventory_cost_price">Cost Price</Label>
-                      <Input
-                        id="inventory_cost_price"
-                        type="number"
-                        value={newItem.inventory.cost_price}
-                        onChange={(e) => setNewItem({ ...newItem, inventory: { ...newItem.inventory, cost_price: parseFloat(e.target.value) || 0 } })}
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="inventory_batch_no">Batch Number</Label>
-                      <Input
-                        id="inventory_batch_no"
-                        value={newItem.inventory.batch_no}
-                        onChange={(e) => setNewItem({ ...newItem, inventory: { ...newItem.inventory, batch_no: e.target.value } })}
-                        placeholder="BATCH001"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="inventory_item_code">Item code</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="inventory_item_code"
-                          value={newItem.inventory.item_code}
-                          maxLength={
-                            isWeightBasedUnit(newItem.unit) ? WEIGHING_ITEM_CODE_MAX_LEN : undefined
-                          }
-                          onChange={(e) => {
-                            clearFieldError('item_code')
-                            setNewItem({
-                              ...newItem,
-                              inventory: { ...newItem.inventory, item_code: e.target.value },
-                            })
-                          }}
-                          placeholder={
-                            isWeightBasedUnit(newItem.unit)
-                              ? `Max ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
-                              : 'Enter item code or scan'
-                          }
-                          className={cn(fieldErrors.item_code && 'border-red-500')}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() => setShowBarcodeScanner(true)}
-                        >
-                          <Barcode className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      {isWeightBasedUnit(newItem.unit) && (
-                        <p className="text-xs text-muted-foreground">
-                          Weighing items: max {WEIGHING_ITEM_CODE_MAX_LEN} characters
-                        </p>
-                      )}
-                      <FieldError message={fieldErrors.item_code} />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="inventory_mfg_date">Manufacturing Date</Label>
-                        <Input
-                          id="inventory_mfg_date"
-                          type="date"
-                          value={newItem.inventory.mfg_date}
-                          onChange={(e) => setNewItem({ ...newItem, inventory: { ...newItem.inventory, mfg_date: e.target.value } })}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="inventory_exp_date">Expiry Date</Label>
-                        <Input
-                          id="inventory_exp_date"
-                          type="date"
-                          value={newItem.inventory.exp_date}
-                          onChange={(e) => setNewItem({ ...newItem, inventory: { ...newItem.inventory, exp_date: e.target.value } })}
-                        />
-                      </div>
-                    </div>
-
-                    <p className="text-sm text-gray-500">
-                      Fill in these details to automatically create opening stock entry when the product is created.
-                    </p>
                   </TabsContent>
 
                   <TabsContent value="settings" className="space-y-4 mt-4">
@@ -1869,137 +1676,6 @@ export default function ProductsPage() {
           </div>
         </DialogContent>
       </Dialog>
-
-      <Dialog open={showAddWarehouseModal} onOpenChange={setShowAddWarehouseModal}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto z-[60]">
-          <DialogHeader>
-            <DialogTitle>Add New Warehouse</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="new_warehouse_name">Warehouse Name *</Label>
-                <Input
-                  id="new_warehouse_name"
-                  value={newWarehouse.name}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, name: e.target.value })}
-                  placeholder="Main Warehouse"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new_warehouse_code">Code *</Label>
-                <Input
-                  id="new_warehouse_code"
-                  value={newWarehouse.code}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, code: e.target.value.toUpperCase() })}
-                  placeholder="WH01"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="new_warehouse_address">Address</Label>
-              <Input
-                id="new_warehouse_address"
-                value={newWarehouse.address}
-                onChange={(e) => setNewWarehouse({ ...newWarehouse, address: e.target.value })}
-                placeholder="123 Business Street"
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="new_warehouse_city">City</Label>
-                <Input
-                  id="new_warehouse_city"
-                  value={newWarehouse.city}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, city: e.target.value })}
-                  placeholder="Mumbai"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new_warehouse_state">State</Label>
-                <Input
-                  id="new_warehouse_state"
-                  value={newWarehouse.state}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, state: e.target.value })}
-                  placeholder="Maharashtra"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new_warehouse_pincode">Pincode</Label>
-                <Input
-                  id="new_warehouse_pincode"
-                  value={newWarehouse.pincode}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, pincode: e.target.value })}
-                  placeholder="400001"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="new_warehouse_contact_person">Contact Person</Label>
-              <Input
-                id="new_warehouse_contact_person"
-                value={newWarehouse.contact_person}
-                onChange={(e) => setNewWarehouse({ ...newWarehouse, contact_person: e.target.value })}
-                placeholder="John Doe"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="new_warehouse_contact_phone">Contact Phone</Label>
-                <Input
-                  id="new_warehouse_contact_phone"
-                  value={newWarehouse.contact_phone}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, contact_phone: e.target.value })}
-                  placeholder="+91 9876543210"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new_warehouse_contact_email">Contact Email</Label>
-                <Input
-                  id="new_warehouse_contact_email"
-                  type="email"
-                  value={newWarehouse.contact_email}
-                  onChange={(e) => setNewWarehouse({ ...newWarehouse, contact_email: e.target.value })}
-                  placeholder="contact@example.com"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="new_warehouse_notes">Notes</Label>
-              <Input
-                id="new_warehouse_notes"
-                value={newWarehouse.notes}
-                onChange={(e) => setNewWarehouse({ ...newWarehouse, notes: e.target.value })}
-                placeholder="Additional notes..."
-              />
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="new_warehouse_is_default"
-                checked={newWarehouse.is_default}
-                onCheckedChange={(checked) => setNewWarehouse({ ...newWarehouse, is_default: checked })}
-              />
-              <Label htmlFor="new_warehouse_is_default">Set as Default Warehouse</Label>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowAddWarehouseModal(false)}>Cancel</Button>
-              <Button
-                onClick={handleCreateWarehouse}
-                disabled={creatingWarehouse || !newWarehouse.name.trim() || !newWarehouse.code.trim()}
-              >
-                {creatingWarehouse ? 'Creating...' : 'Create Warehouse'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
       
       <BarcodeScanner
         open={showBarcodeScanner}
@@ -2016,7 +1692,7 @@ export default function ProductsPage() {
           } else {
             clearFieldError('item_code')
           }
-          setNewItem({ ...newItem, inventory: { ...newItem.inventory, item_code: nextCode } })
+          setNewItem({ ...newItem, item_code: nextCode })
         }}
       />
       {confirmDialog}

@@ -35,6 +35,14 @@ import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   assignableRolesFor,
   canManageUsers,
   isSuperAdmin,
@@ -49,6 +57,7 @@ interface AppUser {
   role: string
   is_active: boolean
   two_factor_enabled: boolean
+  must_change_password?: boolean
   store_id?: string
   store_name?: string
   created_at?: string
@@ -152,6 +161,13 @@ export default function UserManagementPage() {
     disablePassword: '',
     setupView: 'qr' as 'qr' | 'key',
   })
+  const [tempPasswordDialog, setTempPasswordDialog] = useState<{
+    open: boolean
+    userName: string
+    userEmail: string
+    password: string
+  }>({ open: false, userName: '', userEmail: '', password: '' })
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null)
 
   const superAdmins = useMemo(
     () => users.filter((u) => isSuperAdmin(u.role)),
@@ -319,6 +335,34 @@ export default function UserManagementPage() {
     }
   }
 
+  const handleResetPassword = async (u: AppUser) => {
+    if (!(await confirm({
+      title: 'Generate temporary password?',
+      description: `Generate a new temporary password for ${u.name || u.email}? They will be required to set a new password on next login.`,
+      confirmLabel: 'Generate password',
+    }))) return
+
+    setResettingUserId(u.id)
+    try {
+      const res = await apiFetch(`/settings/users/${u.id}/reset-password`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        notifyError(data.error || 'Failed to reset password')
+        return
+      }
+      setTempPasswordDialog({
+        open: true,
+        userName: u.name,
+        userEmail: u.email,
+        password: data.temporary_password || '',
+      })
+      notifySuccess('Temporary password generated')
+      fetchCore()
+    } finally {
+      setResettingUserId(null)
+    }
+  }
+
   const handleSaveRole = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
@@ -463,10 +507,12 @@ export default function UserManagementPage() {
     rows,
     allowRoleEdit,
     showStore,
+    showResetPassword,
   }: {
     rows: AppUser[]
     allowRoleEdit?: boolean
     showStore?: boolean
+    showResetPassword?: boolean
   }) => {
     const { page, setPage, totalPages, totalItems, paginatedItems, pageSize } = usePagination(rows)
     return (
@@ -545,18 +591,39 @@ export default function UserManagementPage() {
                   )}
                 </TableCell>
                 <TableCell>
-                  <Switch
-                    checked={u.is_active}
-                    disabled={isSuperAdmin(u.role) || saving}
-                    onCheckedChange={(checked) => handleToggleUserActive(u, checked)}
-                  />
+                  <div className="flex flex-col gap-1">
+                    <Switch
+                      checked={u.is_active}
+                      disabled={isSuperAdmin(u.role) || saving}
+                      onCheckedChange={(checked) => handleToggleUserActive(u, checked)}
+                    />
+                    {u.must_change_password && (
+                      <Badge className="w-fit bg-amber-100 text-amber-900">Temp login</Badge>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right">
-                  {!isSuperAdmin(u.role) && (
-                    <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
+                  <div className="flex justify-end gap-2">
+                    {showResetPassword && !isSuperAdmin(u.role) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={resettingUserId === u.id || saving}
+                        onClick={() => handleResetPassword(u)}
+                      >
+                        {resettingUserId === u.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <KeyRound className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
+                    {!isSuperAdmin(u.role) && (
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -710,7 +777,7 @@ export default function UserManagementPage() {
                     </Button>
                   </div>
                 </form>
-                <UserTable rows={manageableUsers} allowRoleEdit showStore={isSA} />
+                <UserTable rows={manageableUsers} allowRoleEdit showStore={isSA} showResetPassword={isSA} />
                 {manageableUsers.length === 0 && (
                   <p className="text-sm text-muted-foreground">No users yet.</p>
                 )}
@@ -803,7 +870,7 @@ export default function UserManagementPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <UserTable rows={admins} allowRoleEdit showStore />
+                  <UserTable rows={admins} allowRoleEdit showStore showResetPassword />
                   {admins.length === 0 && (
                     <p className="text-sm text-muted-foreground">No admin users yet.</p>
                   )}
@@ -822,7 +889,7 @@ export default function UserManagementPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <UserTable rows={staffUsers} allowRoleEdit showStore />
+                  <UserTable rows={staffUsers} allowRoleEdit showStore showResetPassword />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1146,6 +1213,45 @@ export default function UserManagementPage() {
             </Card>
           </TabsContent>
         </Tabs>
+        <Dialog
+          open={tempPasswordDialog.open}
+          onOpenChange={(open) => setTempPasswordDialog((prev) => ({ ...prev, open }))}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Temporary password generated</DialogTitle>
+              <DialogDescription>
+                Share this password securely with {tempPasswordDialog.userName || tempPasswordDialog.userEmail}.
+                They must set a new password when they sign in.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label>Temporary password</Label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 rounded-md bg-muted p-3 text-sm font-mono break-all">
+                  {tempPasswordDialog.password}
+                </code>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => copyText(tempPasswordDialog.password, 'Temporary password')}
+                  aria-label="Copy temporary password"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                This password is shown only once. The user can sign in with it at any time until they change it.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setTempPasswordDialog((prev) => ({ ...prev, open: false }))}>
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
       {confirmDialog}
     </DashboardLayout>

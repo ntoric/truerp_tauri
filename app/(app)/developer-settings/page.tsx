@@ -176,7 +176,8 @@ export default function DeveloperSettingsPage() {
         if (res.ok) {
           notifySuccess('Settings saved successfully')
         } else {
-          notifyError('Failed to save settings')
+          const data = await res.json().catch(() => ({}))
+          notifyError(data.error || 'Failed to save settings')
         }
       }
     } catch (err) {
@@ -206,9 +207,21 @@ export default function DeveloperSettingsPage() {
       const res = await apiFetch('/developer-settings/test-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email_provider: settings.email_provider,
+          smtp_host: settings.smtp_host,
+          smtp_port: settings.smtp_port,
+          smtp_username: settings.smtp_username,
+          smtp_password: settings.smtp_password,
+          from_email: settings.from_email,
+          from_name: settings.from_name,
+        }),
       })
       const data = await res.json()
-      setTestResult({ success: res.ok, message: data.message || (res.ok ? 'Email connection successful' : 'Email connection failed') })
+      setTestResult({
+        success: res.ok,
+        message: data.message || data.error || (res.ok ? 'Email connection successful' : 'Email connection failed'),
+      })
     } catch (err) {
       setTestResult({ success: false, message: 'Email connection failed' })
     } finally {

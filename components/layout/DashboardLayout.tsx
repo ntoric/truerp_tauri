@@ -34,6 +34,10 @@ export default function DashboardLayout({
       const next = typeof window !== 'undefined' ? window.location.pathname : '/dashboard'
       // Full navigation is reliable in the desktop WebView; Next router can stall.
       window.location.href = `/login?next=${encodeURIComponent(next)}`
+      return
+    }
+    if (!loading && user?.must_change_password) {
+      window.location.href = '/change-password-required'
     }
   }, [loading, user])
 

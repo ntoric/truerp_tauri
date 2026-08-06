@@ -40,6 +40,7 @@ import {
   Bell,
   Globe,
   Store,
+  Clock,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
@@ -148,7 +149,14 @@ const navItems: NavItem[] = [
       { name: 'Payroll', href: '/payroll', icon: DollarSign },
     ],
   },
-  { name: 'POS', href: '/pos', icon: ShoppingCart },
+  {
+    name: 'POS',
+    icon: ShoppingCart,
+    children: [
+      { name: 'POS Terminal', href: '/pos', icon: ShoppingCart },
+      { name: 'Session History', href: '/pos/sessions', icon: Clock },
+    ],
+  },
   {
     name: 'Marketing',
     icon: MessageSquare,
@@ -197,8 +205,8 @@ export default function Sidebar() {
     [user?.role, isPageEnabled]
   )
 
-  // POS keeps the always-expanded sidebar; other pages collapse until hover.
-  const isPosPage = pathname === '/pos' || pathname.startsWith('/pos/')
+  // POS terminal keeps the always-expanded sidebar; other pages collapse until hover.
+  const isPosPage = pathname === '/pos'
   const isExpanded = isPosPage || hovered
 
   // Warm the route ahead of click (Next disables automatic Link prefetch in dev).

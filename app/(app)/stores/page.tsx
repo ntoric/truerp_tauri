@@ -23,6 +23,10 @@ import {
   type StoreFormValues,
 } from '@/lib/storeValidation'
 import { ExternalLink, Loader2, Plus, RotateCcw, Store, Trash2, Users } from 'lucide-react'
+import {
+  StoreResetDialog,
+  type StoreResetScopeId,
+} from '@/components/StoreResetDialog'
 
 const emptyStoreForm: StoreFormValues = {
   name: '',
@@ -73,6 +77,7 @@ export default function StoresPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [stores, setStores] = useState<StoreSummary[]>([])
   const [selectedStoreId, setSelectedStoreId] = useState<string>('')
   const [storeForm, setStoreForm] = useState(emptyStoreForm)
@@ -236,23 +241,21 @@ export default function StoresPage() {
     await refreshStores()
   }
 
-  const handleResetStore = async () => {
+  const handleResetStore = async (scopes: StoreResetScopeId[]) => {
     if (!selectedStore) return
-    if (!(await confirm({
-      title: `Reset store "${selectedStore.name}"?`,
-      description:
-        'This permanently deletes invoices, products, parties, inventory, payments, expenses, and related records. Store users and the business profile are kept.',
-      confirmLabel: 'Reset',
-      confirmText: selectedStore.code,
-    }))) return
     setResetting(true)
     try {
-      const res = await apiFetch(`/stores/${selectedStore.id}/reset`, { method: 'POST' })
+      const res = await apiFetch(`/stores/${selectedStore.id}/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scopes }),
+      })
       if (!res.ok) {
         await handleApiError(res, { toastTitle: 'Unable to reset store' })
         return
       }
-      notifySuccess('Store data reset')
+      notifySuccess('Selected store data reset')
+      setResetDialogOpen(false)
     } finally {
       setResetting(false)
     }
@@ -523,7 +526,7 @@ export default function StoresPage() {
                           type="button"
                           variant="outline"
                           disabled={saving || resetting}
-                          onClick={handleResetStore}
+                          onClick={() => setResetDialogOpen(true)}
                           className="border-amber-300 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
                         >
                           {resetting ? (
@@ -544,8 +547,8 @@ export default function StoresPage() {
                         </Button>
                       </div>
                       <p className="text-xs text-slate-500 md:col-span-2">
-                        Reset clears invoices, products, parties, inventory, and other operational
-                        data for this store only. Users and the business profile are kept.
+                        Reset lets you choose which data to delete for this store. Users and the
+                        business profile are always kept.
                       </p>
                     </form>
                   </CardContent>
@@ -612,6 +615,16 @@ export default function StoresPage() {
         </div>
       </div>
       {confirmDialog}
+      {selectedStore && (
+        <StoreResetDialog
+          open={resetDialogOpen}
+          onOpenChange={setResetDialogOpen}
+          storeName={selectedStore.name}
+          storeCode={selectedStore.code}
+          loading={resetting}
+          onConfirm={handleResetStore}
+        />
+      )}
     </DashboardLayout>
   )
 }

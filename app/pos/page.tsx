@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { formatCurrency } from '@/lib/utils'
 import { offlineStorage } from '@/lib/offlineStorage'
-import { Search, Plus, Minus, Trash2, Wifi, WifiOff, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale } from 'lucide-react'
+import Link from 'next/link'
+import { Search, Plus, Minus, Trash2, Wifi, WifiOff, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
@@ -902,6 +903,12 @@ export default function POSPage() {
               {isSyncing ? 'Syncing...' : `Sync ${syncStatus.pending}`}
             </Button>
           )}
+          <Button variant="ghost" size="sm" asChild className="h-8">
+            <Link href="/pos/sessions">
+              <History className="h-4 w-4 mr-1" />
+              History
+            </Link>
+          </Button>
           {session && (
             <Button variant="ghost" size="sm" onClick={closeSession} className="h-8">
               Close Session
@@ -1057,7 +1064,12 @@ export default function POSPage() {
                   className="p-2 bg-white border rounded hover:border-blue-400 hover:shadow-sm transition-all text-left"
                 >
                   <h3 className="font-semibold text-gray-900 text-xs mb-0.5 truncate">{product.name}</h3>
-                  <p className="text-xs text-gray-500 mb-1 truncate">{product.sku}</p>
+                  <div className="text-xs text-gray-500 mb-1 space-y-0.5">
+                    {product.sku && <p className="truncate">SKU: {product.sku}</p>}
+                    {product.item_code?.trim() && (
+                      <p className="truncate">Code: {product.item_code.trim()}</p>
+                    )}
+                  </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-bold text-blue-600">
                       {formatCurrency(product.sale_price)}

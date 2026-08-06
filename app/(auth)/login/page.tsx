@@ -42,7 +42,11 @@ export default function LoginPage() {
     }
     setLoading(true)
     try {
-      await login(email.trim(), password, needs2fa ? totpCode.trim() : undefined)
+      const result = await login(email.trim(), password, needs2fa ? totpCode.trim() : undefined)
+      if (result.requiresPasswordChange) {
+        window.location.href = '/change-password-required'
+        return
+      }
       const params = new URLSearchParams(window.location.search)
       const next = params.get('next')
       const dest = next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard'

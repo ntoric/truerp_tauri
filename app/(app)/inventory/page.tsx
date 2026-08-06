@@ -29,7 +29,14 @@ import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
-interface StockBalance {
+interface InventoryItemOption {
+  id: string
+  name: string
+  sku?: string
+  type: string
+  enable_batching?: boolean
+}
+
   product_id: string
   product_name: string
   sku: string
@@ -139,7 +146,7 @@ export default function InventoryPage() {
   const [showEditEntryModal, setShowEditEntryModal] = useState(false)
   const [showReserveModal, setShowReserveModal] = useState(false)
   const [showReleaseModal, setShowReleaseModal] = useState(false)
-  const [inventoryItems, setInventoryItems] = useState<any[]>([])
+  const [inventoryItems, setInventoryItems] = useState<InventoryItemOption[]>([])
   const [warehouses, setWarehouses] = useState<any[]>([])
   const [editingEntry, setEditingEntry] = useState<StockEntry | null>(null)
   const [reserveStock, setReserveStock] = useState({
@@ -163,6 +170,8 @@ export default function InventoryPage() {
     quantity: 0,
     cost_price: 0,
     batch_no: '',
+    mfg_date: '',
+    exp_date: '',
     item_code: '',
     notes: ''
   })
@@ -200,6 +209,11 @@ export default function InventoryPage() {
     () => entries.filter((entry) => (entry.approval_status || 'approved') === 'pending').length,
     [entries]
   )
+
+  const entryNeedsBatching = useMemo(() => {
+    const selectedItem = inventoryItems.find((item) => item.id === newEntry.selected_item_id)
+    return Boolean(selectedItem?.type === 'product' && selectedItem.enable_batching)
+  }, [inventoryItems, newEntry.selected_item_id])
 
   const filteredEntries = useMemo(
     () => entries.filter((entry) => {
@@ -275,7 +289,12 @@ export default function InventoryPage() {
       product_id: selectedItem?.type === 'product' ? selectedItem.id : '',
     }
     if (target === 'entry') {
-      setNewEntry((prev) => ({ ...prev, ...update }))
+      const needsBatching = Boolean(selectedItem?.type === 'product' && selectedItem.enable_batching)
+      setNewEntry((prev) => ({
+        ...prev,
+        ...update,
+        ...(needsBatching ? {} : { batch_no: '', mfg_date: '', exp_date: '' }),
+      }))
     } else {
       setAdjustStock((prev) => ({ ...prev, ...update }))
     }
@@ -302,15 +321,30 @@ export default function InventoryPage() {
       notifyError('Please select a warehouse')
       return
     }
+    if (entryNeedsBatching && !newEntry.batch_no.trim()) {
+      notifyError('Batch number is required for this product')
+      return
+    }
+
+    const payload = {
+      item_name: newEntry.item_name,
+      product_id: newEntry.product_id || null,
+      outlet_id: newEntry.outlet_id,
+      entry_type: newEntry.entry_type,
+      quantity: newEntry.quantity,
+      cost_price: newEntry.cost_price,
+      item_code: newEntry.item_code,
+      notes: newEntry.notes,
+      batch_no: entryNeedsBatching ? newEntry.batch_no.trim() : '',
+      mfg_date: entryNeedsBatching && newEntry.mfg_date ? newEntry.mfg_date : '',
+      exp_date: entryNeedsBatching && newEntry.exp_date ? newEntry.exp_date : '',
+    }
 
     try {
       const res = await apiFetch('/inventory/entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newEntry,
-          product_id: newEntry.product_id || null
-        })
+        body: JSON.stringify(payload)
       })
       if (res.ok) {
         setShowCreateEntryModal(false)
@@ -323,6 +357,8 @@ export default function InventoryPage() {
           quantity: 0,
           cost_price: 0,
           batch_no: '',
+          mfg_date: '',
+          exp_date: '',
           item_code: '',
           notes: ''
         })
@@ -792,13 +828,6 @@ export default function InventoryPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Batch No</Label>
-                      <Input
-                        value={newEntry.batch_no}
-                        onChange={(e) => setNewEntry({ ...newEntry, batch_no: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
                       <Label>Item code</Label>
                       <div className="flex gap-2">
                         <Input
@@ -817,6 +846,34 @@ export default function InventoryPage() {
                       </div>
                     </div>
                   </div>
+                  {entryNeedsBatching && (
+                    <div className="grid grid-cols-2 gap-4 rounded-lg border border-dashed p-4">
+                      <div className="col-span-2 space-y-2">
+                        <Label>Batch No *</Label>
+                        <Input
+                          value={newEntry.batch_no}
+                          onChange={(e) => setNewEntry({ ...newEntry, batch_no: e.target.value })}
+                          placeholder="BATCH001"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Manufacturing Date</Label>
+                        <Input
+                          type="date"
+                          value={newEntry.mfg_date}
+                          onChange={(e) => setNewEntry({ ...newEntry, mfg_date: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Expiry Date</Label>
+                        <Input
+                          type="date"
+                          value={newEntry.exp_date}
+                          onChange={(e) => setNewEntry({ ...newEntry, exp_date: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label>Notes</Label>
                     <Input

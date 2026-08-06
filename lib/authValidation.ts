@@ -106,6 +106,46 @@ export function validateForgotPasswordForm(values: ForgotPasswordFormValues): Fi
   return errors
 }
 
+export interface ResetOTPFormValues {
+  otp: string
+}
+
+export interface ResetPasswordFormValues {
+  password: string
+  confirmPassword: string
+}
+
+export function validateResetOTPForm(values: ResetOTPFormValues): FieldErrors {
+  const errors: FieldErrors = {}
+  const code = values.otp.trim()
+
+  if (!code) {
+    errors.otp = 'Verification code is required'
+  } else if (!/^\d{6}$/.test(code)) {
+    errors.otp = 'Verification code must be 6 digits'
+  }
+
+  return errors
+}
+
+export function validateResetPasswordForm(values: ResetPasswordFormValues): FieldErrors {
+  const errors: FieldErrors = {}
+
+  if (!values.password) {
+    errors.password = 'Password is required'
+  } else if (values.password.length < 6) {
+    errors.password = 'Password must be at least 6 characters'
+  } else if (values.password.length > 128) {
+    errors.password = 'Password must be 128 characters or less'
+  }
+
+  if (values.password !== values.confirmPassword) {
+    errors.confirmPassword = 'Passwords do not match'
+  }
+
+  return errors
+}
+
 export function firstValidationMessage(errors: FieldErrors): string | undefined {
   return Object.values(errors)[0]
 }
