@@ -63,6 +63,7 @@ interface POSSession {
   opening_cash: number
   total_sales: number
   status: string
+  local_only?: boolean
 }
 
 interface POSTab {
@@ -244,22 +245,39 @@ export default function POSPage() {
   }
 
   const loadSession = async () => {
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true
+
     try {
       const res = await apiFetch('/pos/sessions/active')
       if (res.ok) {
         const data = await res.json()
         setSession(data)
         await offlineStorage.savePOSSession(data)
-      } else {
-        // Check offline session
-        const offlineSession = await offlineStorage.getActivePOSSession()
-        if (offlineSession) {
-          setSession(offlineSession)
-        } else {
-          setShowSessionModal(true)
-        }
+        return
       }
-    } catch (err) {
+
+      if (res.status === 404) {
+        // Server has no open session — don't reuse stale IndexedDB sessions while online.
+        if (isOnline) {
+          await offlineStorage.clearOpenPOSSessions()
+        } else {
+          const offlineSession = await offlineStorage.getActivePOSSession()
+          if (offlineSession) {
+            setSession(offlineSession)
+            return
+          }
+        }
+        setShowSessionModal(true)
+        return
+      }
+
+      const offlineSession = await offlineStorage.getActivePOSSession()
+      if (offlineSession) {
+        setSession(offlineSession)
+      } else {
+        setShowSessionModal(true)
+      }
+    } catch {
       const offlineSession = await offlineStorage.getActivePOSSession()
       if (offlineSession) {
         setSession(offlineSession)
@@ -283,68 +301,98 @@ export default function POSPage() {
 
   const openSession = async () => {
     const cash = parseFloat(openingCash) || 0
-    const newSession = {
-      id: crypto.randomUUID(),
-      opening_cash: cash,
-      total_sales: 0,
-      status: 'open',
-      opened_at: new Date().toISOString()
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true
+
+    if (!isOnline) {
+      const newSession: POSSession = {
+        id: crypto.randomUUID(),
+        opening_cash: cash,
+        total_sales: 0,
+        status: 'open',
+        local_only: true,
+      }
+      await offlineStorage.savePOSSession(newSession)
+      setSession(newSession)
+      setShowSessionModal(false)
+      return
     }
 
     try {
       const res = await apiFetch('/pos/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opening_cash: cash })
+        body: JSON.stringify({ opening_cash: cash }),
       })
       if (res.ok) {
         const data = await res.json()
         setSession(data)
         await offlineStorage.savePOSSession(data)
         setShowSessionModal(false)
+        return
       }
-    } catch (err) {
-      // Save offline session
-      await offlineStorage.savePOSSession(newSession)
-      setSession(newSession)
-      setShowSessionModal(false)
+
+      const errorData = await res.json().catch(() => ({}))
+      if (
+        res.status === 400 &&
+        typeof errorData.error === 'string' &&
+        errorData.error.toLowerCase().includes('active session already exists')
+      ) {
+        const activeRes = await apiFetch('/pos/sessions/active')
+        if (activeRes.ok) {
+          const data = await activeRes.json()
+          setSession(data)
+          await offlineStorage.savePOSSession(data)
+          setShowSessionModal(false)
+          return
+        }
+      }
+      notifyError(`Failed to open session: ${errorData.error || 'Unknown error'}`)
+    } catch {
+      notifyError('Failed to open session. Check your connection and try again.')
     }
   }
 
   const closeSession = async () => {
     if (!session) return
 
-    try {
-      const res = await apiFetch(`/pos/sessions/${session.id}/close`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ closing_cash: session.total_sales + session.opening_cash })
-      })
-      if (res.ok) {
-        await offlineStorage.closePOSSession(session.id)
-        setSession(null)
-        // Clear cart when session closes
-        updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer })
-        setIsEditingCustomer(false)
-        setPaymentMethod('upi')
-        setReceivedAmount('')
-        // Redirect to dashboard
-        window.location.href = '/dashboard'
-      } else {
-        const errorData = await res.json()
-        console.error('Close session failed:', errorData)
-        notifyError(`Failed to close session: ${errorData.error || 'Unknown error'}`)
-      }
-    } catch (err) {
-      console.error('Close session error:', err)
+    const finishClose = async () => {
       await offlineStorage.closePOSSession(session.id)
       setSession(null)
       updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer })
       setIsEditingCustomer(false)
       setPaymentMethod('upi')
       setReceivedAmount('')
-      // Redirect to dashboard even in offline mode
       window.location.href = '/dashboard'
+    }
+
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true
+    if (session.local_only || !isOnline) {
+      await finishClose()
+      return
+    }
+
+    try {
+      const res = await apiFetch(`/pos/sessions/${session.id}/close`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ closing_cash: session.total_sales + session.opening_cash }),
+      })
+      if (res.ok) {
+        await finishClose()
+        return
+      }
+
+      const errorData = await res.json().catch(() => ({}))
+      if (res.status === 404) {
+        // Session existed only in local cache (never synced to server).
+        await finishClose()
+        return
+      }
+      console.error('Close session failed:', errorData)
+      notifyError(`Failed to close session: ${errorData.error || 'Unknown error'}`)
+    } catch (err) {
+      console.error('Close session error:', err)
+      await finishClose()
     }
   }
 

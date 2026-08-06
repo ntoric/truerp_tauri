@@ -203,6 +203,15 @@ class OfflineStorage {
     return sessions.find((s) => s.status === 'open');
   }
 
+  async clearOpenPOSSessions(): Promise<void> {
+    const sessions = await this.getAll(STORES.POS_SESSIONS);
+    for (const session of sessions) {
+      if (session.status === 'open') {
+        await this.delete(STORES.POS_SESSIONS, session.id);
+      }
+    }
+  }
+
   async closePOSSession(sessionId: string): Promise<void> {
     const session = await this.get(STORES.POS_SESSIONS, sessionId);
     if (session) {
