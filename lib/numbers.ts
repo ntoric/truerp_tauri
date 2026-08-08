@@ -72,8 +72,7 @@ export function isProductGstEnabled(product: ProductGstFields): boolean {
 /** Effective GST rate for invoice/POS lines (0 when GST is disabled). */
 export function productTaxRate(product: ProductGstFields): number {
   if (!isProductGstEnabled(product)) return 0
-  const rate = parseItemNumber(product.tax_rate, 18)
-  return rate > 0 ? rate : 18
+  return parseItemNumber(product.tax_rate, 0)
 }
 
 /** Tax-exclusive sale unit price respecting product GST settings. */

@@ -93,8 +93,8 @@ const emptyProductForm = (): ProductFormState => ({
   sale_price: 0,
   mrp: 0,
   min_stock: 0,
-  tax_rate: 18,
-  gst_enabled: true,
+  tax_rate: 0,
+  gst_enabled: false,
   item_type: 'product',
   low_stock_alert: true,
   hsn_code: '',
@@ -250,7 +250,7 @@ export default function CreateProductDialog({
           hsn_code: String(created.hsn_code ?? newItem.hsn_code ?? ''),
           sale_price: Number(created.sale_price ?? newItem.sale_price ?? 0),
           purchase_price: Number(created.purchase_price ?? newItem.purchase_price ?? 0),
-          tax_rate: Number(created.tax_rate ?? newItem.tax_rate ?? 18),
+          tax_rate: Number(created.tax_rate ?? newItem.tax_rate ?? 0),
           gst_enabled: Boolean(created.gst_enabled ?? newItem.gst_enabled),
           unit: String(created.unit ?? newItem.unit ?? 'PCS'),
           stock_qty: 0,
@@ -367,7 +367,7 @@ export default function CreateProductDialog({
   const handleGstEnabledChange = (enabled: boolean) => {
     updateNewItem({
       gst_enabled: enabled,
-      tax_rate: enabled ? (newItem.tax_rate > 0 ? newItem.tax_rate : 18) : 0,
+      tax_rate: enabled ? (newItem.tax_rate > 0 ? newItem.tax_rate : 0) : 0,
     })
   }
 
@@ -627,7 +627,7 @@ export default function CreateProductDialog({
                       type="number"
                       value={newItem.tax_rate}
                       onChange={(e) => updateNewItem({ tax_rate: parseFloat(e.target.value) || 0 }, 'tax_rate')}
-                      placeholder="18"
+                      placeholder="0"
                       className={cn(fieldErrors.tax_rate && 'border-red-500')}
                     />
                     <FieldError message={fieldErrors.tax_rate} />

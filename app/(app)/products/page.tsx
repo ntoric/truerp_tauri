@@ -183,8 +183,8 @@ export default function ProductsPage() {
     sale_price: 0,
     mrp: 0,
     min_stock: 0,
-    tax_rate: 18,
-    gst_enabled: true,
+    tax_rate: 0,
+    gst_enabled: false,
     item_type: 'product',
     low_stock_alert: true,
     hsn_code: '',
@@ -431,7 +431,7 @@ export default function ProductsPage() {
   const handleGstEnabledChange = (enabled: boolean) => {
     updateNewItem({
       gst_enabled: enabled,
-      tax_rate: enabled ? (newItem.tax_rate > 0 ? newItem.tax_rate : 18) : 0,
+      tax_rate: enabled ? (newItem.tax_rate > 0 ? newItem.tax_rate : 0) : 0,
     })
   }
 
@@ -786,8 +786,8 @@ export default function ProductsPage() {
     sale_price: 0,
     mrp: 0,
     min_stock: 0,
-    tax_rate: 18,
-    gst_enabled: true,
+    tax_rate: 0,
+    gst_enabled: false,
     item_type: 'product',
     low_stock_alert: true,
     hsn_code: '',
@@ -1130,7 +1130,7 @@ export default function ProductsPage() {
                             type="number"
                             value={newItem.tax_rate}
                             onChange={(e) => updateNewItem({ tax_rate: parseFloat(e.target.value) || 0 }, 'tax_rate')}
-                            placeholder="18"
+                            placeholder="0"
                             className={cn(fieldErrors.tax_rate && 'border-red-500')}
                           />
                           <FieldError message={fieldErrors.tax_rate} />

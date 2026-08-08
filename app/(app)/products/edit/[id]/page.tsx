@@ -99,8 +99,8 @@ export default function EditProductPage() {
     mrp: 0,
     unit: 'PCS',
     min_stock: 0,
-    tax_rate: 18,
-    gst_enabled: true,
+    tax_rate: 0,
+    gst_enabled: false,
     item_type: 'product',
     low_stock_alert: true,
     hsn_code: '',
@@ -227,7 +227,7 @@ export default function EditProductPage() {
     setFormData({
       ...formData,
       gst_enabled: enabled,
-      tax_rate: enabled ? (formData.tax_rate > 0 ? formData.tax_rate : 18) : 0,
+      tax_rate: enabled ? (formData.tax_rate > 0 ? formData.tax_rate : 0) : 0,
     })
   }
 
@@ -600,7 +600,7 @@ export default function EditProductPage() {
                           step="0.01"
                           value={formData.tax_rate}
                           onChange={(e) => handleChange('tax_rate', parseFloat(e.target.value) || 0)}
-                          placeholder="18"
+                          placeholder="0"
                         />
                         <FieldError message={fieldErrors.tax_rate} />
                       </div>
