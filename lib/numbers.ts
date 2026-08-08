@@ -58,6 +58,54 @@ export function exclusiveUnitPrice(
   return roundMoney(amount / (1 + rate / 100))
 }
 
+export type ProductGstFields = {
+  gst_enabled?: boolean | null
+  tax_rate?: unknown
+}
+
+/** Whether GST applies to a product (defaults from tax_rate for older records). */
+export function isProductGstEnabled(product: ProductGstFields): boolean {
+  if (typeof product.gst_enabled === 'boolean') return product.gst_enabled
+  return parseItemNumber(product.tax_rate) > 0
+}
+
+/** Effective GST rate for invoice/POS lines (0 when GST is disabled). */
+export function productTaxRate(product: ProductGstFields): number {
+  if (!isProductGstEnabled(product)) return 0
+  const rate = parseItemNumber(product.tax_rate, 18)
+  return rate > 0 ? rate : 18
+}
+
+/** Tax-exclusive sale unit price respecting product GST settings. */
+export function productSaleUnitPrice(product: {
+  sale_price?: unknown
+  tax_rate?: unknown
+  sale_price_with_tax?: boolean | null
+  gst_enabled?: boolean | null
+}): number {
+  const gstEnabled = isProductGstEnabled(product)
+  return exclusiveUnitPrice(
+    product.sale_price,
+    productTaxRate(product),
+    gstEnabled ? product.sale_price_with_tax : false
+  )
+}
+
+/** Tax-exclusive purchase unit price respecting product GST settings. */
+export function productPurchaseUnitPrice(product: {
+  purchase_price?: unknown
+  tax_rate?: unknown
+  purchase_price_with_tax?: boolean | null
+  gst_enabled?: boolean | null
+}): number {
+  const gstEnabled = isProductGstEnabled(product)
+  return exclusiveUnitPrice(
+    product.purchase_price,
+    productTaxRate(product),
+    gstEnabled ? product.purchase_price_with_tax : false
+  )
+}
+
 /** Payable line total (qty × price, adding tax only when price is exclusive). */
 export function linePayableTotal(
   price: unknown,

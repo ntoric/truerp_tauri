@@ -22,7 +22,7 @@ import { isWeightBasedUnit } from '@/lib/weighingScale'
 import { resolveScaleBarcodeForPos, looksLikeScaleBarcode } from '@/lib/weighingScaleBarcode'
 import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/components/ui/BarcodeScannerInput'
 import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
-import { exclusiveUnitPrice, linePayableTotal, lineTaxAmount } from '@/lib/numbers'
+import { linePayableTotal, lineTaxAmount, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
 import { fetchProductBatches, pickDefaultBatch } from '@/lib/productBatches'
 
 interface Product {
@@ -35,6 +35,7 @@ interface Product {
   stock_qty: number
   unit: string
   tax_rate: number
+  gst_enabled?: boolean
   category: string
   enable_batching?: boolean
 }
@@ -400,8 +401,8 @@ export default function POSPage() {
     linePayableTotal(
       product.sale_price,
       quantity,
-      product.tax_rate,
-      product.sale_price_with_tax ?? true
+      productTaxRate(product),
+      isProductGstEnabled(product) ? (product.sale_price_with_tax ?? true) : false
     )
 
   const addToCartWithQuantity = async (product: Product, quantity: number) => {
@@ -558,8 +559,8 @@ export default function POSPage() {
         lineTaxAmount(
           item.product.sale_price,
           item.quantity,
-          item.product.tax_rate,
-          item.product.sale_price_with_tax ?? true
+          productTaxRate(item.product),
+          isProductGstEnabled(item.product) ? (item.product.sale_price_with_tax ?? true) : false
         )
       )
     }, 0)
@@ -817,12 +818,8 @@ export default function POSPage() {
         description: item.product.name,
         quantity: item.quantity,
         // Backend always treats unit_price as tax-exclusive and adds GST on top.
-        unit_price: exclusiveUnitPrice(
-          item.product.sale_price,
-          item.product.tax_rate,
-          item.product.sale_price_with_tax ?? true
-        ),
-        tax_rate: item.product.tax_rate,
+        unit_price: productSaleUnitPrice(item.product),
+        tax_rate: productTaxRate(item.product),
         unit: item.product.unit || 'pcs',
         batch_no: item.batch_no || '',
         exp_date: item.exp_date || null,

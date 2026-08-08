@@ -13,7 +13,7 @@ import { Plus, Trash2, Loader2, Save, ArrowLeft, Search, Barcode, X, Package } f
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { notifyError } from '@/lib/notify'
-import { exclusiveUnitPrice, linePayableTotal } from '@/lib/numbers'
+import { linePayableTotal, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
 
 interface Party {
   id: string
@@ -59,6 +59,7 @@ interface Product {
   sale_price: number
   sale_price_with_tax?: boolean
   tax_rate: number
+  gst_enabled?: boolean
   unit: string
   stock_qty: number
   category: string
@@ -258,23 +259,21 @@ export default function CreateSalesReturnPage() {
   }
 
   const addProductToReturn = (product: Product) => {
-    const unitPrice = exclusiveUnitPrice(
-      product.sale_price,
-      product.tax_rate,
-      product.sale_price_with_tax ?? true
-    )
+    const gstEnabled = isProductGstEnabled(product)
+    const taxRate = productTaxRate(product)
+    const unitPrice = productSaleUnitPrice(product)
     const newItem: SalesReturnItem = {
       product_id: product.id,
       description: product.name,
       quantity: 1,
       unit_price: unitPrice,
-      tax_rate: product.tax_rate,
+      tax_rate: taxRate,
       unit: product.unit,
       total: linePayableTotal(
         product.sale_price,
         1,
-        product.tax_rate,
-        product.sale_price_with_tax ?? true
+        taxRate,
+        gstEnabled ? (product.sale_price_with_tax ?? true) : false
       ),
       reason: ''
     }
@@ -325,12 +324,8 @@ export default function CreateSalesReturnPage() {
       const product = products.find(p => p.id === value)
       if (product) {
         newItems[index].description = product.name
-        newItems[index].unit_price = exclusiveUnitPrice(
-          product.sale_price,
-          product.tax_rate,
-          product.sale_price_with_tax ?? true
-        )
-        newItems[index].tax_rate = product.tax_rate
+        newItems[index].unit_price = productSaleUnitPrice(product)
+        newItems[index].tax_rate = productTaxRate(product)
         newItems[index].unit = product.unit
       }
     }

@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Trash2, Loader2, Save, ArrowLeft, Search, Barcode, X, Package, Camera } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
+import { productPurchaseUnitPrice, productTaxRate } from '@/lib/numbers'
 
 interface Vendor {
   id: string
@@ -55,6 +56,7 @@ interface Product {
   hsn_code: string
   purchase_price: number
   tax_rate: number
+  gst_enabled?: boolean
   unit: string
   stock_qty: number
   category: string
@@ -312,8 +314,8 @@ export default function CreatePurchaseReturnPage() {
       product_id: product.id,
       description: product.name,
       quantity: 1,
-      unit_price: product.purchase_price,
-      tax_rate: product.tax_rate,
+      unit_price: productPurchaseUnitPrice(product),
+      tax_rate: productTaxRate(product),
       unit: product.unit,
       total: 0,
       reason: ''
@@ -363,8 +365,8 @@ export default function CreatePurchaseReturnPage() {
       const product = products.find(p => p.id === value)
       if (product) {
         newItems[index].description = product.name
-        newItems[index].unit_price = product.purchase_price
-        newItems[index].tax_rate = product.tax_rate
+        newItems[index].unit_price = productPurchaseUnitPrice(product)
+        newItems[index].tax_rate = productTaxRate(product)
         newItems[index].unit = product.unit
       }
     }
@@ -599,8 +601,8 @@ export default function CreatePurchaseReturnPage() {
                                 updateItem(index, 'product_id', e.target.value)
                                 if (product) {
                                   updateItem(index, 'description', product.name)
-                                  updateItem(index, 'unit_price', product.purchase_price)
-                                  updateItem(index, 'tax_rate', product.tax_rate)
+                                  updateItem(index, 'unit_price', productPurchaseUnitPrice(product))
+                                  updateItem(index, 'tax_rate', productTaxRate(product))
                                   updateItem(index, 'unit', product.unit)
                                 }
                               }}

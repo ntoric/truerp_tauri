@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn, formatCurrency } from '@/lib/utils'
-import { exclusiveUnitPrice, limitDecimalInput, parseItemNumber, parseMoney } from '@/lib/numbers'
+import { exclusiveUnitPrice, limitDecimalInput, parseItemNumber, parseMoney, productPurchaseUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
 import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
 import CreateProductDialog, { type CreatedProduct } from '@/components/CreateProductDialog'
 import { Plus, Trash2, Loader2, Save, ArrowLeft, Search, Package, X, Camera } from 'lucide-react'
@@ -43,6 +43,7 @@ interface Product {
   sale_price: number
   mrp: number
   tax_rate: number
+  gst_enabled?: boolean
   unit: string
   stock_qty: number
   category: string
@@ -397,13 +398,9 @@ export default function CreatePurchaseInvoicePage() {
           description: product.name,
           hsn_code: product.hsn_code || '',
           quantity: 1,
-          unit_price: exclusiveUnitPrice(
-            product.purchase_price,
-            product.tax_rate,
-            product.purchase_price_with_tax
-          ),
+          unit_price: productPurchaseUnitPrice(product),
           discount: 0,
-          tax_rate: parseItemNumber(product.tax_rate, 18),
+          tax_rate: productTaxRate(product),
           mrp: parseItemNumber(product.mrp),
           sale_price: parseItemNumber(product.sale_price),
           unit: product.unit,
@@ -570,17 +567,13 @@ export default function CreatePurchaseInvoicePage() {
       const product = products.find(p => p.id === value)
       if (product) {
         newItems[index].description = product.name
-        newItems[index].unit_price = exclusiveUnitPrice(
-          product.purchase_price,
-          product.tax_rate,
-          product.purchase_price_with_tax
-        )
-        newItems[index].tax_rate = parseItemNumber(product.tax_rate, 18)
+        newItems[index].unit_price = productPurchaseUnitPrice(product)
+        newItems[index].tax_rate = productTaxRate(product)
         newItems[index].mrp = parseItemNumber(product.mrp)
         newItems[index].sale_price = parseItemNumber(product.sale_price)
         newItems[index].unit = product.unit
         newItems[index].hsn_code = product.hsn_code || ''
-        newItems[index].purchase_price_with_tax = product.purchase_price_with_tax ?? false
+        newItems[index].purchase_price_with_tax = isProductGstEnabled(product) ? (product.purchase_price_with_tax ?? false) : false
         newItems[index].enable_batching = product.enable_batching ?? false
         if (!(product.enable_batching ?? false)) {
           newItems[index].batch_no = ''

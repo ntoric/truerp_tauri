@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn, formatCurrency } from '@/lib/utils'
-import { exclusiveUnitPrice, limitDecimalInput, parseItemNumber, parseMoney } from '@/lib/numbers'
+import { limitDecimalInput, parseItemNumber, parseMoney, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
 import { Plus, Trash2, Loader2, Save, Search, X, Edit2, Package, FileText, Gift, Scale, Printer } from 'lucide-react'
 import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -54,6 +54,7 @@ interface Product {
   sale_price: number
   purchase_price: number
   tax_rate: number
+  gst_enabled?: boolean
   unit: string
   stock_qty: number
   category: string
@@ -307,19 +308,15 @@ export default function CreateInvoicePage() {
       description: product.name,
       hsn_code: product.hsn_code || '',
       quantity: parseItemNumber(quantity, 1),
-      unit_price: exclusiveUnitPrice(
-        product.sale_price,
-        product.tax_rate,
-        product.sale_price_with_tax
-      ),
+      unit_price: productSaleUnitPrice(product),
       discount: 0,
-      tax_rate: parseItemNumber(product.tax_rate, 18),
+      tax_rate: productTaxRate(product),
       unit: product.unit,
       cgst: 0,
       sgst: 0,
       igst: 0,
       total: 0,
-      sale_price_with_tax: product.sale_price_with_tax ?? false,
+      sale_price_with_tax: isProductGstEnabled(product) ? (product.sale_price_with_tax ?? false) : false,
       batch_no: '',
       exp_date: '',
       enable_batching: product.enable_batching ?? false,
@@ -407,6 +404,7 @@ export default function CreateInvoicePage() {
       sale_price: Number(match.sale_price ?? 0),
       purchase_price: Number(match.purchase_price ?? 0),
       tax_rate: Number(match.tax_rate ?? 18),
+      gst_enabled: typeof match.gst_enabled === 'boolean' ? match.gst_enabled : Number(match.tax_rate ?? 0) > 0,
       unit: String(match.unit ?? 'PCS'),
       stock_qty: Number(match.stock_qty ?? match.quantity ?? 0),
       category: '',
@@ -538,14 +536,10 @@ export default function CreateInvoicePage() {
       const product = products.find(p => p.id === value)
       if (product) {
         newItems[index].description = product.name
-        newItems[index].unit_price = exclusiveUnitPrice(
-          product.sale_price,
-          product.tax_rate,
-          product.sale_price_with_tax
-        )
-        newItems[index].tax_rate = parseItemNumber(product.tax_rate, 18)
+        newItems[index].unit_price = productSaleUnitPrice(product)
+        newItems[index].tax_rate = productTaxRate(product)
         newItems[index].unit = product.unit
-        newItems[index].sale_price_with_tax = product.sale_price_with_tax ?? false
+        newItems[index].sale_price_with_tax = isProductGstEnabled(product) ? (product.sale_price_with_tax ?? false) : false
       }
     }
 

@@ -19,6 +19,7 @@ import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import ProductImageField from '@/components/ProductImageField'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { cn } from '@/lib/utils'
 import {
   WEIGHING_ITEM_CODE_MAX_LEN,
   isWeightBasedUnit,
@@ -37,6 +38,7 @@ interface Product {
   unit: string
   min_stock: number
   tax_rate: number
+  gst_enabled: boolean
   item_type: string
   low_stock_alert: boolean
   hsn_code: string
@@ -98,6 +100,7 @@ export default function EditProductPage() {
     unit: 'PCS',
     min_stock: 0,
     tax_rate: 18,
+    gst_enabled: true,
     item_type: 'product',
     low_stock_alert: true,
     hsn_code: '',
@@ -121,7 +124,10 @@ export default function EditProductPage() {
       const res = await apiFetch(`/products/${productId}`)
       if (res.ok) {
         const data = await res.json()
-        setFormData(data)
+        setFormData({
+          ...data,
+          gst_enabled: typeof data.gst_enabled === 'boolean' ? data.gst_enabled : parseFloat(String(data.tax_rate ?? 0)) > 0,
+        })
         setInitialIsActive(Boolean(data.is_active))
       } else {
         console.error('Failed to fetch product:', res.status)
@@ -207,10 +213,22 @@ export default function EditProductPage() {
   }
 
   const handleSelectHsn = (hsn: any) => {
-    setFormData({ ...formData, hsn_code: hsn.code, tax_rate: hsn.cgst_rate + hsn.sgst_rate })
+    const patch: Partial<Product> = { hsn_code: hsn.code }
+    if (formData.gst_enabled) {
+      patch.tax_rate = hsn.cgst_rate + hsn.sgst_rate
+    }
+    setFormData({ ...formData, ...patch })
     setShowHsnSearchModal(false)
     setHsnSearchResults([])
     setHsnSearchQuery('')
+  }
+
+  const handleGstEnabledChange = (enabled: boolean) => {
+    setFormData({
+      ...formData,
+      gst_enabled: enabled,
+      tax_rate: enabled ? (formData.tax_rate > 0 ? formData.tax_rate : 18) : 0,
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -447,18 +465,6 @@ export default function EditProductPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="tax_rate">Tax Rate (%)</Label>
-                  <Input
-                    id="tax_rate"
-                    type="number"
-                    step="0.01"
-                    value={formData.tax_rate}
-                    onChange={(e) => handleChange('tax_rate', parseFloat(e.target.value) || 0)}
-                  />
-                  <FieldError message={fieldErrors.tax_rate} />
-                </div>
-
-                <div className="space-y-2">
                   <Label htmlFor="item_type">Item Type</Label>
                   <Select
                     value={formData.item_type}
@@ -496,10 +502,24 @@ export default function EditProductPage() {
                 </TabsContent>
 
                 <TabsContent value="pricing" className="space-y-4 mt-4">
+                  <div className="flex items-center justify-between rounded-lg border p-4">
+                    <div>
+                      <Label htmlFor="gst_enabled">Enable GST</Label>
+                      <p className="text-xs text-muted-foreground">
+                        When disabled, prices are GST exempt and tax rate is set to 0%.
+                      </p>
+                    </div>
+                    <Switch
+                      id="gst_enabled"
+                      checked={formData.gst_enabled}
+                      onCheckedChange={handleGstEnabledChange}
+                    />
+                  </div>
+
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label>Sale Price</Label>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className={cn('grid gap-4', formData.gst_enabled ? 'grid-cols-2' : 'grid-cols-1')}>
                         <div className="space-y-2">
                           <Input
                             type="number"
@@ -510,24 +530,26 @@ export default function EditProductPage() {
                           />
                           <FieldError message={fieldErrors.sale_price} />
                         </div>
-                        <Select
-                          value={formData.sale_price_with_tax ? 'with_tax' : 'without_tax'}
-                          onValueChange={(value) => handleChange('sale_price_with_tax', value === 'with_tax')}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="with_tax">With Tax</SelectItem>
-                            <SelectItem value="without_tax">Without Tax</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {formData.gst_enabled && (
+                          <Select
+                            value={formData.sale_price_with_tax ? 'with_tax' : 'without_tax'}
+                            onValueChange={(value) => handleChange('sale_price_with_tax', value === 'with_tax')}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="with_tax">With Tax</SelectItem>
+                              <SelectItem value="without_tax">Without Tax</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       <Label>Purchase Price</Label>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className={cn('grid gap-4', formData.gst_enabled ? 'grid-cols-2' : 'grid-cols-1')}>
                         <div className="space-y-2">
                           <Input
                             type="number"
@@ -538,23 +560,25 @@ export default function EditProductPage() {
                           />
                           <FieldError message={fieldErrors.purchase_price} />
                         </div>
-                        <Select
-                          value={formData.purchase_price_with_tax ? 'with_tax' : 'without_tax'}
-                          onValueChange={(value) => handleChange('purchase_price_with_tax', value === 'with_tax')}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="with_tax">With Tax</SelectItem>
-                            <SelectItem value="without_tax">Without Tax</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {formData.gst_enabled && (
+                          <Select
+                            value={formData.purchase_price_with_tax ? 'with_tax' : 'without_tax'}
+                            onValueChange={(value) => handleChange('purchase_price_with_tax', value === 'with_tax')}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="with_tax">With Tax</SelectItem>
+                              <SelectItem value="without_tax">Without Tax</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className={cn('grid gap-4', formData.gst_enabled ? 'grid-cols-2' : 'grid-cols-1')}>
                     <div className="space-y-2">
                       <Label htmlFor="mrp">MRP</Label>
                       <Input
@@ -567,18 +591,20 @@ export default function EditProductPage() {
                       />
                       <FieldError message={fieldErrors.mrp} />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="tax_rate">GST Rate %</Label>
-                      <Input
-                        id="tax_rate"
-                        type="number"
-                        step="0.01"
-                        value={formData.tax_rate}
-                        onChange={(e) => handleChange('tax_rate', parseFloat(e.target.value) || 0)}
-                        placeholder="18"
-                      />
-                      <FieldError message={fieldErrors.tax_rate} />
-                    </div>
+                    {formData.gst_enabled && (
+                      <div className="space-y-2">
+                        <Label htmlFor="tax_rate">GST Rate %</Label>
+                        <Input
+                          id="tax_rate"
+                          type="number"
+                          step="0.01"
+                          value={formData.tax_rate}
+                          onChange={(e) => handleChange('tax_rate', parseFloat(e.target.value) || 0)}
+                          placeholder="18"
+                        />
+                        <FieldError message={fieldErrors.tax_rate} />
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">

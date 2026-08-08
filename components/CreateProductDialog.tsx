@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SearchableSelect } from '@/components/ui/searchable-select'
@@ -33,6 +34,7 @@ export interface CreatedProduct {
   sale_price: number
   purchase_price: number
   tax_rate: number
+  gst_enabled?: boolean
   unit: string
   stock_qty: number
   category: string
@@ -69,6 +71,7 @@ export type ProductFormState = {
   mrp: number
   min_stock: number
   tax_rate: number
+  gst_enabled: boolean
   item_type: string
   low_stock_alert: boolean
   hsn_code: string
@@ -91,6 +94,7 @@ const emptyProductForm = (): ProductFormState => ({
   mrp: 0,
   min_stock: 0,
   tax_rate: 18,
+  gst_enabled: true,
   item_type: 'product',
   low_stock_alert: true,
   hsn_code: '',
@@ -247,6 +251,7 @@ export default function CreateProductDialog({
           sale_price: Number(created.sale_price ?? newItem.sale_price ?? 0),
           purchase_price: Number(created.purchase_price ?? newItem.purchase_price ?? 0),
           tax_rate: Number(created.tax_rate ?? newItem.tax_rate ?? 18),
+          gst_enabled: Boolean(created.gst_enabled ?? newItem.gst_enabled),
           unit: String(created.unit ?? newItem.unit ?? 'PCS'),
           stock_qty: 0,
           category: String(created.category ?? newItem.category ?? ''),
@@ -349,10 +354,21 @@ export default function CreateProductDialog({
   }
 
   const handleSelectHsn = (hsn: { code: string; cgst_rate: number; sgst_rate: number }) => {
-    updateNewItem({ hsn_code: hsn.code, tax_rate: hsn.cgst_rate + hsn.sgst_rate }, 'hsn_code')
+    const patch: Partial<ProductFormState> = { hsn_code: hsn.code }
+    if (newItem.gst_enabled) {
+      patch.tax_rate = hsn.cgst_rate + hsn.sgst_rate
+    }
+    updateNewItem(patch, 'hsn_code')
     setShowHsnSearchModal(false)
     setHsnSearchResults([])
     setHsnSearchQuery('')
+  }
+
+  const handleGstEnabledChange = (enabled: boolean) => {
+    updateNewItem({
+      gst_enabled: enabled,
+      tax_rate: enabled ? (newItem.tax_rate > 0 ? newItem.tax_rate : 18) : 0,
+    })
   }
 
   return (
@@ -514,10 +530,24 @@ export default function CreateProductDialog({
             </TabsContent>
 
             <TabsContent value="pricing" className="space-y-4 mt-4">
+              <div className="flex items-center justify-between rounded-lg border p-4">
+                <div>
+                  <Label htmlFor="create_gst_enabled">Enable GST</Label>
+                  <p className="text-xs text-muted-foreground">
+                    When disabled, prices are GST exempt and tax rate is set to 0%.
+                  </p>
+                </div>
+                <Switch
+                  id="create_gst_enabled"
+                  checked={newItem.gst_enabled}
+                  onCheckedChange={handleGstEnabledChange}
+                />
+              </div>
+
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Sale Price</Label>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className={cn('grid gap-4', newItem.gst_enabled ? 'grid-cols-2' : 'grid-cols-1')}>
                     <div className="space-y-2">
                       <Input
                         type="number"
@@ -528,24 +558,26 @@ export default function CreateProductDialog({
                       />
                       <FieldError message={fieldErrors.sale_price} />
                     </div>
-                    <Select
-                      value={newItem.sale_price_with_tax ? 'with_tax' : 'without_tax'}
-                      onValueChange={(value) => updateNewItem({ sale_price_with_tax: value === 'with_tax' })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="with_tax">With Tax</SelectItem>
-                        <SelectItem value="without_tax">Without Tax</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {newItem.gst_enabled && (
+                      <Select
+                        value={newItem.sale_price_with_tax ? 'with_tax' : 'without_tax'}
+                        onValueChange={(value) => updateNewItem({ sale_price_with_tax: value === 'with_tax' })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="with_tax">With Tax</SelectItem>
+                          <SelectItem value="without_tax">Without Tax</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label>Purchase Price</Label>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className={cn('grid gap-4', newItem.gst_enabled ? 'grid-cols-2' : 'grid-cols-1')}>
                     <div className="space-y-2">
                       <Input
                         type="number"
@@ -556,23 +588,25 @@ export default function CreateProductDialog({
                       />
                       <FieldError message={fieldErrors.purchase_price} />
                     </div>
-                    <Select
-                      value={newItem.purchase_price_with_tax ? 'with_tax' : 'without_tax'}
-                      onValueChange={(value) => updateNewItem({ purchase_price_with_tax: value === 'with_tax' })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="with_tax">With Tax</SelectItem>
-                        <SelectItem value="without_tax">Without Tax</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {newItem.gst_enabled && (
+                      <Select
+                        value={newItem.purchase_price_with_tax ? 'with_tax' : 'without_tax'}
+                        onValueChange={(value) => updateNewItem({ purchase_price_with_tax: value === 'with_tax' })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="with_tax">With Tax</SelectItem>
+                          <SelectItem value="without_tax">Without Tax</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className={cn('grid gap-4', newItem.gst_enabled ? 'grid-cols-2' : 'grid-cols-1')}>
                 <div className="space-y-2">
                   <Label htmlFor="create_mrp">MRP</Label>
                   <Input
@@ -585,18 +619,20 @@ export default function CreateProductDialog({
                   />
                   <FieldError message={fieldErrors.mrp} />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="create_tax_rate">GST Rate %</Label>
-                  <Input
-                    id="create_tax_rate"
-                    type="number"
-                    value={newItem.tax_rate}
-                    onChange={(e) => updateNewItem({ tax_rate: parseFloat(e.target.value) || 0 }, 'tax_rate')}
-                    placeholder="18"
-                    className={cn(fieldErrors.tax_rate && 'border-red-500')}
-                  />
-                  <FieldError message={fieldErrors.tax_rate} />
-                </div>
+                {newItem.gst_enabled && (
+                  <div className="space-y-2">
+                    <Label htmlFor="create_tax_rate">GST Rate %</Label>
+                    <Input
+                      id="create_tax_rate"
+                      type="number"
+                      value={newItem.tax_rate}
+                      onChange={(e) => updateNewItem({ tax_rate: parseFloat(e.target.value) || 0 }, 'tax_rate')}
+                      placeholder="18"
+                      className={cn(fieldErrors.tax_rate && 'border-red-500')}
+                    />
+                    <FieldError message={fieldErrors.tax_rate} />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
