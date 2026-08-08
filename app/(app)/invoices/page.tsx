@@ -278,16 +278,20 @@ export default function InvoicesPage() {
   const handleDeleteInvoice = async (id: string) => {
     if (!(await confirm({
       title: 'Delete invoice?',
-      description: 'Are you sure you want to delete this invoice? This action cannot be undone.',
+      description: 'Are you sure you want to delete this invoice? Stock, payments, and accounts will be reversed. Stock transaction history is kept.',
     }))) return
     try {
       const res = await apiFetch(`/invoices/${id}`, { method: 'DELETE' })
       if (res.ok) {
+        notifySuccess('Invoice deleted')
         fetchInvoices()
         fetchStats()
+        return
       }
+      const data = await res.json().catch(() => ({}))
+      notifyError(data.error || 'Failed to delete invoice')
     } catch (err) {
-      console.error(err)
+      notifyError(err instanceof Error ? err.message : 'Failed to delete invoice')
     }
   }
 
@@ -391,17 +395,32 @@ export default function InvoicesPage() {
   const handleBulkDeleteInvoices = async () => {
     if (!(await confirm({
       title: `Delete ${selectedInvoices.size} invoice(s)?`,
-      description: `Are you sure you want to delete ${selectedInvoices.size} invoice(s)? This action cannot be undone.`,
+      description: `Are you sure you want to delete ${selectedInvoices.size} invoice(s)? Stock, payments, and accounts will be reversed for each invoice.`,
     }))) return
     try {
-      await Promise.all(
-        Array.from(selectedInvoices).map(id => apiFetch(`/invoices/${id}`, { method: 'DELETE' }))
+      const results = await Promise.all(
+        Array.from(selectedInvoices).map(async (id) => {
+          const res = await apiFetch(`/invoices/${id}`, { method: 'DELETE' })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            return data.error || 'Failed to delete invoice'
+          }
+          return null
+        })
       )
+      const errors = results.filter((msg): msg is string => Boolean(msg))
+      if (errors.length === 0) {
+        notifySuccess('Invoices deleted')
+      } else if (errors.length < selectedInvoices.size) {
+        notifyError(`${errors.length} invoice(s) could not be deleted`)
+      } else {
+        notifyError(errors[0] || 'Failed to delete invoices')
+      }
       setSelectedInvoices(new Set())
       fetchInvoices()
       fetchStats()
     } catch (err) {
-      console.error(err)
+      notifyError(err instanceof Error ? err.message : 'Failed to delete invoices')
     }
   }
 
