@@ -16,8 +16,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import ProductItemCodeField from '@/components/ProductItemCodeField'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
-import { Package, Plus, Search, Trash2, Download, Upload, Printer, Edit, MoreVertical, Eye, Power, Barcode, Loader2 } from 'lucide-react'
+import { Package, Plus, Search, Trash2, Download, Upload, Printer, Edit, MoreVertical, Eye, Power, Loader2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { asArray, cn, skuFromProductName } from '@/lib/utils'
@@ -44,8 +45,9 @@ import {
   stickerPositionToRowCol,
   type A4LabelSheetPresetKey,
 } from '@/lib/a4LabelSheets'
+import { isSuperAdmin } from '@/lib/roles'
 import {
-  WEIGHING_ITEM_CODE_MAX_LEN,
+  ITEM_CODE_MAX_LEN,
   isWeightBasedUnit,
   weighingItemCodeError,
 } from '@/lib/weighingScale'
@@ -125,6 +127,7 @@ export default function ProductsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, loading: authLoading } = useAuth()
+  const canUseCameraBarcodeScanner = isSuperAdmin(user?.role)
   const {
     fieldErrors,
     clearErrors,
@@ -196,6 +199,10 @@ export default function ProductsPage() {
     image_url: '',
   })
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
+  const [itemCodeDuplicate, setItemCodeDuplicate] = useState<{
+    isDuplicate: boolean
+    productName?: string
+  }>({ isDuplicate: false })
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
@@ -812,6 +819,17 @@ export default function ProductsPage() {
       return
     }
 
+    if (itemCodeDuplicate.isDuplicate) {
+      setError(
+        'item_code',
+        itemCodeDuplicate.productName
+          ? `Already assigned to ${itemCodeDuplicate.productName}`
+          : 'This item code is already assigned to another product'
+      )
+      setCreateTab('basic')
+      return
+    }
+
     setCreating(true)
     clearErrors()
     try {
@@ -870,6 +888,7 @@ export default function ProductsPage() {
                 setCreateTab('basic')
                 skuManuallyEdited.current = false
                 setNewItem(emptyProductForm)
+                setItemCodeDuplicate({ isDuplicate: false })
               }
             }}>
               <DialogTrigger asChild>
@@ -951,36 +970,43 @@ export default function ProductsPage() {
                     
                     <div className="space-y-2">
                       <Label htmlFor="item_code">Item code</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="item_code"
-                          value={newItem.item_code}
-                          maxLength={
-                            isWeightBasedUnit(newItem.unit) ? WEIGHING_ITEM_CODE_MAX_LEN : undefined
-                          }
-                          onChange={(e) => {
+                      <ProductItemCodeField
+                        id="item_code"
+                        value={newItem.item_code}
+                        unit={newItem.unit}
+                        onChange={(item_code) => {
+                          clearFieldError('item_code')
+                          updateNewItem({ item_code })
+                        }}
+                        inputClassName={cn(fieldErrors.item_code && 'border-red-500')}
+                        canUseCameraScanner={canUseCameraBarcodeScanner}
+                        onOpenCameraScanner={() => setShowBarcodeScanner(true)}
+                        onClearError={() => clearFieldError('item_code')}
+                        onGenerateError={(message) => setError('item_code', message)}
+                        onDuplicateChange={({ isDuplicate, products }) => {
+                          setItemCodeDuplicate({
+                            isDuplicate,
+                            productName: products[0]?.name,
+                          })
+                          if (isDuplicate) {
+                            setError(
+                              'item_code',
+                              products[0]?.name
+                                ? `Already assigned to ${products[0].name}`
+                                : 'This item code is already assigned to another product'
+                            )
+                          } else if (
+                            fieldErrors.item_code?.startsWith('Already assigned to') ||
+                            fieldErrors.item_code ===
+                              'This item code is already assigned to another product'
+                          ) {
                             clearFieldError('item_code')
-                            updateNewItem({ item_code: e.target.value })
-                          }}
-                          placeholder={
-                            isWeightBasedUnit(newItem.unit)
-                              ? `Max ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
-                              : 'Enter item code or scan'
                           }
-                          className={cn(fieldErrors.item_code && 'border-red-500')}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() => setShowBarcodeScanner(true)}
-                        >
-                          <Barcode className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      {isWeightBasedUnit(newItem.unit) && (
+                        }}
+                      />
+                      {newItem.item_code.trim() && (
                         <p className="text-xs text-muted-foreground">
-                          Weighing items: max {WEIGHING_ITEM_CODE_MAX_LEN} characters
+                          Maximum {ITEM_CODE_MAX_LEN} characters
                         </p>
                       )}
                       <FieldError message={fieldErrors.item_code} />
@@ -1215,7 +1241,7 @@ export default function ProductsPage() {
                 <div className="flex justify-end gap-2 pt-4 border-t">
                   <Button variant="outline" onClick={() => setShowCreateModal(false)}>Cancel</Button>
                   <Button variant="outline" onClick={handleSaveDraft}>Save as Draft</Button>
-                  <Button onClick={handleCreateItem} disabled={creating}>
+                  <Button onClick={handleCreateItem} disabled={creating || itemCodeDuplicate.isDuplicate}>
                     {creating ? 'Creating...' : 'Create Product'}
                   </Button>
                 </div>
@@ -1717,24 +1743,24 @@ export default function ProductsPage() {
         </DialogContent>
       </Dialog>
       
-      <BarcodeScanner
-        open={showBarcodeScanner}
-        onOpenChange={setShowBarcodeScanner}
-        onScan={(code) => {
-          const nextCode = isWeightBasedUnit(newItem.unit)
-            ? code.slice(0, WEIGHING_ITEM_CODE_MAX_LEN)
-            : code
-          if (isWeightBasedUnit(newItem.unit) && code.length > WEIGHING_ITEM_CODE_MAX_LEN) {
-            setError(
-              'item_code',
-              `Item code for weighing items must be at most ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
-            )
-          } else {
-            clearFieldError('item_code')
-          }
-          setNewItem({ ...newItem, item_code: nextCode })
-        }}
-      />
+      {canUseCameraBarcodeScanner && (
+        <BarcodeScanner
+          open={showBarcodeScanner}
+          onOpenChange={setShowBarcodeScanner}
+          onScan={(code) => {
+            const nextCode = code.slice(0, ITEM_CODE_MAX_LEN)
+            if (code.length > ITEM_CODE_MAX_LEN) {
+              setError(
+                'item_code',
+                `Item code must be at most ${ITEM_CODE_MAX_LEN} characters`
+              )
+            } else {
+              clearFieldError('item_code')
+            }
+            setNewItem({ ...newItem, item_code: nextCode })
+          }}
+        />
+      )}
       {confirmDialog}
     </DashboardLayout>
   )

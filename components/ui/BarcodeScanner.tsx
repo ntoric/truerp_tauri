@@ -5,6 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { X, Camera } from 'lucide-react'
 import { Html5Qrcode } from 'html5-qrcode'
+import { useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
 
 interface BarcodeScannerProps {
   open: boolean
@@ -14,12 +16,16 @@ interface BarcodeScannerProps {
 }
 
 export default function BarcodeScanner({ open, onOpenChange, onScan, continuous = false }: BarcodeScannerProps) {
+  const { user } = useAuth()
+  const canUseCameraScanner = isSuperAdmin(user?.role)
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const [error, setError] = useState<string>('')
   const [isScanning, setIsScanning] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
 
   useEffect(() => {
+    if (!canUseCameraScanner) return
+
     if (open) {
       // Small delay to ensure DOM is ready
       const timer = setTimeout(() => {
@@ -33,7 +39,11 @@ export default function BarcodeScanner({ open, onOpenChange, onScan, continuous 
     return () => {
       stopScanner()
     }
-  }, [open])
+  }, [open, canUseCameraScanner])
+
+  if (!canUseCameraScanner) {
+    return null
+  }
 
   const startScanner = async () => {
     try {

@@ -21,8 +21,7 @@ import ProductImageField from '@/components/ProductImageField'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { cn } from '@/lib/utils'
 import {
-  WEIGHING_ITEM_CODE_MAX_LEN,
-  isWeightBasedUnit,
+  ITEM_CODE_MAX_LEN,
   weighingItemCodeError,
 } from '@/lib/weighingScale'
 
@@ -363,21 +362,13 @@ export default function EditProductPage() {
                   <Input
                     id="item_code"
                     value={formData.item_code}
-                    maxLength={
-                      isWeightBasedUnit(formData.unit) ? WEIGHING_ITEM_CODE_MAX_LEN : undefined
-                    }
+                    maxLength={ITEM_CODE_MAX_LEN}
                     onChange={(e) => handleChange('item_code', e.target.value)}
-                    placeholder={
-                      isWeightBasedUnit(formData.unit)
-                        ? `Max ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
-                        : undefined
-                    }
+                    placeholder={`Max ${ITEM_CODE_MAX_LEN} characters`}
                   />
-                  {isWeightBasedUnit(formData.unit) && (
-                    <p className="text-xs text-muted-foreground">
-                      Weighing items: max {WEIGHING_ITEM_CODE_MAX_LEN} characters
-                    </p>
-                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Maximum {ITEM_CODE_MAX_LEN} characters
+                  </p>
                   <FieldError message={fieldErrors.item_code} />
                 </div>
 

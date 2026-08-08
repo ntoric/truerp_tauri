@@ -28,6 +28,7 @@ import {
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { isSuperAdmin } from '@/lib/roles'
 
 interface InventoryItemOption {
   id: string
@@ -134,6 +135,7 @@ const STOCK_BULK_UPDATE_SAMPLE_ROW: (string | number)[] = [
 export default function InventoryPage() {
   const router = useRouter()
   const { user, loading: authLoading } = useAuth()
+  const canUseCameraBarcodeScanner = isSuperAdmin(user?.role)
   const { confirm, confirmDialog } = useConfirmDialog()
   const [balance, setBalance] = useState<StockBalance[]>([])
   const [entries, setEntries] = useState<StockEntry[]>([])
@@ -836,14 +838,16 @@ export default function InventoryPage() {
                           onChange={(e) => setNewEntry({ ...newEntry, item_code: e.target.value })}
                           placeholder="Enter item code or scan"
                         />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() => setShowBarcodeScanner(true)}
-                        >
-                          <Barcode className="h-4 w-4" />
-                        </Button>
+                        {canUseCameraBarcodeScanner && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setShowBarcodeScanner(true)}
+                          >
+                            <Barcode className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1011,14 +1015,16 @@ export default function InventoryPage() {
                           onChange={(e) => setEditingEntry({ ...editingEntry, item_code: e.target.value })}
                           placeholder="Enter item code or scan"
                         />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() => setShowBarcodeScanner(true)}
-                        >
-                          <Barcode className="h-4 w-4" />
-                        </Button>
+                        {canUseCameraBarcodeScanner && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setShowBarcodeScanner(true)}
+                          >
+                            <Barcode className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -1692,11 +1698,13 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
       
-      <BarcodeScanner
-        open={showBarcodeScanner}
-        onOpenChange={setShowBarcodeScanner}
-        onScan={showEditEntryModal ? handleEditBarcodeScan : handleStockBarcodeScan}
-      />
+      {canUseCameraBarcodeScanner && (
+        <BarcodeScanner
+          open={showBarcodeScanner}
+          onOpenChange={setShowBarcodeScanner}
+          onScan={showEditEntryModal ? handleEditBarcodeScan : handleStockBarcodeScan}
+        />
+      )}
 
       {confirmDialog}
     </DashboardLayout>

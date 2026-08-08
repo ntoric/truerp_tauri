@@ -134,8 +134,11 @@ export const DEFAULT_WEIGHING_SCALE_SETTINGS: WeighingScaleSettings = {
 
 const WEIGHT_UNITS = new Set(['KG', 'GM', 'G', 'GRAM', 'KGS', 'KILOGRAM', 'KILOGRAMS'])
 
-/** Max item code / PLU length for KG/GM (weighing) products. */
-export const WEIGHING_ITEM_CODE_MAX_LEN = 5
+/** Max length for product item code / barcode fields. */
+export const ITEM_CODE_MAX_LEN = 14
+
+/** @deprecated Use ITEM_CODE_MAX_LEN */
+export const WEIGHING_ITEM_CODE_MAX_LEN = ITEM_CODE_MAX_LEN
 
 export function isWeightBasedUnit(unit: string | undefined | null): boolean {
   if (!unit) return false
@@ -143,16 +146,21 @@ export function isWeightBasedUnit(unit: string | undefined | null): boolean {
   return WEIGHT_UNITS.has(normalized)
 }
 
-export function weighingItemCodeError(
-  unit: string | undefined | null,
+export function itemCodeLengthError(
   itemCode: string | undefined | null
 ): string | null {
-  if (!isWeightBasedUnit(unit)) return null
   const code = itemCode?.trim() ?? ''
-  if (code.length > WEIGHING_ITEM_CODE_MAX_LEN) {
-    return `Item code for weighing items must be at most ${WEIGHING_ITEM_CODE_MAX_LEN} characters`
+  if (code.length > ITEM_CODE_MAX_LEN) {
+    return `Item code must be at most ${ITEM_CODE_MAX_LEN} characters`
   }
   return null
+}
+
+export function weighingItemCodeError(
+  _unit: string | undefined | null,
+  itemCode: string | undefined | null
+): string | null {
+  return itemCodeLengthError(itemCode)
 }
 
 export function roundWeight(value: number, decimalPlaces: number): number {
