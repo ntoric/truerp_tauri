@@ -23,9 +23,12 @@ import BarcodeScanner from '@/components/ui/BarcodeScanner'
 import { Search } from 'lucide-react'
 import {
   ITEM_CODE_MAX_LEN,
+  PLU_MAX_LEN,
   isWeightBasedUnit,
+  pluFieldError,
   weighingItemCodeError,
 } from '@/lib/weighingScale'
+import { lookupProductsByPlu, fetchNextProductPlu } from '@/lib/itemCode'
 
 export interface CreatedProduct {
   id: string
@@ -66,6 +69,7 @@ export type ProductFormState = {
   name: string
   sku: string
   item_code: string
+  plu: string
   category: string
   unit: string
   purchase_price: number
@@ -89,6 +93,7 @@ const emptyProductForm = (): ProductFormState => ({
   name: '',
   sku: '',
   item_code: '',
+  plu: '',
   category: DEFAULT_CATEGORY_NAME,
   unit: 'PCS',
   purchase_price: 0,
@@ -157,6 +162,10 @@ export default function CreateProductDialog({
     isDuplicate: boolean
     productName?: string
   }>({ isDuplicate: false })
+  const [pluDuplicate, setPluDuplicate] = useState<{
+    isDuplicate: boolean
+    productName?: string
+  }>({ isDuplicate: false })
   const skuManuallyEdited = useRef(false)
 
   useEffect(() => {
@@ -190,6 +199,16 @@ export default function CreateProductDialog({
         if (bizRes.ok) {
           const data = await bizRes.json()
           setEnableAiHsnSearch(Boolean(data.enable_ai_hsn_search))
+        }
+        if (!initialValues?.plu?.trim()) {
+          try {
+            const nextPlu = await fetchNextProductPlu()
+            if (!cancelled) {
+              setNewItem((prev) => (prev.plu.trim() ? prev : { ...prev, plu: nextPlu }))
+            }
+          } catch {
+            /* backend assigns PLU on save if this fails */
+          }
         }
       } catch (err) {
         console.error(err)
@@ -245,6 +264,24 @@ export default function CreateProductDialog({
         itemCodeDuplicate.productName
           ? `Already assigned to ${itemCodeDuplicate.productName}`
           : 'This item code is already assigned to another product'
+      )
+      setCreateTab('basic')
+      return
+    }
+
+    const pluErr = pluFieldError(newItem.plu)
+    if (pluErr) {
+      setError('plu', pluErr)
+      setCreateTab('basic')
+      return
+    }
+
+    if (pluDuplicate.isDuplicate) {
+      setError(
+        'plu',
+        pluDuplicate.productName
+          ? `Already assigned to ${pluDuplicate.productName}`
+          : 'This PLU is already assigned to another product'
       )
       setCreateTab('basic')
       return
@@ -400,6 +437,7 @@ export default function CreateProductDialog({
             clearErrors()
             setCreateTab('basic')
             setItemCodeDuplicate({ isDuplicate: false })
+            setPluDuplicate({ isDuplicate: false })
           }
         }}
       >
@@ -513,6 +551,49 @@ export default function CreateProductDialog({
                   </p>
                 )}
                 <FieldError message={fieldErrors.item_code} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="create_plu">PLU</Label>
+                <Input
+                  id="create_plu"
+                  inputMode="numeric"
+                  value={newItem.plu}
+                  maxLength={PLU_MAX_LEN}
+                  onChange={async (e) => {
+                    const plu = e.target.value.replace(/\D/g, '').slice(0, PLU_MAX_LEN)
+                    updateNewItem({ plu }, 'plu')
+                    if (!plu.trim()) {
+                      setPluDuplicate({ isDuplicate: false })
+                      setError('plu', 'PLU is required')
+                      return
+                    }
+                    clearFieldError('plu')
+                    try {
+                      const { exists, products } = await lookupProductsByPlu(plu)
+                      setPluDuplicate({
+                        isDuplicate: exists,
+                        productName: products[0]?.name,
+                      })
+                      if (exists) {
+                        setError(
+                          'plu',
+                          products[0]?.name
+                            ? `Already assigned to ${products[0].name}`
+                            : 'This PLU is already assigned to another product'
+                        )
+                      }
+                    } catch {
+                      /* ignore lookup errors while typing */
+                    }
+                  }}
+                  placeholder="Auto-assigned ascending number"
+                  className={cn(fieldErrors.plu && 'border-red-500')}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Numeric code for weighing scales (max {PLU_MAX_LEN} digits). Assigned automatically in ascending order; you can change it if it does not conflict.
+                </p>
+                <FieldError message={fieldErrors.plu} />
               </div>
 
               <div className="space-y-2">
@@ -755,7 +836,7 @@ export default function CreateProductDialog({
                 Save as Draft
               </Button>
             )}
-            <Button type="button" onClick={handleCreateItem} disabled={creating || itemCodeDuplicate.isDuplicate}>
+            <Button type="button" onClick={handleCreateItem} disabled={creating || itemCodeDuplicate.isDuplicate || pluDuplicate.isDuplicate}>
               {creating ? 'Creating...' : 'Create Product'}
             </Button>
           </div>

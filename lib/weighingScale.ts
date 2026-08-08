@@ -2,9 +2,11 @@ export type WeighingScaleProtocol = 'generic' | 'cas' | 'toledo' | 'legacy_fixed
 export type WeighingScaleConnection = 'serial' | 'keyboard'
 export type ScaleWeightUnit = 'kg' | 'g'
 export type WeighingScaleCsvDelimiter = ',' | ';' | 'tab'
-/** How POS matches scale PLU to products (CSV item_code always uses barcode). */
-export type WeighingScaleCsvItemMatchField = 'auto' | 'sku' | 'item_code'
+/** How POS matches scale PLU to products (CSV item_code uses PLU when set, else barcode). */
+export type WeighingScaleCsvItemMatchField = 'auto' | 'sku' | 'item_code' | 'plu'
 export type WeighingScaleCsvExtraField =
+  | 'slug'
+  | 'unit'
   | 'category'
   | 'mrp'
   | 'purchase_price'
@@ -37,16 +39,22 @@ export interface WeighingScaleSettings {
   csv_delimiter: WeighingScaleCsvDelimiter
   csv_item_match_field: WeighingScaleCsvItemMatchField
   csv_item_code_column: string
-  /** Header for slug column (product SKU). */
+  csv_plu_column: string
+  /** @deprecated Legacy header; slug is an optional extra field. */
   csv_slug_column: string
   csv_name_column: string
+  /** @deprecated Legacy header; unit is an optional extra field. */
   csv_unit_column: string
   csv_price_column: string
   csv_export_weight_items_only: boolean
   /** Optional product fields appended after core CSV columns. */
   csv_extra_fields: WeighingScaleCsvExtraField[]
+  /** Desktop: folder to save catalog CSV (empty = Downloads). */
+  csv_export_path: string
+  /** Catalog filename; supports {date} placeholder (empty = scale-product-catalog-{date}.csv). */
+  csv_export_filename: string
   barcode_scan_enabled: boolean
-  /** Leading character(s) on scale labels, e.g. "w" → w0000112500 */
+  /** Leading character(s) on scale labels, e.g. "w" → w0000112500 (prefix + PLU + weight) */
   barcode_prefix: string
   /** Legacy EAN numeric prefix range (optional fallback when barcode has no letter prefix) */
   barcode_prefix_start: number
@@ -57,6 +65,8 @@ export interface WeighingScaleSettings {
 }
 
 const VALID_CSV_EXTRA_FIELDS = new Set<WeighingScaleCsvExtraField>([
+  'slug',
+  'unit',
   'category',
   'mrp',
   'purchase_price',
@@ -117,12 +127,15 @@ export const DEFAULT_WEIGHING_SCALE_SETTINGS: WeighingScaleSettings = {
   csv_delimiter: ',',
   csv_item_match_field: 'item_code',
   csv_item_code_column: '',
+  csv_plu_column: '',
   csv_slug_column: '',
   csv_name_column: '',
   csv_unit_column: '',
   csv_price_column: '',
   csv_export_weight_items_only: true,
   csv_extra_fields: [],
+  csv_export_path: '',
+  csv_export_filename: '',
   barcode_scan_enabled: true,
   barcode_prefix: 'w',
   barcode_prefix_start: 20,
@@ -137,6 +150,9 @@ const WEIGHT_UNITS = new Set(['KG', 'GM', 'G', 'GRAM', 'KGS', 'KILOGRAM', 'KILOG
 /** Max length for product item code / barcode fields. */
 export const ITEM_CODE_MAX_LEN = 14
 
+/** Max digits for optional scale PLU field. */
+export const PLU_MAX_LEN = 5
+
 /** @deprecated Use ITEM_CODE_MAX_LEN */
 export const WEIGHING_ITEM_CODE_MAX_LEN = ITEM_CODE_MAX_LEN
 
@@ -144,6 +160,23 @@ export function isWeightBasedUnit(unit: string | undefined | null): boolean {
   if (!unit) return false
   const normalized = unit.trim().toUpperCase()
   return WEIGHT_UNITS.has(normalized)
+}
+
+export function pluFieldError(plu: string | undefined | null, required = true): string | null {
+  const code = plu?.trim() ?? ''
+  if (!code) {
+    return required ? 'PLU is required' : null
+  }
+  if (code.length > PLU_MAX_LEN) {
+    return `PLU must be at most ${PLU_MAX_LEN} digits`
+  }
+  if (!/^\d+$/.test(code)) {
+    return 'PLU must contain digits only'
+  }
+  if (parseInt(code, 10) < 1) {
+    return 'PLU must be a positive number'
+  }
+  return null
 }
 
 export function itemCodeLengthError(

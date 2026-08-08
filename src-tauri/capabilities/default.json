@@ -26,6 +26,7 @@
     "allow-print-pdf",
     "allow-save-pdf",
     "allow-save-file",
+    "allow-pick-export-directory",
     "allow-print-thermal",
     "allow-print-raw-base64",
     "allow-app-version",

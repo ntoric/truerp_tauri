@@ -50,6 +50,7 @@ interface Product {
   name: string
   sku: string
   item_code: string
+  plu?: string
   hsn_code: string
   sale_price: number
   purchase_price: number
@@ -427,7 +428,7 @@ export default function CreateInvoicePage() {
         }
       }
       if (looksLikeScaleBarcode(code, scaleSettings)) {
-        notifyError('Scale barcode recognized but no matching product item code/SKU')
+        notifyError('Scale barcode recognized but no matching product PLU')
         return
       }
     }

@@ -22,14 +22,18 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { cn } from '@/lib/utils'
 import {
   ITEM_CODE_MAX_LEN,
+  PLU_MAX_LEN,
+  pluFieldError,
   weighingItemCodeError,
 } from '@/lib/weighingScale'
+import { lookupProductsByPlu } from '@/lib/itemCode'
 
 interface Product {
   id: string
   name: string
   sku: string
   item_code: string
+  plu: string
   category: string
   purchase_price: number
   sale_price: number
@@ -84,6 +88,10 @@ export default function EditProductPage() {
   const [hsnSearchQuery, setHsnSearchQuery] = useState('')
   const [hsnSearchLoading, setHsnSearchLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('basic')
+  const [pluDuplicate, setPluDuplicate] = useState<{
+    isDuplicate: boolean
+    productName?: string
+  }>({ isDuplicate: false })
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false)
   const [creatingCategory, setCreatingCategory] = useState(false)
   const [newCategory, setNewCategory] = useState({ name: '', description: '' })
@@ -92,6 +100,7 @@ export default function EditProductPage() {
     name: '',
     sku: '',
     item_code: '',
+    plu: '',
     category: '',
     purchase_price: 0,
     sale_price: 0,
@@ -125,6 +134,7 @@ export default function EditProductPage() {
         const data = await res.json()
         setFormData({
           ...data,
+          plu: data.plu ?? '',
           gst_enabled: typeof data.gst_enabled === 'boolean' ? data.gst_enabled : parseFloat(String(data.tax_rate ?? 0)) > 0,
         })
         setInitialIsActive(Boolean(data.is_active))
@@ -241,6 +251,24 @@ export default function EditProductPage() {
     const itemCodeErr = weighingItemCodeError(formData.unit, formData.item_code)
     if (itemCodeErr) {
       setError('item_code', itemCodeErr)
+      setActiveTab('basic')
+      return
+    }
+
+    const pluErr = pluFieldError(formData.plu)
+    if (pluErr) {
+      setError('plu', pluErr)
+      setActiveTab('basic')
+      return
+    }
+
+    if (pluDuplicate.isDuplicate) {
+      setError(
+        'plu',
+        pluDuplicate.productName
+          ? `Already assigned to ${pluDuplicate.productName}`
+          : 'This PLU is already assigned to another product'
+      )
       setActiveTab('basic')
       return
     }
@@ -370,6 +398,49 @@ export default function EditProductPage() {
                     Maximum {ITEM_CODE_MAX_LEN} characters
                   </p>
                   <FieldError message={fieldErrors.item_code} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="plu">PLU</Label>
+                  <Input
+                    id="plu"
+                    inputMode="numeric"
+                    value={formData.plu}
+                    maxLength={PLU_MAX_LEN}
+                    onChange={async (e) => {
+                      const plu = e.target.value.replace(/\D/g, '').slice(0, PLU_MAX_LEN)
+                      handleChange('plu', plu)
+                      if (!plu.trim()) {
+                        setPluDuplicate({ isDuplicate: false })
+                        setError('plu', 'PLU is required')
+                        return
+                      }
+                      clearFieldError('plu')
+                      try {
+                        const { exists, products } = await lookupProductsByPlu(plu)
+                        const otherProduct = products.find((p) => p.id !== productId)
+                        setPluDuplicate({
+                          isDuplicate: Boolean(otherProduct),
+                          productName: otherProduct?.name,
+                        })
+                        if (otherProduct) {
+                          setError(
+                            'plu',
+                            otherProduct.name
+                              ? `Already assigned to ${otherProduct.name}`
+                              : 'This PLU is already assigned to another product'
+                          )
+                        }
+                      } catch {
+                        /* ignore lookup errors while typing */
+                      }
+                    }}
+                    placeholder="Numeric scale PLU"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Numeric code for weighing scales (max {PLU_MAX_LEN} digits). Must be unique.
+                  </p>
+                  <FieldError message={fieldErrors.plu} />
                 </div>
 
                 <div className="space-y-2">

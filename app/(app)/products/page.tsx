@@ -48,9 +48,12 @@ import {
 import { isSuperAdmin } from '@/lib/roles'
 import {
   ITEM_CODE_MAX_LEN,
+  PLU_MAX_LEN,
   isWeightBasedUnit,
+  pluFieldError,
   weighingItemCodeError,
 } from '@/lib/weighingScale'
+import { lookupProductsByPlu, fetchNextProductPlu } from '@/lib/itemCode'
 
 interface Category {
   id: string
@@ -63,6 +66,7 @@ interface Product {
   name: string
   sku: string
   item_code?: string
+  plu?: string
   category: string
   purchase_price: number
   sale_price: number
@@ -87,6 +91,7 @@ const PRODUCT_IMPORT_HEADERS = [
   'Name',
   'SKU',
   'Item Code',
+  'PLU',
   'Category',
   'Unit',
   'HSN Code',
@@ -107,6 +112,7 @@ const PRODUCT_IMPORT_SAMPLE_ROW: (string | number)[] = [
   'Sample Product',
   'SKU001',
   'ITEM001',
+  '1',
   'General',
   'PCS',
   '8471',
@@ -180,6 +186,7 @@ export default function ProductsPage() {
     name: '',
     sku: '',
     item_code: '',
+    plu: '',
     category: DEFAULT_CATEGORY_NAME,
     unit: 'PCS',
     purchase_price: 0,
@@ -200,6 +207,10 @@ export default function ProductsPage() {
   })
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
   const [itemCodeDuplicate, setItemCodeDuplicate] = useState<{
+    isDuplicate: boolean
+    productName?: string
+  }>({ isDuplicate: false })
+  const [pluDuplicate, setPluDuplicate] = useState<{
     isDuplicate: boolean
     productName?: string
   }>({ isDuplicate: false })
@@ -228,6 +239,26 @@ export default function ProductsPage() {
   }, [selectedCategory, searchQuery])
   useEffect(() => { if (showDraftsModal && user) fetchDrafts() }, [showDraftsModal, user])
   useEffect(() => { if (!authLoading && user) fetchInventoryItems() }, [authLoading, user])
+
+  useEffect(() => {
+    if (!showCreateModal) return
+    let cancelled = false
+    const loadNextPlu = async () => {
+      if (newItem.plu.trim()) return
+      try {
+        const nextPlu = await fetchNextProductPlu()
+        if (!cancelled) {
+          setNewItem((prev) => (prev.plu.trim() ? prev : { ...prev, plu: nextPlu }))
+        }
+      } catch {
+        /* backend assigns on save */
+      }
+    }
+    loadNextPlu()
+    return () => {
+      cancelled = true
+    }
+  }, [showCreateModal])
 
   const fetchCategories = async () => {
     try {
@@ -787,6 +818,7 @@ export default function ProductsPage() {
     name: '',
     sku: '',
     item_code: '',
+    plu: '',
     category: pickDefaultCategoryName(categories),
     unit: 'PCS',
     purchase_price: 0,
@@ -830,6 +862,24 @@ export default function ProductsPage() {
       return
     }
 
+    const pluErr = pluFieldError(newItem.plu)
+    if (pluErr) {
+      setError('plu', pluErr)
+      setCreateTab('basic')
+      return
+    }
+
+    if (pluDuplicate.isDuplicate) {
+      setError(
+        'plu',
+        pluDuplicate.productName
+          ? `Already assigned to ${pluDuplicate.productName}`
+          : 'This PLU is already assigned to another product'
+      )
+      setCreateTab('basic')
+      return
+    }
+
     setCreating(true)
     clearErrors()
     try {
@@ -854,7 +904,7 @@ export default function ProductsPage() {
             else setCreateTab('basic')
           },
         })
-        if (fields.item_code) setCreateTab('basic')
+        if (fields.item_code || fields.plu) setCreateTab('basic')
       }
     } catch (err) {
       console.error(err)
@@ -889,6 +939,7 @@ export default function ProductsPage() {
                 skuManuallyEdited.current = false
                 setNewItem(emptyProductForm)
                 setItemCodeDuplicate({ isDuplicate: false })
+                setPluDuplicate({ isDuplicate: false })
               }
             }}>
               <DialogTrigger asChild>
@@ -1010,6 +1061,49 @@ export default function ProductsPage() {
                         </p>
                       )}
                       <FieldError message={fieldErrors.item_code} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="plu">PLU</Label>
+                      <Input
+                        id="plu"
+                        inputMode="numeric"
+                        value={newItem.plu}
+                        maxLength={PLU_MAX_LEN}
+                        onChange={async (e) => {
+                          const plu = e.target.value.replace(/\D/g, '').slice(0, PLU_MAX_LEN)
+                          clearFieldError('plu')
+                          updateNewItem({ plu })
+                          if (!plu.trim()) {
+                            setPluDuplicate({ isDuplicate: false })
+                            setError('plu', 'PLU is required')
+                            return
+                          }
+                          try {
+                            const { exists, products } = await lookupProductsByPlu(plu)
+                            setPluDuplicate({
+                              isDuplicate: exists,
+                              productName: products[0]?.name,
+                            })
+                            if (exists) {
+                              setError(
+                                'plu',
+                                products[0]?.name
+                                  ? `Already assigned to ${products[0].name}`
+                                  : 'This PLU is already assigned to another product'
+                              )
+                            }
+                          } catch {
+                            /* ignore lookup errors while typing */
+                          }
+                        }}
+                        placeholder="Auto-assigned ascending number"
+                        className={cn(fieldErrors.plu && 'border-red-500')}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Assigned automatically in ascending order; editable if unique.
+                      </p>
+                      <FieldError message={fieldErrors.plu} />
                     </div>
                     
                     <div className="space-y-2">
@@ -1241,7 +1335,7 @@ export default function ProductsPage() {
                 <div className="flex justify-end gap-2 pt-4 border-t">
                   <Button variant="outline" onClick={() => setShowCreateModal(false)}>Cancel</Button>
                   <Button variant="outline" onClick={handleSaveDraft}>Save as Draft</Button>
-                  <Button onClick={handleCreateItem} disabled={creating || itemCodeDuplicate.isDuplicate}>
+                  <Button onClick={handleCreateItem} disabled={creating || itemCodeDuplicate.isDuplicate || pluDuplicate.isDuplicate}>
                     {creating ? 'Creating...' : 'Create Product'}
                   </Button>
                 </div>
@@ -1586,6 +1680,9 @@ export default function ProductsPage() {
                 <div className="flex-1 space-y-2">
                   <h3 className="text-xl font-semibold">{previewProduct.name}</h3>
                   <p className="text-sm text-gray-600">SKU: {previewProduct.sku}</p>
+                  {previewProduct.plu && (
+                    <p className="text-sm text-gray-600">PLU: {previewProduct.plu}</p>
+                  )}
                   {previewProduct.item_code && (
                     <p className="text-sm text-gray-600">Item code: {previewProduct.item_code}</p>
                   )}

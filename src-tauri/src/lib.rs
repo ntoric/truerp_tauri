@@ -58,11 +58,18 @@ const BRIDGE_JS: &str = r#"
         filename: filename || 'document.pdf'
       });
     },
-    SaveFile: function (dataBase64, filename, openAfter) {
+    SaveFile: function (dataBase64, filename, openAfter, directory, overwrite) {
       return invoke('save_file', {
         dataBase64: dataBase64 || '',
         filename: filename || 'download.bin',
-        openAfter: openAfter === true
+        openAfter: openAfter === true,
+        directory: directory || null,
+        overwrite: overwrite === true
+      });
+    },
+    PickExportDirectory: function (title) {
+      return invoke('pick_export_directory', {
+        title: title || null
       });
     },
     PrintThermal: function (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) {
@@ -114,6 +121,7 @@ pub fn run() {
             print::print_pdf,
             print::save_pdf,
             print::save_file,
+            print::pick_export_directory,
             thermal::print_thermal,
             thermal::print_raw_base64,
             #[cfg(desktop)]

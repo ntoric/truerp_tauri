@@ -1,7 +1,6 @@
 import {
   convertScaleWeightToProductQuantity,
   normalizeScaleWeightKg,
-  type WeighingScaleCsvItemMatchField,
   type WeighingScaleSettings,
 } from '@/lib/weighingScale'
 import { findProductByItemCode, type WeighingScaleProductRef } from '@/lib/weighingScaleCsv'
@@ -56,8 +55,8 @@ function weightKgFromPayload(
 }
 
 /**
- * Scale label format: {prefix}{item_code}{weight}
- * Default: w + 5-digit item code + 5-digit weight → e.g. w0000112500
+ * Scale label format: {prefix}{plu}{weight}
+ * Default: w + 5-digit PLU + 5-digit weight → e.g. w0000112500
  */
 function parsePrefixedScaleBarcode(
   rawBarcode: string,
@@ -219,12 +218,11 @@ export function looksLikeScaleBarcode(
 
 export function findProductByScalePlu(
   plu: string,
-  matchField: WeighingScaleCsvItemMatchField,
   products: WeighingScaleProductRef[],
   padDigits = 5
 ): WeighingScaleProductRef | null {
   for (const code of pluLookupCodes(plu, padDigits)) {
-    const product = findProductByItemCode(code, matchField, products)
+    const product = findProductByItemCode(code, 'plu', products)
     if (product) return product
   }
   return null
@@ -261,12 +259,7 @@ export function resolveScaleBarcodeForPos(
   const parsed = parseWeighingScaleBarcode(rawBarcode, settings)
   if (!parsed) return null
 
-  const product = findProductByScalePlu(
-    parsed.plu,
-    settings.csv_item_match_field,
-    products,
-    settings.barcode_plu_digits
-  )
+  const product = findProductByScalePlu(parsed.plu, products, settings.barcode_plu_digits)
   if (!product) return null
 
   const full = products.find((p) => p.id === product.id)

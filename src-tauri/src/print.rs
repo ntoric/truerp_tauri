@@ -117,15 +117,31 @@ fn write_downloads_file(name: &str, data: &[u8], open_after: bool) -> Result<Str
     let dir = dirs::download_dir()
         .or_else(dirs::document_dir)
         .unwrap_or_else(std::env::temp_dir);
-    fs::create_dir_all(&dir).map_err(|e| format!("create downloads dir: {e}"))?;
+    write_file_to_directory(&dir, name, data, open_after, false)
+}
 
-    let mut path = dir.join(name);
-    if path.exists() {
+fn write_file_to_directory(
+    dir: &std::path::Path,
+    name: &str,
+    data: &[u8],
+    open_after: bool,
+    overwrite: bool,
+) -> Result<String, String> {
+    fs::create_dir_all(dir).map_err(|e| format!("create export dir: {e}"))?;
+
+    let path = dir.join(name);
+    if path.exists() && !overwrite {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        path = dir.join(format!("{nanos}-{name}"));
+        let unique_name = format!("{nanos}-{name}");
+        let unique_path = dir.join(&unique_name);
+        fs::write(&unique_path, data).map_err(|e| format!("write file: {e}"))?;
+        if open_after {
+            open_saved_file(&unique_path)?;
+        }
+        return Ok(unique_path.display().to_string());
     }
 
     fs::write(&path, data).map_err(|e| format!("write file: {e}"))?;
@@ -133,6 +149,22 @@ fn write_downloads_file(name: &str, data: &[u8], open_after: bool) -> Result<Str
         open_saved_file(&path)?;
     }
     Ok(path.display().to_string())
+}
+
+fn resolve_export_directory(directory: Option<String>) -> Result<PathBuf, String> {
+    if let Some(raw) = directory {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            let path = PathBuf::from(trimmed);
+            if !path.is_absolute() {
+                return Err("export directory must be an absolute path".into());
+            }
+            return Ok(path);
+        }
+    }
+    Ok(dirs::download_dir()
+        .or_else(dirs::document_dir)
+        .unwrap_or_else(std::env::temp_dir))
 }
 
 /// Save a PDF to the user's Downloads folder and open it (WKWebView cannot rely on `<a download>`).
@@ -143,20 +175,49 @@ pub fn save_pdf(pdf_base64: String, filename: String) -> Result<String, String> 
     write_downloads_file(&name, &data, true)
 }
 
-/// Save arbitrary bytes (CSV/Excel/etc.) to Downloads.
+/// Save arbitrary bytes (CSV/Excel/etc.) to Downloads or a custom directory.
 /// Exports should pass `open_after: false` so nothing opens Finder/Excel (in-app only).
 #[tauri::command]
 pub fn save_file(
     data_base64: String,
     filename: String,
     open_after: Option<bool>,
+    directory: Option<String>,
+    overwrite: Option<bool>,
 ) -> Result<String, String> {
     let data = decode_bytes_base64(&data_base64)?;
     if data.is_empty() {
         return Err("empty file content".into());
     }
     let name = sanitize_download_filename(&filename, "bin");
-    write_downloads_file(&name, &data, open_after.unwrap_or(false))
+    let dir = resolve_export_directory(directory)?;
+    write_file_to_directory(
+        &dir,
+        &name,
+        &data,
+        open_after.unwrap_or(false),
+        overwrite.unwrap_or(false),
+    )
+}
+
+/// Open a native folder picker for export destinations.
+#[tauri::command]
+pub fn pick_export_directory(app: tauri::AppHandle, title: Option<String>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let dialog_title = title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Choose export folder");
+
+    let picked = app
+        .dialog()
+        .file()
+        .set_title(dialog_title)
+        .blocking_pick_folder();
+
+    Ok(picked.map(|path| path.to_string()))
 }
 
 #[cfg(target_os = "macos")]

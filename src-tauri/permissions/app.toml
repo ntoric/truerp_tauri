@@ -35,8 +35,13 @@ commands.allow = ["save_pdf"]
 
 [[permission]]
 identifier = "allow-save-file"
-description = "Allow saving exported files (CSV/Excel/etc.) to Downloads"
+description = "Allow saving exported files (CSV/Excel/etc.) to Downloads or a custom folder"
 commands.allow = ["save_file"]
+
+[[permission]]
+identifier = "allow-pick-export-directory"
+description = "Allow choosing a folder for exported files"
+commands.allow = ["pick_export_directory"]
 
 [[permission]]
 identifier = "allow-print-thermal"

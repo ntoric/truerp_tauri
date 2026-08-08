@@ -318,9 +318,9 @@ export default function WeighingScaleSettingsCard() {
               <div>
                 <p className="font-medium text-gray-900">Scale barcode (POS &amp; sales invoice)</p>
                 <p className="text-xs text-muted-foreground">
-                  Works independently of live scale connection. Format: prefix + item code + weight — e.g.{' '}
+                  Works independently of live scale connection. Format: prefix + PLU + weight — e.g.{' '}
                   <span className="font-mono">w0000112500</span> (prefix <span className="font-mono">w</span>,
-                  item <span className="font-mono">00001</span>, weight <span className="font-mono">12500</span> g
+                  PLU <span className="font-mono">00001</span>, weight <span className="font-mono">12500</span> g
                   = 12.5 kg). Scan adds item with quantity automatically.
                 </p>
               </div>
@@ -344,7 +344,7 @@ export default function WeighingScaleSettingsCard() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="barcode_plu_digits">Item code digits</Label>
+                <Label htmlFor="barcode_plu_digits">PLU digits</Label>
                 <Input
                   id="barcode_plu_digits"
                   type="number"
@@ -436,9 +436,9 @@ export default function WeighingScaleSettingsCard() {
             </details>
 
             <p className="text-xs text-muted-foreground">
-              Scale PLU is matched to product barcode (item code) by default — same value exported as
-              item_code in the catalog CSV. Export the catalog, import it on the weighing machine, then
-              scan printed labels on POS or sales invoices.
+              Scale PLU is matched to the product PLU when set, otherwise to barcode (item code).
+              Export the catalog, import it on the weighing machine, then scan printed labels on POS
+              or sales invoices.
             </p>
           </div>
 
@@ -448,7 +448,7 @@ export default function WeighingScaleSettingsCard() {
                 <p className="font-medium text-gray-900">CSV catalog for scale import</p>
                 <p className="text-xs text-muted-foreground">
                   Generate a product file to import on the weighing machine (not uploaded from the scale).
-                  Item code = barcode, slug = SKU, price = sale price.
+                  Default columns: item_code, plu, name, price (sale price).
                 </p>
               </div>
               <Switch
@@ -471,8 +471,9 @@ export default function WeighingScaleSettingsCard() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="plu">PLU</SelectItem>
                     <SelectItem value="item_code">Barcode (item code)</SelectItem>
-                    <SelectItem value="auto">Auto (barcode, then slug/SKU)</SelectItem>
+                    <SelectItem value="auto">Auto (PLU, barcode, then slug/SKU)</SelectItem>
                     <SelectItem value="sku">Slug (SKU) only</SelectItem>
                   </SelectContent>
                 </Select>
@@ -501,16 +502,16 @@ export default function WeighingScaleSettingsCard() {
                   id="csv_item_code_column"
                   value={settings.csv_item_code_column}
                   onChange={(e) => update('csv_item_code_column', e.target.value)}
-                  placeholder="Default: item_code (barcode)"
+                  placeholder="Default: item_code"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="csv_slug_column">Slug column header</Label>
+                <Label htmlFor="csv_plu_column">PLU column header</Label>
                 <Input
-                  id="csv_slug_column"
-                  value={settings.csv_slug_column}
-                  onChange={(e) => update('csv_slug_column', e.target.value)}
-                  placeholder="Default: slug (SKU)"
+                  id="csv_plu_column"
+                  value={settings.csv_plu_column}
+                  onChange={(e) => update('csv_plu_column', e.target.value)}
+                  placeholder="Default: plu"
                 />
               </div>
               <div className="space-y-2">
@@ -519,16 +520,7 @@ export default function WeighingScaleSettingsCard() {
                   id="csv_name_column"
                   value={settings.csv_name_column}
                   onChange={(e) => update('csv_name_column', e.target.value)}
-                  placeholder="Default: item_name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="csv_unit_column">Unit column header</Label>
-                <Input
-                  id="csv_unit_column"
-                  value={settings.csv_unit_column}
-                  onChange={(e) => update('csv_unit_column', e.target.value)}
-                  placeholder="Default: unit"
+                  placeholder="Default: name"
                 />
               </div>
               <div className="space-y-2">
@@ -537,7 +529,7 @@ export default function WeighingScaleSettingsCard() {
                   id="csv_price_column"
                   value={settings.csv_price_column}
                   onChange={(e) => update('csv_price_column', e.target.value)}
-                  placeholder="Default: price (sale price)"
+                  placeholder="Default: price"
                 />
               </div>
             </div>
@@ -545,7 +537,7 @@ export default function WeighingScaleSettingsCard() {
             <div className="space-y-2 rounded-md border p-3">
               <Label>Additional product fields</Label>
               <p className="text-xs text-muted-foreground">
-                Optional columns appended after item_code, slug, name, unit, and sale price.
+                Optional columns appended after item_code, plu, name, and price.
               </p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {SCALE_CSV_EXTRA_FIELD_OPTIONS.map(({ key, label }) => {
@@ -589,7 +581,7 @@ export default function WeighingScaleSettingsCard() {
               />
             </div>
 
-            <WeighingScaleCatalogExport settings={settings} />
+            <WeighingScaleCatalogExport settings={settings} onUpdate={update} />
           </div>
 
           <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground space-y-1">

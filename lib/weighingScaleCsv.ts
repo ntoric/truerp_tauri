@@ -6,12 +6,14 @@ import {
   type WeighingScaleSettings,
 } from '@/lib/weighingScale'
 import { downloadBlob } from '@/lib/accountingExport'
+import { desktopSaveFile, isDesktopApp } from '@/lib/desktopBridge'
 
 export interface WeighingScaleProductRef {
   id: string
   name: string
   sku?: string
   item_code?: string
+  plu?: string
   unit: string
 }
 
@@ -31,9 +33,8 @@ export interface ScaleCatalogProduct extends WeighingScaleProductRef {
 /** Core columns always present in the scale catalog CSV. */
 export const SCALE_CSV_CORE_HEADERS = {
   item_code: 'item_code',
-  slug: 'slug',
-  name: 'item_name',
-  unit: 'unit',
+  plu: 'plu',
+  name: 'name',
   price: 'price',
 } as const
 
@@ -41,6 +42,8 @@ export const SCALE_CSV_EXTRA_FIELD_OPTIONS: Array<{
   key: WeighingScaleCsvExtraField
   label: string
 }> = [
+  { key: 'slug', label: 'Slug (SKU)' },
+  { key: 'unit', label: 'Unit' },
   { key: 'category', label: 'Category' },
   { key: 'mrp', label: 'MRP' },
   { key: 'purchase_price', label: 'Purchase price' },
@@ -69,19 +72,27 @@ function formatNumber(value: number | undefined | null, fallback = '0.00'): stri
   return Number(value).toFixed(2)
 }
 
+/** PLU sent to scale catalog / used when matching scale scans. */
+export function getProductPlu(product: WeighingScaleProductRef): string {
+  return product.plu?.trim() || product.item_code?.trim() || ''
+}
+
 /** Barcode / item code used as PLU in the scale catalog and when matching scans. */
 export function getScaleItemCode(
   product: WeighingScaleProductRef,
   matchField: WeighingScaleCsvItemMatchField
 ): string {
+  if (matchField === 'plu') {
+    return product.plu?.trim() ?? ''
+  }
   if (matchField === 'item_code') {
     return product.item_code?.trim() ?? ''
   }
   if (matchField === 'sku') {
     return product.sku?.trim() ?? ''
   }
-  // Prefer barcode (item_code), then slug (SKU)
-  return product.item_code?.trim() || product.sku?.trim() || ''
+  // Prefer dedicated PLU, then barcode (item_code), then slug (SKU)
+  return getProductPlu(product) || product.sku?.trim() || ''
 }
 
 export function findProductByItemCode(
@@ -92,9 +103,13 @@ export function findProductByItemCode(
   const code = itemCode.trim()
   if (!code) return null
 
+  const byPlu = products.filter((p) => p.plu?.trim() === code)
   const bySku = products.filter((p) => p.sku?.trim() === code)
   const byItemCode = products.filter((p) => p.item_code?.trim() === code)
 
+  if (matchField === 'plu') {
+    return byPlu[0] ?? null
+  }
   if (matchField === 'sku') {
     return bySku[0] ?? null
   }
@@ -102,11 +117,11 @@ export function findProductByItemCode(
     return byItemCode[0] ?? null
   }
 
+  if (byPlu.length === 1) return byPlu[0]
   if (byItemCode.length === 1) return byItemCode[0]
   if (bySku.length === 1) return bySku[0]
-  if (byItemCode.length > 1) return null
-  if (bySku.length > 1) return null
-  return byItemCode[0] ?? bySku[0] ?? null
+  if (byPlu.length > 1 || byItemCode.length > 1 || bySku.length > 1) return null
+  return byPlu[0] ?? byItemCode[0] ?? bySku[0] ?? null
 }
 
 function extraFieldValue(
@@ -114,6 +129,10 @@ function extraFieldValue(
   field: WeighingScaleCsvExtraField
 ): string {
   switch (field) {
+    case 'slug':
+      return product.sku?.trim() ?? ''
+    case 'unit':
+      return product.unit?.trim() || 'KG'
     case 'category':
       return product.category?.trim() ?? ''
     case 'mrp':
@@ -139,6 +158,17 @@ function extraFieldValue(
   }
 }
 
+export function resolveScaleCatalogExportFilename(
+  settings: Pick<WeighingScaleSettings, 'csv_export_filename'>,
+  dateStamp = new Date().toISOString().slice(0, 10)
+): string {
+  const template = settings.csv_export_filename.trim()
+  const base = template
+    ? template.replaceAll('{date}', dateStamp)
+    : `scale-product-catalog-${dateStamp}.csv`
+  return base.toLowerCase().endsWith('.csv') ? base : `${base}.csv`
+}
+
 export function buildScaleCatalogCsv(
   products: ScaleCatalogProduct[],
   settings: Pick<
@@ -146,9 +176,8 @@ export function buildScaleCatalogCsv(
     | 'csv_delimiter'
     | 'csv_has_header'
     | 'csv_item_code_column'
-    | 'csv_slug_column'
+    | 'csv_plu_column'
     | 'csv_name_column'
-    | 'csv_unit_column'
     | 'csv_price_column'
     | 'csv_export_weight_items_only'
     | 'csv_extra_fields'
@@ -156,9 +185,8 @@ export function buildScaleCatalogCsv(
 ): { csv: string; rowCount: number; skippedNoCode: number } {
   const delimiter = delimiterChar(settings.csv_delimiter)
   const codeHeader = settings.csv_item_code_column.trim() || SCALE_CSV_CORE_HEADERS.item_code
-  const slugHeader = settings.csv_slug_column.trim() || SCALE_CSV_CORE_HEADERS.slug
+  const pluHeader = settings.csv_plu_column.trim() || SCALE_CSV_CORE_HEADERS.plu
   const nameHeader = settings.csv_name_column.trim() || SCALE_CSV_CORE_HEADERS.name
-  const unitHeader = settings.csv_unit_column.trim() || SCALE_CSV_CORE_HEADERS.unit
   const priceHeader = settings.csv_price_column.trim() || SCALE_CSV_CORE_HEADERS.price
   const extraFields = settings.csv_extra_fields ?? []
 
@@ -166,7 +194,7 @@ export function buildScaleCatalogCsv(
     ? products.filter((p) => isWeightBasedUnit(p.unit))
     : products
 
-  const headerCells = [codeHeader, slugHeader, nameHeader, unitHeader, priceHeader, ...extraFields]
+  const headerCells = [codeHeader, pluHeader, nameHeader, priceHeader, ...extraFields]
 
   const lines: string[] = []
   if (settings.csv_has_header) {
@@ -177,19 +205,16 @@ export function buildScaleCatalogCsv(
   let skippedNoCode = 0
 
   for (const product of candidates) {
-    // Item code column = barcode (item_code). Match-field only affects scan matching.
-    const itemCode = product.item_code?.trim() || ''
-    if (!itemCode) {
+    const itemCode = product.item_code?.trim() ?? ''
+    const plu = product.plu?.trim() ?? ''
+    if (!itemCode && !plu) {
       skippedNoCode += 1
       continue
     }
-    const slug = product.sku?.trim() || ''
     const row = [
       itemCode,
-      slug,
+      plu,
       product.name,
-      product.unit || 'KG',
-      // Always sale price — never MRP
       formatNumber(product.sale_price),
       ...extraFields.map((field) => extraFieldValue(product, field)),
     ]
@@ -202,7 +227,40 @@ export function buildScaleCatalogCsv(
   return { csv: lines.join('\n'), rowCount, skippedNoCode }
 }
 
-export function downloadScaleCatalogCsv(filename: string, csv: string) {
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const slice = bytes.subarray(i, i + chunk)
+    for (let j = 0; j < slice.length; j += 1) {
+      binary += String.fromCharCode(slice[j])
+    }
+  }
+  return btoa(binary)
+}
+
+export async function downloadScaleCatalogCsv(
+  filename: string,
+  csv: string,
+  options?: { directory?: string }
+) {
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-  return downloadBlob(filename, blob, { label: 'Exporting scale catalog' })
+  const directory = options?.directory?.trim()
+
+  if (isDesktopApp()) {
+    const buffer = await blob.arrayBuffer()
+    const saved = await desktopSaveFile(
+      uint8ToBase64(new Uint8Array(buffer)),
+      filename,
+      false,
+      directory || undefined,
+      true
+    )
+    if (!saved) {
+      throw new Error('Desktop file save is unavailable. Rebuild or update the desktop app.')
+    }
+    return
+  }
+
+  await downloadBlob(filename, blob, { label: 'Exporting scale catalog' })
 }

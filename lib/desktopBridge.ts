@@ -40,7 +40,14 @@ type DesktopAppBridge = {
     paperSize?: string | null
   ) => Promise<void>
   SavePDF?: (pdfBase64: string, filename: string) => Promise<string>
-  SaveFile?: (dataBase64: string, filename: string, openAfter?: boolean) => Promise<string>
+  SaveFile?: (
+    dataBase64: string,
+    filename: string,
+    openAfter?: boolean,
+    directory?: string | null,
+    overwrite?: boolean
+  ) => Promise<string>
+  PickExportDirectory?: (title?: string | null) => Promise<string | null>
   PrintThermal?: (
     content: string,
     printerName: string,
@@ -101,12 +108,18 @@ function getDesktopApp(): DesktopAppBridge | null {
           pdfBase64,
           filename: filename || 'document.pdf',
         }) as Promise<string>,
-      SaveFile: (dataBase64, filename, openAfter) =>
+      SaveFile: (dataBase64, filename, openAfter, directory, overwrite) =>
         invoke('save_file', {
           dataBase64,
           filename: filename || 'download.bin',
           openAfter: openAfter ?? false,
+          directory: directory?.trim() ? directory.trim() : null,
+          overwrite: overwrite === true,
         }) as Promise<string>,
+      PickExportDirectory: (title) =>
+        invoke('pick_export_directory', {
+          title: title?.trim() ? title.trim() : null,
+        }) as Promise<string | null>,
       PrintThermal: (content, printerName, paperWidthMm, jobTitle, logoEscposBase64) =>
         invoke('print_thermal', {
           content,
@@ -193,19 +206,33 @@ export async function desktopSavePDF(
   }
 }
 
-/** Save any file bytes via native Downloads folder (CSV/Excel/etc.). */
+/** Save any file bytes via native Downloads folder or a custom directory (CSV/Excel/etc.). */
 export async function desktopSaveFile(
   dataBase64: string,
   filename: string,
-  openAfter = false
+  openAfter = false,
+  directory?: string,
+  overwrite = false
 ): Promise<boolean> {
   const app = getDesktopApp()
   if (!app?.SaveFile) return false
   try {
-    await app.SaveFile(dataBase64, filename, openAfter)
+    await app.SaveFile(dataBase64, filename, openAfter, directory ?? null, overwrite)
     return true
   } catch (err) {
     throw new Error(invokeErrorMessage(err))
+  }
+}
+
+/** Open a native folder picker for export destinations. */
+export async function desktopPickExportDirectory(title?: string): Promise<string | null> {
+  const app = getDesktopApp()
+  if (!app?.PickExportDirectory) return null
+  try {
+    const picked = await app.PickExportDirectory(title ?? null)
+    return picked?.trim() ? picked.trim() : null
+  } catch {
+    return null
   }
 }
 

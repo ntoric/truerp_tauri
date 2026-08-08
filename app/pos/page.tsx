@@ -30,6 +30,7 @@ interface Product {
   name: string
   sku: string
   item_code: string
+  plu?: string
   sale_price: number
   sale_price_with_tax?: boolean
   stock_qty: number
@@ -470,7 +471,7 @@ export default function POSPage() {
         }
       }
       if (looksLikeScaleBarcode(code, scaleSettings)) {
-        notifyError('Scale barcode recognized but no matching product item code/SKU')
+        notifyError('Scale barcode recognized but no matching product PLU')
         barcodeInputRef.current?.clear()
         return
       }
@@ -1111,8 +1112,8 @@ export default function POSPage() {
                   <h3 className="font-semibold text-gray-900 text-xs mb-0.5 truncate">{product.name}</h3>
                   <div className="text-xs text-gray-500 mb-1 space-y-0.5">
                     {product.sku && <p className="truncate">SKU: {product.sku}</p>}
-                    {product.item_code?.trim() && (
-                      <p className="truncate">Code: {product.item_code.trim()}</p>
+                    {product.plu?.trim() && (
+                      <p className="truncate">PLU: {product.plu.trim()}</p>
                     )}
                   </div>
                   <div className="flex items-center justify-between">
