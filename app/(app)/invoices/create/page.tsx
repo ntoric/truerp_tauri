@@ -28,6 +28,7 @@ import InvoiceCustomFieldsForm, {
 } from '@/components/InvoiceCustomFieldsForm'
 import { useWeighingScale } from '@/hooks/useWeighingScale'
 import WeighingScalePanel from '@/components/WeighingScalePanel'
+import { useFormKeyboardShortcuts } from '@/hooks/useFormKeyboardShortcuts'
 import CreateProductDialog, { type CreatedProduct } from '@/components/CreateProductDialog'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
 import { looksLikeScaleBarcode, resolveScaleBarcodeForPos } from '@/lib/weighingScaleBarcode'
@@ -417,6 +418,19 @@ export default function CreateInvoicePage() {
     const code = rawScannedCode.trim()
     if (!code) return
 
+    const localMatches = findProductsByItemCodeOrSku(code)
+    if (localMatches.length === 1) {
+      addProductToInvoice(localMatches[0], 1)
+      notifySuccess(`Added: ${localMatches[0].name}`)
+      return
+    }
+    if (localMatches.length > 1) {
+      setProductSearch(code)
+      setShowProductModal(true)
+      notifyError('Multiple products match. Please select the correct item.')
+      return
+    }
+
     if (scaleSettings.barcode_scan_enabled) {
       const scaleHit = resolveScaleBarcodeForPos(code, scaleSettings, products)
       if (scaleHit) {
@@ -431,19 +445,6 @@ export default function CreateInvoicePage() {
         notifyError('Scale barcode recognized but no matching product PLU')
         return
       }
-    }
-
-    const localMatches = findProductsByItemCodeOrSku(code)
-    if (localMatches.length === 1) {
-      addProductToInvoice(localMatches[0])
-      notifySuccess(`Added: ${localMatches[0].name}`)
-      return
-    }
-    if (localMatches.length > 1) {
-      setProductSearch(code)
-      setShowProductModal(true)
-      notifyError('Multiple products match. Please select the correct item.')
-      return
     }
 
     try {
@@ -463,7 +464,7 @@ export default function CreateInvoicePage() {
         }
         const product = productFromStockMatch(stockMatches[0])
         if (product) {
-          addProductToInvoice(product)
+          addProductToInvoice(product, 1)
           notifySuccess(`Added: ${product.name}`)
         } else {
           notifyError('Product not found with this item code/SKU')
@@ -813,6 +814,11 @@ export default function CreateInvoicePage() {
     await saveInvoice(false)
   }
 
+  useFormKeyboardShortcuts({
+    onSave: () => saveInvoice(false),
+    onCancel: () => router.push('/invoices'),
+  })
+
   const fetchDrafts = async () => {
     try {
       setLoadingDraft(true)
@@ -898,7 +904,7 @@ export default function CreateInvoicePage() {
   return (
     <DashboardLayout>
       <div className="max-w-7xl space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Create Sales Invoice</h1>
           <Button variant="outline" onClick={() => router.push('/invoices')}>Cancel</Button>
         </div>
@@ -908,14 +914,14 @@ export default function CreateInvoicePage() {
             <CardHeader>
               <CardTitle>Invoice Details</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="space-y-2">
                 <Label>Invoice Number</Label>
                 <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} required />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2 xl:col-span-1">
                 <Label>Party *</Label>
-                <div className="flex gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <select
                     value={partyId}
                     onChange={(e) => {
@@ -923,7 +929,7 @@ export default function CreateInvoicePage() {
                       setPartyId(e.target.value)
                     }}
                     className={cn(
-                      'flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm',
+                      'flex h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm',
                       fieldErrors.party_id && 'border-red-500'
                     )}
                     required
@@ -931,7 +937,7 @@ export default function CreateInvoicePage() {
                     <option value="">Select Party</option>
                     {parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
-                  <Button type="button" variant="outline" size="icon" onClick={() => setShowAddParty(true)}>
+                  <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => setShowAddParty(true)}>
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
@@ -950,7 +956,7 @@ export default function CreateInvoicePage() {
                 <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               </div>
               {savedTemplates.length > 0 && (
-                <div className="space-y-2 sm:col-span-2">
+                <div className="space-y-2 md:col-span-2">
                   <Label>Apply template</Label>
                   <div className="flex gap-2">
                     <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>

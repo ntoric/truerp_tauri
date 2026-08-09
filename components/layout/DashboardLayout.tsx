@@ -7,6 +7,7 @@ import Header from './Header'
 import ComingSoonPage from '@/components/ComingSoonPage'
 import { useAuth } from '@/hooks/useAuth'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
+import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
 import { pageLabelForPath } from '@/lib/pageFeatures'
 
 /** True when a parent layout already rendered the app chrome. */
@@ -85,13 +86,15 @@ export default function DashboardLayout({
 
   return (
     <DashboardShellContext.Provider value={true}>
-      <div className="min-h-screen bg-gray-50">
-        <Sidebar />
-        <div className={contentOffset}>
-          <Header />
-          <main className="p-8">{content}</main>
+      <KeyboardShortcutsProvider>
+        <div className="min-h-screen bg-gray-50">
+          <Sidebar />
+          <div className={contentOffset}>
+            <Header />
+            <main className="p-8">{content}</main>
+          </div>
         </div>
-      </div>
+      </KeyboardShortcutsProvider>
     </DashboardShellContext.Provider>
   )
 }

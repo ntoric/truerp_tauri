@@ -211,7 +211,9 @@ export default function CreatePurchaseInvoicePage() {
             p.name.toLowerCase() === (item.description || '').toLowerCase() ||
             (item.item_code && p.item_code === item.item_code)
           )
-          const taxRate = matchedProduct?.tax_rate ?? parseItemNumber(item.tax_rate, 18)
+          const taxRate = matchedProduct
+            ? productTaxRate(matchedProduct)
+            : parseItemNumber(item.tax_rate)
           const withTax = matchedProduct?.purchase_price_with_tax ?? item.purchase_price_with_tax ?? false
           const rawPrice = matchedProduct
             ? matchedProduct.purchase_price
@@ -589,7 +591,7 @@ export default function CreatePurchaseInvoicePage() {
   }
 
   const addItem = () => {
-    setItems([...items, { product_id: '', item_code: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, mrp: 0, sale_price: 0, unit: 'PCS', tax_amount: 0, total: 0, purchase_price_with_tax: false, batch_no: '', mfg_date: '', exp_date: '', enable_batching: false }])
+    setItems([...items, { product_id: '', item_code: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 0, mrp: 0, sale_price: 0, unit: 'PCS', tax_amount: 0, total: 0, purchase_price_with_tax: false, batch_no: '', mfg_date: '', exp_date: '', enable_batching: false }])
   }
 
   const removeItem = (index: number) => {
@@ -729,7 +731,7 @@ export default function CreatePurchaseInvoicePage() {
   return (
     <DashboardLayout>
       <div className="max-w-7xl space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <Button variant="outline" size="icon" onClick={() => router.push('/purchase-invoices')}>
               <ArrowLeft className="h-4 w-4" />
@@ -747,7 +749,7 @@ export default function CreatePurchaseInvoicePage() {
             <CardHeader>
               <CardTitle>Invoice Details</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="space-y-2">
                 <Label>Purchase Invoice Number</Label>
                 <Input 
@@ -756,9 +758,9 @@ export default function CreatePurchaseInvoicePage() {
                   placeholder="Auto-generated if empty"
                 />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2 xl:col-span-1">
                 <Label>Vendor *</Label>
-                <div className="flex gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <select
                     value={vendorId}
                     onChange={(e) => {
@@ -766,7 +768,7 @@ export default function CreatePurchaseInvoicePage() {
                       setVendorId(e.target.value)
                     }}
                     className={cn(
-                      'flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm',
+                      'flex h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm',
                       fieldErrors.vendor_id && 'border-red-500'
                     )}
                     required
@@ -774,7 +776,7 @@ export default function CreatePurchaseInvoicePage() {
                     <option value="">Select Vendor</option>
                     {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                   </select>
-                  <Button type="button" variant="outline" size="icon" onClick={() => setShowAddVendor(true)}>
+                  <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => setShowAddVendor(true)}>
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>

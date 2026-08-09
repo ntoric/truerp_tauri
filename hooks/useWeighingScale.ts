@@ -261,6 +261,14 @@ export function useWeighingScale() {
     [getCapturedWeightKg, settings.decimal_places]
   )
 
+  /** Clear the last live reading (e.g. after checkout). Does not disconnect the scale. */
+  const clearReading = useCallback(() => {
+    setCurrentWeightKg(null)
+    setIsStable(false)
+    stableCounterRef.current = 0
+    lastReadingRef.current = null
+  }, [])
+
   return {
     settings,
     settingsLoaded,
@@ -274,6 +282,7 @@ export function useWeighingScale() {
     disconnect,
     getCapturedWeightKg,
     getQuantityForProduct,
+    clearReading,
     isSupported: isWebSerialSupported(),
   }
 }

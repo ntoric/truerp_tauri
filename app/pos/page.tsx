@@ -19,11 +19,16 @@ import { Gift } from 'lucide-react'
 import { useWeighingScale } from '@/hooks/useWeighingScale'
 import WeighingScalePanel from '@/components/WeighingScalePanel'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
-import { resolveScaleBarcodeForPos, looksLikeScaleBarcode } from '@/lib/weighingScaleBarcode'
+import {
+  resolveScaleBarcodeForPos,
+  looksLikeScaleBarcode,
+  findProductByExactScanCode,
+} from '@/lib/weighingScaleBarcode'
 import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/components/ui/BarcodeScannerInput'
 import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
 import { linePayableTotal, lineTaxAmount, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
 import { fetchProductBatches, pickDefaultBatch } from '@/lib/productBatches'
+import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
 
 interface Product {
   id: string
@@ -134,6 +139,7 @@ export default function POSPage() {
     connect: connectScale,
     disconnect: disconnectScale,
     getQuantityForProduct,
+    clearReading: clearScaleReading,
   } = useWeighingScale()
 
   const activeTab = useMemo(() => tabs.find(tab => tab.id === activeTabId) || tabs[0], [tabs, activeTabId])
@@ -407,7 +413,9 @@ export default function POSPage() {
     )
 
   const addToCartWithQuantity = async (product: Product, quantity: number) => {
-    const q = Math.max(quantity, 0.001)
+    const q = isWeightBasedUnit(product.unit)
+      ? Math.max(quantity, 0.001)
+      : Math.max(1, Math.round(quantity))
     let batch_no = ''
     let exp_date: string | null = null
 
@@ -427,7 +435,10 @@ export default function POSPage() {
       (item) => cartLineKey(item.product.id, item.batch_no) === key
     )
     if (existingItem) {
-      updateQuantity(product.id, existingItem.quantity + q, batch_no)
+      const nextQty = isWeightBasedUnit(product.unit)
+        ? existingItem.quantity + q
+        : Math.round(existingItem.quantity) + Math.round(q)
+      updateQuantity(product.id, nextQty, batch_no)
     } else {
       updateTab(activeTabId, {
         cart: [
@@ -458,6 +469,16 @@ export default function POSPage() {
     const code = raw.trim()
     if (!code) return
 
+    // Retail barcodes: exact item_code/sku match — always qty 1 (never stale scale weight).
+    const exactProduct = findProductByExactScanCode(code, products)
+    if (exactProduct) {
+      void addToCartWithQuantity(exactProduct, 1)
+      notifySuccess(`Added: ${exactProduct.name}`)
+      barcodeInputRef.current?.clear()
+      barcodeInputRef.current?.focus()
+      return
+    }
+
     if (scaleSettings.barcode_scan_enabled) {
       const scaleHit = resolveScaleBarcodeForPos(code, scaleSettings, products)
       if (scaleHit) {
@@ -475,17 +496,6 @@ export default function POSPage() {
         barcodeInputRef.current?.clear()
         return
       }
-    }
-
-    const byItemCode = products.find((p) => p.item_code?.trim() === code)
-    const bySku = products.find((p) => p.sku?.trim() === code)
-    const product = byItemCode ?? bySku
-    if (product) {
-      addToCart(product)
-      notifySuccess(`Added: ${product.name}`)
-      barcodeInputRef.current?.clear()
-      barcodeInputRef.current?.focus()
-      return
     }
 
     notifyError('Product not found for scanned item code')
@@ -526,7 +536,14 @@ export default function POSPage() {
   const formatCartQuantity = (item: CartItem) =>
     isWeightBasedUnit(item.product.unit)
       ? item.quantity.toFixed(scaleSettings.decimal_places)
-      : String(item.quantity)
+      : String(Math.round(item.quantity))
+
+  const adjustCartQuantity = (item: CartItem, delta: number) => {
+    const next = isWeightBasedUnit(item.product.unit)
+      ? item.quantity + delta
+      : Math.round(item.quantity) + delta
+    updateQuantity(item.product.id, next, item.batch_no)
+  }
 
   const commitQuantityEdit = (productId: string, raw: string, unit: string, batchNo?: string) => {
     const parsed = parseFloat(raw)
@@ -537,7 +554,7 @@ export default function POSPage() {
     }
     const quantity = isWeightBasedUnit(unit)
       ? Math.round(parsed * Math.pow(10, scaleSettings.decimal_places)) / Math.pow(10, scaleSettings.decimal_places)
-      : Math.round(parsed * 1000) / 1000
+      : Math.round(parsed)
     updateQuantity(productId, quantity, batchNo)
     setEditingQty(null)
   }
@@ -830,9 +847,11 @@ export default function POSPage() {
     const completeSaleLocally = async () => {
       updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer })
       setIsEditingCustomer(false)
+      setEditingQty(null)
       setPaymentMethod('upi')
       setReceivedAmount('')
       setLoyaltyPointsToRedeem(0)
+      clearScaleReading()
       if (session) {
         const updatedSession = { ...session, total_sales: session.total_sales + roundedTotal }
         setSession(updatedSession)
@@ -915,6 +934,7 @@ export default function POSPage() {
   }
 
   return (
+    <KeyboardShortcutsProvider>
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
       {/* Compact Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 bg-white border-b shadow-sm">
@@ -1305,7 +1325,7 @@ export default function POSPage() {
                     variant="outline"
                     onClick={() => {
                       setEditingQty(null)
-                      updateQuantity(item.product.id, item.quantity - 1, item.batch_no)
+                      adjustCartQuantity(item, -1)
                     }}
                     className="h-6 w-6 p-0"
                   >
@@ -1313,8 +1333,8 @@ export default function POSPage() {
                   </Button>
                   <Input
                     type="number"
-                    inputMode="decimal"
-                    min={0.001}
+                    inputMode={isWeightBasedUnit(item.product.unit) ? 'decimal' : 'numeric'}
+                    min={isWeightBasedUnit(item.product.unit) ? 0.001 : 1}
                     step={isWeightBasedUnit(item.product.unit) ? Math.pow(10, -scaleSettings.decimal_places) : 1}
                     value={
                       editingQty?.productId === cartLineKey(item.product.id, item.batch_no)
@@ -1379,7 +1399,7 @@ export default function POSPage() {
                     variant="outline"
                     onClick={() => {
                       setEditingQty(null)
-                      updateQuantity(item.product.id, item.quantity + 1, item.batch_no)
+                      adjustCartQuantity(item, 1)
                     }}
                     className="h-6 w-6 p-0"
                   >
@@ -1553,5 +1573,6 @@ export default function POSPage() {
       )}
 
     </div>
+    </KeyboardShortcutsProvider>
   )
 }

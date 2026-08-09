@@ -216,6 +216,18 @@ export function looksLikeScaleBarcode(
   )
 }
 
+/** Exact match on item_code or sku — takes priority over scale barcode parsing. */
+export function findProductByExactScanCode<T extends { item_code?: string; sku?: string }>(
+  code: string,
+  products: T[]
+): T | null {
+  const trimmed = code.trim()
+  if (!trimmed) return null
+  const byItemCode = products.find((p) => p.item_code?.trim() === trimmed)
+  const bySku = products.find((p) => p.sku?.trim() === trimmed)
+  return byItemCode ?? bySku ?? null
+}
+
 export function findProductByScalePlu(
   plu: string,
   products: WeighingScaleProductRef[],
