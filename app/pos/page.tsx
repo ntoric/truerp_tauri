@@ -29,6 +29,7 @@ import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
 import { linePayableTotal, lineTaxAmount, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
 import { fetchProductBatches, pickDefaultBatch } from '@/lib/productBatches'
 import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
+import KeyboardShortcutsTrigger from '@/components/keyboard-shortcuts/KeyboardShortcutsTrigger'
 
 interface Product {
   id: string
@@ -969,6 +970,7 @@ export default function POSPage() {
               {isSyncing ? 'Syncing...' : `Sync ${syncStatus.pending}`}
             </Button>
           )}
+          <KeyboardShortcutsTrigger variant="compact" />
           <Button variant="ghost" size="sm" asChild className="h-8">
             <Link href="/pos/sessions">
               <History className="h-4 w-4 mr-1" />

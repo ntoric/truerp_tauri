@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -134,6 +135,8 @@ export default function CreateInvoicePage() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set())
+  const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set())
   const [showCreateProduct, setShowCreateProduct] = useState(false)
   const [barcodeScannerEnabled, setBarcodeScannerEnabled] = useState(false)
   const [productSearch, setProductSearch] = useState('')
@@ -287,7 +290,7 @@ export default function CreateInvoicePage() {
     prevLoyaltyDiscountRef.current = 0
   }, [partyId, selectedParty])
 
-  const addProductToInvoice = (product: Product, overrideQuantity?: number) => {
+  const buildInvoiceItemFromProduct = (product: Product, overrideQuantity?: number): InvoiceItem | null => {
     let quantity = overrideQuantity ?? 1
     if (
       overrideQuantity === undefined &&
@@ -301,11 +304,11 @@ export default function CreateInvoicePage() {
         quantity = scaleQty
       } else if (scaleSettings.require_stable_weight) {
         notifyError('Wait for a stable weight reading on the scale')
-        return
+        return null
       }
     }
 
-    const newItem: InvoiceItem = {
+    return {
       product_id: product.id,
       description: product.name,
       hsn_code: product.hsn_code || '',
@@ -323,53 +326,127 @@ export default function CreateInvoicePage() {
       exp_date: '',
       enable_batching: product.enable_batching ?? false,
     }
+  }
+
+  const applyTaxToInvoiceItem = (item: InvoiceItem, interState: boolean): InvoiceItem => {
+    const qty = parseItemNumber(item.quantity)
+    const price = parseMoney(item.unit_price)
+    const disc = parseItemNumber(item.discount)
+    const tax = parseItemNumber(item.tax_rate)
+    const itemTotal = qty * price
+    const itemDiscount = itemTotal * (disc / 100)
+    const taxable = itemTotal - itemDiscount
+    const itemTax = taxable * (tax / 100)
+    const next = { ...item, quantity: qty, unit_price: price, discount: disc, tax_rate: tax }
+    if (interState) {
+      next.igst = itemTax
+      next.cgst = 0
+      next.sgst = 0
+    } else {
+      next.cgst = itemTax / 2
+      next.sgst = itemTax / 2
+      next.igst = 0
+    }
+    next.total = taxable + next.cgst + next.sgst + next.igst
+    return next
+  }
+
+  const applyBatchDefaults = (product: Product, lineIndex: number) => {
+    if (!product.enable_batching) return
+    void (async () => {
+      const batches = await fetchProductBatches(product.id)
+      setItems((prev) => {
+        if (!prev[lineIndex]) return prev
+        setLineBatches((lb) => ({ ...lb, [lineIndex]: batches }))
+        if (!batches.length) return prev
+        const copy = [...prev]
+        copy[lineIndex] = {
+          ...copy[lineIndex],
+          batch_no: batches[0].batch_no || '',
+          exp_date: batches[0].exp_date ? String(batches[0].exp_date).slice(0, 10) : '',
+          enable_batching: true,
+        }
+        return copy
+      })
+    })()
+  }
+
+  const addProductsToInvoice = (products: Product[], options?: { closeModal?: boolean }) => {
+    if (products.length === 0) return
+
+    const builtItems = products
+      .map((product) => buildInvoiceItemFromProduct(product))
+      .filter((item): item is InvoiceItem => item !== null)
+    if (builtItems.length === 0) return
+
+    let startIndex = 0
     setItems((prev) => {
-      const next = [...prev, newItem]
-      const index = next.length - 1
-      const qty = parseItemNumber(next[index].quantity)
-      const price = parseMoney(next[index].unit_price)
-      const disc = parseItemNumber(next[index].discount)
-      const tax = parseItemNumber(next[index].tax_rate)
-      const itemTotal = qty * price
-      const itemDiscount = itemTotal * (disc / 100)
-      const taxable = itemTotal - itemDiscount
-      const itemTax = taxable * (tax / 100)
-      next[index].quantity = qty
-      next[index].unit_price = price
-      next[index].discount = disc
-      next[index].tax_rate = tax
-      if (isInterState) {
-        next[index].igst = itemTax
-        next[index].cgst = 0
-        next[index].sgst = 0
-      } else {
-        next[index].cgst = itemTax / 2
-        next[index].sgst = itemTax / 2
-        next[index].igst = 0
+      startIndex = prev.length
+      return [...prev, ...builtItems.map((item) => applyTaxToInvoiceItem(item, isInterState))]
+    })
+    products.forEach((product, offset) => {
+      if (product.enable_batching) {
+        applyBatchDefaults(product, startIndex + offset)
       }
-      next[index].total = taxable + next[index].cgst + next[index].sgst + next[index].igst
-      return next
+    })
+
+    if (options?.closeModal !== false) {
+      setShowProductModal(false)
+      setProductSearch('')
+      setSelectedProductIds(new Set())
+    }
+  }
+
+  const addProductToInvoice = (product: Product, overrideQuantity?: number) => {
+    const item = buildInvoiceItemFromProduct(product, overrideQuantity)
+    if (!item) return
+
+    let lineIndex = 0
+    setItems((prev) => {
+      lineIndex = prev.length
+      return [...prev, applyTaxToInvoiceItem(item, isInterState)]
     })
     if (product.enable_batching) {
-      void (async () => {
-        const batches = await fetchProductBatches(product.id)
-        setItems((prev) => {
-          const target = prev.length - 1
-          setLineBatches((lb) => ({ ...lb, [target]: batches }))
-          if (!batches.length || !prev[target]) return prev
-          const copy = [...prev]
-          copy[target] = {
-            ...copy[target],
-            batch_no: batches[0].batch_no || '',
-            exp_date: batches[0].exp_date ? String(batches[0].exp_date).slice(0, 10) : '',
-            enable_batching: true,
-          }
-          return copy
-        })
-      })()
+      applyBatchDefaults(product, lineIndex)
     }
     setShowProductModal(false)
     setProductSearch('')
+    setSelectedProductIds(new Set())
+  }
+
+  const toggleProductSelection = (productId: string) => {
+    setSelectedProductIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(productId)) next.delete(productId)
+      else next.add(productId)
+      return next
+    })
+  }
+
+  const toggleSelectAllProducts = () => {
+    if (selectedProductIds.size === filteredProducts.length) {
+      setSelectedProductIds(new Set())
+    } else {
+      setSelectedProductIds(new Set(filteredProducts.map((p) => p.id)))
+    }
+  }
+
+  const handleAddSelectedProducts = () => {
+    const selected = filteredProducts.filter((p) => selectedProductIds.has(p.id))
+    addProductsToInvoice(selected, { closeModal: true })
+    if (selected.length > 1) {
+      notifySuccess(`Added ${selected.length} items to invoice`)
+    }
+  }
+
+  const openProductModal = () => {
+    setSelectedProductIds(new Set())
+    setShowProductModal(true)
+  }
+
+  const closeProductModal = () => {
+    setShowProductModal(false)
+    setSelectedProductIds(new Set())
   }
 
   const applyScaleWeightToInvoiceLine = (index: number, unit: string) => {
@@ -582,7 +659,42 @@ export default function CreateInvoicePage() {
   const removeItem = (index: number) => {
     if (items.length > 1) {
       setItems(items.filter((_, i) => i !== index))
+      setSelectedLineIndices((prev) => {
+        const next = new Set<number>()
+        prev.forEach((i) => {
+          if (i < index) next.add(i)
+          else if (i > index) next.add(i - 1)
+        })
+        return next
+      })
     }
+  }
+
+  const toggleLineItemSelection = (index: number) => {
+    setSelectedLineIndices((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  const toggleSelectAllLineItems = () => {
+    if (selectedLineIndices.size === items.length) {
+      setSelectedLineIndices(new Set())
+    } else {
+      setSelectedLineIndices(new Set(items.map((_, index) => index)))
+    }
+  }
+
+  const removeSelectedLineItems = () => {
+    if (selectedLineIndices.size === 0) return
+    if (items.length - selectedLineIndices.size < 1) {
+      notifyError('At least one line item is required')
+      return
+    }
+    setItems(items.filter((_, index) => !selectedLineIndices.has(index)))
+    setSelectedLineIndices(new Set())
   }
 
   const subTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
@@ -1013,7 +1125,7 @@ export default function CreateInvoicePage() {
               <div className="flex items-center justify-between">
                 <CardTitle>Items</CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setShowProductModal(true)}>
+                  <Button type="button" variant="outline" size="sm" onClick={openProductModal}>
                     <Package className="mr-2 h-4 w-4" /> Add Item to Bill
                   </Button>
                   <BarcodeScannerInput
@@ -1052,10 +1164,25 @@ export default function CreateInvoicePage() {
                 }
               />
               <FieldError message={fieldErrors.items} />
+              {selectedLineIndices.size > 0 && (
+                <div className="flex items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
+                  <span className="text-sm text-gray-600">{selectedLineIndices.size} line item(s) selected</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto text-red-600 hover:bg-red-50"
+                    onClick={removeSelectedLineItems}
+                  >
+                    <Trash2 className="mr-1 h-3.5 w-3.5" /> Remove Selected
+                  </Button>
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full table-fixed text-sm">
                   <colgroup>
-                    <col className="w-[28%]" />
+                    <col className="w-[4%]" />
+                    <col className="w-[24%]" />
                     <col className="w-[12%]" />
                     <col className="w-[12%]" />
                     <col className="w-[12%]" />
@@ -1066,6 +1193,13 @@ export default function CreateInvoicePage() {
                   </colgroup>
                   <thead>
                     <tr className="border-b text-left text-gray-500">
+                      <th className="pb-2 pr-2">
+                        <Checkbox
+                          checked={items.length > 0 && selectedLineIndices.size === items.length}
+                          onCheckedChange={toggleSelectAllLineItems}
+                          aria-label="Select all line items"
+                        />
+                      </th>
                       <th className="pb-2 pr-2 font-medium">Item</th>
                       <th className="pb-2 px-1 font-medium">HSN</th>
                       <th className="pb-2 px-1 font-medium text-right">Quantity</th>
@@ -1079,6 +1213,13 @@ export default function CreateInvoicePage() {
                   <tbody>
                     {items.map((item, index) => (
                       <tr key={index} className="border-b">
+                        <td className="py-2 pr-2">
+                          <Checkbox
+                            checked={selectedLineIndices.has(index)}
+                            onCheckedChange={() => toggleLineItemSelection(index)}
+                            aria-label={`Select line item ${index + 1}`}
+                          />
+                        </td>
                         <td className="py-2 pr-2">
                           <Input
                             value={item.description}
@@ -1423,10 +1564,18 @@ export default function CreateInvoicePage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Select Product</CardTitle>
-                  <Button type="button" variant="ghost" size="icon" onClick={() => setShowProductModal(false)}>
+                  <Button type="button" variant="ghost" size="icon" onClick={closeProductModal}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
+                {selectedProductIds.size > 0 && (
+                  <div className="mt-3 flex items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
+                    <span className="text-sm text-gray-600">{selectedProductIds.size} selected</span>
+                    <Button type="button" size="sm" className="ml-auto" onClick={handleAddSelectedProducts}>
+                      Add Selected ({selectedProductIds.size})
+                    </Button>
+                  </div>
+                )}
                 <div className="flex gap-4">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -1452,6 +1601,13 @@ export default function CreateInvoicePage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-gray-500">
+                        <th className="pb-2 pr-2">
+                          <Checkbox
+                            checked={filteredProducts.length > 0 && selectedProductIds.size === filteredProducts.length}
+                            onCheckedChange={toggleSelectAllProducts}
+                            aria-label="Select all products"
+                          />
+                        </th>
                         <th className="pb-2 font-medium">Item Name</th>
                         <th className="pb-2 font-medium">Item Code/SKU</th>
                         <th className="pb-2 font-medium text-right">Stock</th>
@@ -1463,6 +1619,13 @@ export default function CreateInvoicePage() {
                     <tbody>
                       {filteredProducts.map(product => (
                         <tr key={product.id} className="border-b hover:bg-gray-50">
+                          <td className="py-2 pr-2">
+                            <Checkbox
+                              checked={selectedProductIds.has(product.id)}
+                              onCheckedChange={() => toggleProductSelection(product.id)}
+                              aria-label={`Select ${product.name}`}
+                            />
+                          </td>
                           <td className="py-2 font-medium">{product.name}</td>
                           <td className="py-2 text-gray-600">{product.sku || product.item_code || '-'}</td>
                           <td className="py-2 text-right">{product.stock_qty} {product.unit}</td>
@@ -1481,7 +1644,7 @@ export default function CreateInvoicePage() {
                       ))}
                       {filteredProducts.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="py-8 text-center text-gray-500">
+                          <td colSpan={7} className="py-8 text-center text-gray-500">
                             No products found
                           </td>
                         </tr>

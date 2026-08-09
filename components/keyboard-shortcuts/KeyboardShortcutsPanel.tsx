@@ -1,6 +1,6 @@
 'use client'
 
-import { HelpCircle, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/keyboard-shortcuts/Kbd'
 import type { ShortcutDefinition } from '@/lib/keyboardShortcuts'
@@ -91,19 +91,6 @@ export default function KeyboardShortcutsPanel({
           <ShortcutSection title="Create" items={create} />
         </div>
       </aside>
-
-      <button
-        type="button"
-        onClick={() => onOpenChange(true)}
-        className={cn(
-          'fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gray-900 text-white shadow-lg transition-all hover:bg-gray-800 hover:shadow-xl',
-          open && 'scale-0 opacity-0 pointer-events-none'
-        )}
-        title="Keyboard shortcuts (Alt)"
-        aria-label="Show keyboard shortcuts"
-      >
-        <HelpCircle className="h-6 w-6" />
-      </button>
     </>
   )
 }

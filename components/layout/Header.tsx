@@ -6,6 +6,7 @@ import { useStore } from '@/hooks/useStore'
 import { ShoppingCart, Store, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import NotificationBell from './NotificationBell'
+import KeyboardShortcutsTrigger from '@/components/keyboard-shortcuts/KeyboardShortcutsTrigger'
 import {
   Select,
   SelectContent,
@@ -57,6 +58,7 @@ export default function Header() {
             <span>POS</span>
           </Link>
         </Button>
+        <KeyboardShortcutsTrigger />
         <NotificationBell />
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-blue-700">
