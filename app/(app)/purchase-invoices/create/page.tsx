@@ -154,6 +154,18 @@ export default function CreatePurchaseInvoicePage() {
   const [matchingProducts, setMatchingProducts] = useState<Product[]>([])
   const [showProductSelector, setShowProductSelector] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [savedBillId, setSavedBillId] = useState<string | null>(editId)
+  const [billStatus, setBillStatus] = useState<string>(editId ? '' : 'draft')
+  const [autosaveEnabled, setAutosaveEnabled] = useState(!editId)
+  const [draftSaveStatus, setDraftSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error' | 'need_vendor'>('idle')
+  const [draftSaveError, setDraftSaveError] = useState('')
+  const [draftSaveTick, setDraftSaveTick] = useState(0)
+  const draftAutosaveInFlightRef = useRef(false)
+  const draftAutosaveQueuedRef = useRef(false)
+  const skipNextBillFetchRef = useRef(false)
+  const formHydratedRef = useRef(!editId)
+  const suppressAutosaveRef = useRef(false)
+  const persistDraftRef = useRef<() => Promise<void>>(async () => {})
 
   useEffect(() => {
     fetchData()
@@ -186,7 +198,18 @@ export default function CreatePurchaseInvoicePage() {
   }, [productSearch, selectedCategory, products])
 
   useEffect(() => {
+    if (editId) {
+      setSavedBillId(editId)
+    }
+  }, [editId])
+
+  useEffect(() => {
     if (editId && products.length > 0) {
+      if (skipNextBillFetchRef.current) {
+        skipNextBillFetchRef.current = false
+        formHydratedRef.current = true
+        return
+      }
       fetchBillData()
     }
   }, [editId, products.length])
@@ -310,6 +333,11 @@ export default function CreatePurchaseInvoicePage() {
         setNotes(bill.notes || '')
         setAmountPaid(bill.paid_amount || 0)
         setPendingBillAccountId(bill.bank_account_id ?? null)
+        setBillStatus(bill.status || '')
+        setSavedBillId(bill.id || editId)
+        setAutosaveEnabled((bill.status || '') === 'draft')
+        formHydratedRef.current = true
+        suppressAutosaveRef.current = true
         setItems(
           (bill.items || []).map((item: any) => {
             const prod = products.find((p: Product) => p.id === item.product_id)
@@ -722,41 +750,101 @@ export default function CreatePurchaseInvoicePage() {
   const totalAmount = totalBeforeRound
   const balance = totalAmount - amountPaid
 
-  const handleSubmit = async (e: React.FormEvent, asDraft = false) => {
-    e.preventDefault()
+  const itemNeedsBatch = (item: PurchaseBillItem, productList: Product[] = products) =>
+    Boolean(item.enable_batching) ||
+    Boolean(productList.find((p) => p.id === item.product_id)?.enable_batching)
+
+  const isItemReadyForDraft = (item: PurchaseBillItem) => {
+    const hasIdentity = Boolean(item.product_id || String(item.description || '').trim())
+    if (!hasIdentity) return false
+    if (parseItemNumber(item.quantity) <= 0) return false
+    return true
+  }
+
+  const buildBillPayload = (asDraft: boolean, sourceItems: PurchaseBillItem[]) => {
+    const status = asDraft
+      ? 'draft'
+      : (amountPaid >= totalAmount ? 'paid' : (amountPaid > 0 ? 'partial' : 'unpaid'))
+    const resolvedBillNumber = billNumber || `PINV-${Date.now()}`
+    return {
+      resolvedBillNumber,
+      body: {
+        party_id: vendorId,
+        bill_number: resolvedBillNumber,
+        bill_date: new Date(billDate).toISOString(),
+        due_date: dueDate ? new Date(dueDate).toISOString() : null,
+        warehouse_id: warehouseId || null,
+        total_amount: totalAmount,
+        paid_amount: amountPaid,
+        balance_due: balance,
+        payment_mode: paidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
+        bank_account_id: bankAccountIdForApi(paidFrom),
+        status,
+        notes,
+        terms,
+        items: sourceItems.map((item) => ({
+          product_id: item.product_id || null,
+          item_code: item.item_code,
+          description: item.description,
+          quantity: parseItemNumber(item.quantity),
+          unit: item.unit,
+          unit_price: parseMoney(item.unit_price),
+          discount: parseItemNumber(item.discount),
+          tax_rate: parseItemNumber(item.tax_rate),
+          mrp: parseMoney(item.mrp),
+          sale_price: parseMoney(item.sale_price),
+          hsn_code: item.hsn_code,
+          batch_no: item.batch_no || '',
+          mfg_date: item.mfg_date || null,
+          exp_date: item.exp_date || null,
+        })),
+      },
+    }
+  }
+
+  const persistDraftSilently = async () => {
+    if (!autosaveEnabled || saving || loading) return
+
+    const readyItems = items.filter((item) => isItemReadyForDraft(item))
+    const hasAnyLine = items.some(
+      (item) => item.product_id || String(item.description || '').trim()
+    )
+
     if (!vendorId) {
-      setError('vendor_id', 'Please select a vendor')
-      showErrorToast('Please select a vendor')
+      if (hasAnyLine) {
+        setDraftSaveStatus('need_vendor')
+        setDraftSaveError('')
+      }
       return
     }
-    if (!asDraft && items.some(i => !i.description)) {
-      setError('items', 'Please fill all item details')
-      showErrorToast('Please fill all item details')
+
+    // New drafts need at least one line; existing drafts may sync an empty list after removals.
+    if (readyItems.length === 0 && !savedBillId) return
+
+    if (draftAutosaveInFlightRef.current) {
+      draftAutosaveQueuedRef.current = true
       return
     }
-    const missingBatch = items.find((i) => {
-      const batched =
-        Boolean(i.enable_batching) ||
-        Boolean(products.find((p) => p.id === i.product_id)?.enable_batching)
-      return batched && !String(i.batch_no || '').trim()
-    })
-    if (!asDraft && missingBatch) {
-      setError('items', `Batch number is required for ${missingBatch.description || 'batched product'}`)
-      showErrorToast(`Batch number is required for ${missingBatch.description || 'batched product'}`)
-      return
+
+    draftAutosaveInFlightRef.current = true
+    setDraftSaveStatus('saving')
+    setDraftSaveError('')
+
+    const billIdAtStart = savedBillId
+    const resolvedBillNumber = billNumber || `PINV-${Date.now()}`
+    if (!billNumber) {
+      setBillNumber(resolvedBillNumber)
     }
-    setSaving(true)
+
     try {
-      const url = editId ? `/purchase/bills/${editId}` : '/purchase/bills'
-      const method = editId ? 'PUT' : 'POST'
-      
-      const status = asDraft ? 'draft' : (amountPaid >= totalAmount ? 'paid' : (amountPaid > 0 ? 'partial' : 'unpaid'))
+      const url = billIdAtStart ? `/purchase/bills/${billIdAtStart}` : '/purchase/bills'
+      const method = billIdAtStart ? 'PUT' : 'POST'
 
       const res = await apiFetch(url, {
         method,
         body: JSON.stringify({
           party_id: vendorId,
-          bill_number: billNumber || `PINV-${Date.now()}`,
+          bill_number: resolvedBillNumber,
           bill_date: new Date(billDate).toISOString(),
           due_date: dueDate ? new Date(dueDate).toISOString() : null,
           warehouse_id: warehouseId || null,
@@ -765,13 +853,13 @@ export default function CreatePurchaseInvoicePage() {
           balance_due: balance,
           payment_mode: paidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
           bank_account_id: bankAccountIdForApi(paidFrom),
-          status,
+          status: 'draft',
           notes,
           terms,
-          items: items.map(item => ({
+          items: readyItems.map((item) => ({
             product_id: item.product_id || null,
             item_code: item.item_code,
-            description: item.description,
+            description: item.description || 'Item',
             quantity: parseItemNumber(item.quantity),
             unit: item.unit,
             unit_price: parseMoney(item.unit_price),
@@ -786,16 +874,121 @@ export default function CreatePurchaseInvoicePage() {
           })),
         }),
       })
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null)
+        setDraftSaveStatus('error')
+        setDraftSaveError(errBody?.error || `Save failed (${res.status})`)
+        return
+      }
+
+      const bill = await res.json().catch(() => null)
+      const newId = bill?.id as string | undefined
+      setBillStatus('draft')
+      setAutosaveEnabled(true)
+      if (newId && !billIdAtStart) {
+        setSavedBillId(newId)
+        skipNextBillFetchRef.current = true
+        formHydratedRef.current = true
+        router.replace(`/purchase-invoices/create?id=${newId}`, { scroll: false })
+      }
+      setDraftSaveStatus('saved')
+      setDraftSaveError('')
+    } catch (err) {
+      setDraftSaveStatus('error')
+      setDraftSaveError(err instanceof Error ? err.message : 'Draft autosave failed')
+    } finally {
+      draftAutosaveInFlightRef.current = false
+      if (draftAutosaveQueuedRef.current) {
+        draftAutosaveQueuedRef.current = false
+        setDraftSaveTick((tick) => tick + 1)
+      }
+    }
+  }
+
+  persistDraftRef.current = persistDraftSilently
+
+  // Autosave draft whenever the form changes (debounced).
+  useEffect(() => {
+    if (!autosaveEnabled || saving || loading || !formHydratedRef.current) return
+    if (suppressAutosaveRef.current) {
+      suppressAutosaveRef.current = false
+      return
+    }
+
+    const timer = setTimeout(() => {
+      void persistDraftRef.current()
+    }, 700)
+
+    return () => clearTimeout(timer)
+  }, [
+    autosaveEnabled,
+    saving,
+    loading,
+    vendorId,
+    billNumber,
+    billDate,
+    dueDate,
+    warehouseId,
+    notes,
+    terms,
+    amountPaid,
+    paidFrom,
+    invoiceDiscount,
+    additionalCharges,
+    autoRoundOff,
+    items,
+    totalAmount,
+    savedBillId,
+    draftSaveTick,
+  ])
+
+  const handleSubmit = async (e: React.FormEvent, asDraft = false) => {
+    e.preventDefault()
+    if (!vendorId) {
+      setError('vendor_id', 'Please select a vendor')
+      showErrorToast('Please select a vendor')
+      return
+    }
+    if (!asDraft && items.some(i => !i.description)) {
+      setError('items', 'Please fill all item details')
+      showErrorToast('Please fill all item details')
+      return
+    }
+    const missingBatch = items.find((i) => {
+      return itemNeedsBatch(i) && !String(i.batch_no || '').trim()
+    })
+    if (!asDraft && missingBatch) {
+      setError('items', `Batch number is required for ${missingBatch.description || 'batched product'}`)
+      showErrorToast(`Batch number is required for ${missingBatch.description || 'batched product'}`)
+      return
+    }
+    setSaving(true)
+    // Stop background autosave while the explicit submit is in flight.
+    if (!asDraft) setAutosaveEnabled(false)
+    try {
+      const billId = savedBillId || editId
+      const url = billId ? `/purchase/bills/${billId}` : '/purchase/bills'
+      const method = billId ? 'PUT' : 'POST'
+      const { resolvedBillNumber, body } = buildBillPayload(asDraft, items)
+      if (!billNumber) setBillNumber(resolvedBillNumber)
+
+      const res = await apiFetch(url, {
+        method,
+        body: JSON.stringify(body),
+      })
       if (res.ok) {
         const bill = await res.json().catch(() => null)
-        if (!asDraft && bill?.stock_status === 'pending') {
-          showSuccessToast('Purchase saved. Stock updates are pending approval in Inventory.')
+        if (!asDraft && bill?.stock_status === 'approved') {
+          showSuccessToast('Purchase saved. Inventory stock has been updated.')
         }
         router.push('/purchase-invoices')
       } else {
+        if (!asDraft) setAutosaveEnabled(true)
         await handleApiError(res)
       }
     } catch (err) {
+      if (!asDraft) setAutosaveEnabled(true)
       showErrorToast('An error occurred')
     } finally {
       setSaving(false)
@@ -846,7 +1039,23 @@ export default function CreatePurchaseInvoicePage() {
             <Button variant="outline" size="icon" onClick={() => router.push('/purchase-invoices')}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <h1 className="text-2xl font-bold text-gray-900">{editId ? 'Edit' : 'Create'} Purchase Invoice</h1>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{editId || savedBillId ? 'Edit' : 'Create'} Purchase Invoice</h1>
+              {autosaveEnabled && draftSaveStatus !== 'idle' && (
+                <p className={cn(
+                  'mt-1 text-xs',
+                  draftSaveStatus === 'saving' && 'text-gray-500',
+                  draftSaveStatus === 'saved' && 'text-green-600',
+                  draftSaveStatus === 'need_vendor' && 'text-amber-600',
+                  draftSaveStatus === 'error' && 'text-red-600',
+                )}>
+                  {draftSaveStatus === 'saving' && 'Saving draft…'}
+                  {draftSaveStatus === 'saved' && 'Draft saved'}
+                  {draftSaveStatus === 'need_vendor' && 'Select a vendor to autosave draft'}
+                  {draftSaveStatus === 'error' && (draftSaveError || 'Draft autosave failed')}
+                </p>
+              )}
+            </div>
           </div>
           <Button type="button" variant="outline" onClick={() => router.push('/purchase-invoices/ai-parse')}>
             <Camera className="mr-2 h-4 w-4" />
@@ -919,7 +1128,7 @@ export default function CreatePurchaseInvoicePage() {
                   ))}
                 </select>
                 <p className="text-xs text-gray-500">
-                  Linked products will create stock entries pending approval in Inventory.
+                  Linked products will update inventory stock when this purchase is saved.
                 </p>
               </div>
             </CardContent>

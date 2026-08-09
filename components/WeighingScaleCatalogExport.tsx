@@ -91,7 +91,7 @@ export default function WeighingScaleCatalogExport({
           </p>
           <p className="text-xs text-muted-foreground">
             Download a file and import it on the weighing machine so PLU / barcodes match your products.
-            Default columns: item_code, plu, name, price
+            Default columns: item_code, plu, name, price, weight_type (1 = weight, 2 = non-weight)
             {settings.csv_extra_fields.length > 0
               ? `, plus ${settings.csv_extra_fields.length} extra field(s)`
               : ''}

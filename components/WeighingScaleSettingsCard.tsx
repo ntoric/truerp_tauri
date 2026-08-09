@@ -537,7 +537,7 @@ export default function WeighingScaleSettingsCard() {
             <div className="space-y-2 rounded-md border p-3">
               <Label>Additional product fields</Label>
               <p className="text-xs text-muted-foreground">
-                Optional columns appended after item_code, plu, name, and price.
+                Optional columns appended after item_code, plu, name, price, and weight_type.
               </p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {SCALE_CSV_EXTRA_FIELD_OPTIONS.map(({ key, label }) => {

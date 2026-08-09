@@ -197,8 +197,10 @@ export default function PurchaseInvoicesPage() {
       paid: 'bg-green-100 text-green-700',
       unpaid: 'bg-orange-100 text-orange-700',
       partial: 'bg-yellow-100 text-yellow-700',
+      draft: 'bg-slate-100 text-slate-700',
     }
-    return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] || 'bg-gray-100 text-gray-700'}`}>{status}</span>
+    const label = status === 'draft' ? 'Draft' : status
+    return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] || 'bg-gray-100 text-gray-700'}`}>{label}</span>
   }
 
   const getStockStatusBadge = (status?: string) => {
@@ -213,7 +215,7 @@ export default function PurchaseInvoicesPage() {
     }
     const labels: Record<string, string> = {
       pending: 'Stock pending',
-      approved: 'Stock approved',
+      approved: 'Stock updated',
       rejected: 'Stock rejected',
       partial: 'Stock partial',
     }
@@ -741,8 +743,10 @@ export default function PurchaseInvoicesPage() {
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">All Status</option>
+                <option value="draft">Draft</option>
                 <option value="paid">Paid</option>
                 <option value="unpaid">Unpaid</option>
+                <option value="partial">Partial</option>
                 <option value="partial">Partial</option>
               </select>
               <Input

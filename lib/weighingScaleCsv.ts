@@ -36,7 +36,14 @@ export const SCALE_CSV_CORE_HEADERS = {
   plu: 'plu',
   name: 'name',
   price: 'price',
+  /** 1 = weight item, 2 = non-weight item (scale import convention). */
+  weight_type: 'weight_type',
 } as const
+
+/** Scale catalog value: weight-based unit → 1, piece/other → 2. */
+export function scaleCatalogWeightType(unit: string | undefined | null): '1' | '2' {
+  return isWeightBasedUnit(unit) ? '1' : '2'
+}
 
 export const SCALE_CSV_EXTRA_FIELD_OPTIONS: Array<{
   key: WeighingScaleCsvExtraField
@@ -194,7 +201,15 @@ export function buildScaleCatalogCsv(
     ? products.filter((p) => isWeightBasedUnit(p.unit))
     : products
 
-  const headerCells = [codeHeader, pluHeader, nameHeader, priceHeader, ...extraFields]
+  const weightTypeHeader = SCALE_CSV_CORE_HEADERS.weight_type
+  const headerCells = [
+    codeHeader,
+    pluHeader,
+    nameHeader,
+    priceHeader,
+    weightTypeHeader,
+    ...extraFields,
+  ]
 
   const lines: string[] = []
   if (settings.csv_has_header) {
@@ -216,6 +231,7 @@ export function buildScaleCatalogCsv(
       plu,
       product.name,
       formatNumber(product.sale_price),
+      scaleCatalogWeightType(product.unit),
       ...extraFields.map((field) => extraFieldValue(product, field)),
     ]
       .map((c) => escapeCsvCell(String(c), delimiter))
