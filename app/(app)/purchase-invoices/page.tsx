@@ -11,7 +11,8 @@ import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate, asArray } from '@/lib/utils'
 import { accountingExportDateStamp, downloadBlob, downloadCsv, rowsToCsv } from '@/lib/accountingExport'
 import { runWithExportProgress } from '@/lib/exportProgress'
-import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2 } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2, Package } from 'lucide-react'
+import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import JSZip from 'jszip'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { downloadPurchaseBillPdf, printHtmlDocument } from '@/lib/printDocument'
@@ -105,6 +106,7 @@ export default function PurchaseInvoicesPage() {
   const [labelPreviewLoading, setLabelPreviewLoading] = useState(false)
   const labelPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
 
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
 
@@ -669,6 +671,14 @@ export default function PurchaseInvoicesPage() {
             <Button
               type="button"
               variant="outline"
+              onClick={() => setShowBulkCreateProducts(true)}
+            >
+              <Package className="mr-2 h-4 w-4" />
+              Bulk Create Products
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => void handleExport()}
               disabled={exporting || loading || filteredBills.length === 0}
             >
@@ -1214,6 +1224,11 @@ export default function PurchaseInvoicesPage() {
           </div>
         </div>
       )}
+      <BulkCreateProductsDialog
+        open={showBulkCreateProducts}
+        onOpenChange={setShowBulkCreateProducts}
+      />
+
       {confirmDialog}
     </DashboardLayout>
   )

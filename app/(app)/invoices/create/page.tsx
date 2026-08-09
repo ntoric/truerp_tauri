@@ -31,6 +31,7 @@ import { useWeighingScale } from '@/hooks/useWeighingScale'
 import WeighingScalePanel from '@/components/WeighingScalePanel'
 import { useFormKeyboardShortcuts } from '@/hooks/useFormKeyboardShortcuts'
 import CreateProductDialog, { type CreatedProduct } from '@/components/CreateProductDialog'
+import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
 import { looksLikeScaleBarcode, resolveScaleBarcodeForPos } from '@/lib/weighingScaleBarcode'
 import { fetchProductBatches, formatBatchLabel, type ProductBatchStock } from '@/lib/productBatches'
@@ -138,6 +139,7 @@ export default function CreateInvoicePage() {
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set())
   const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set())
   const [showCreateProduct, setShowCreateProduct] = useState(false)
+  const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
   const [barcodeScannerEnabled, setBarcodeScannerEnabled] = useState(false)
   const [productSearch, setProductSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
@@ -1652,7 +1654,17 @@ export default function CreateInvoicePage() {
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setShowProductModal(false)
+                      setShowBulkCreateProducts(true)
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" /> Bulk Create
+                  </Button>
                   <Button
                     type="button"
                     variant="outline"
@@ -1687,12 +1699,67 @@ export default function CreateInvoicePage() {
               stock_qty: created.stock_qty,
               category: created.category,
               sale_price_with_tax: created.sale_price_with_tax,
+              enable_batching: created.enable_batching ?? false,
             }
             setProducts((prev) => [product, ...prev.filter((p) => p.id !== product.id)])
             if (created.category && !categories.includes(created.category)) {
               setCategories((prev) => [...prev, created.category].sort())
             }
             addProductToInvoice(product)
+          }}
+        />
+
+        <BulkCreateProductsDialog
+          open={showBulkCreateProducts}
+          onOpenChange={setShowBulkCreateProducts}
+          onCreated={(createdList) => {
+            if (createdList.length === 0) {
+              // File import — refresh product catalog
+              void (async () => {
+                try {
+                  const res = await apiFetch('/products')
+                  if (res.ok) {
+                    const data = await res.json()
+                    setProducts(Array.isArray(data) ? data : data.products || [])
+                  }
+                } catch {
+                  /* ignore */
+                }
+              })()
+              return
+            }
+            const mapped: Product[] = createdList.map((created) => ({
+              id: created.id,
+              name: created.name,
+              sku: created.sku,
+              item_code: created.item_code,
+              hsn_code: created.hsn_code,
+              sale_price: created.sale_price,
+              purchase_price: created.purchase_price,
+              tax_rate: created.tax_rate,
+              unit: created.unit,
+              stock_qty: created.stock_qty,
+              category: created.category,
+              sale_price_with_tax: created.sale_price_with_tax,
+              enable_batching: created.enable_batching ?? false,
+            }))
+            setProducts((prev) => {
+              const next = [...mapped]
+              for (const p of prev) {
+                if (!next.some((n) => n.id === p.id)) next.push(p)
+              }
+              return next
+            })
+            setCategories((prev) => {
+              const next = new Set(prev)
+              for (const created of createdList) {
+                if (created.category) next.add(created.category)
+              }
+              return Array.from(next).sort()
+            })
+            for (const product of mapped) {
+              addProductToInvoice(product)
+            }
           }}
         />
 

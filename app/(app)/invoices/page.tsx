@@ -19,10 +19,11 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { downloadInvoicePdf } from '@/lib/printDocument'
-import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2 } from 'lucide-react'
+import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2, Package } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 
 interface Invoice {
   id: string
@@ -81,6 +82,7 @@ export default function InvoicesPage() {
   const [previewData, setPreviewData] = useState<any>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [showImportDialog, setShowImportDialog] = useState(false)
+  const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
   const [importedCount, setImportedCount] = useState<number | null>(null)
@@ -433,6 +435,9 @@ export default function InvoicesPage() {
             <Link href="/invoices/templates">
               <Button variant="outline"><FileText className="mr-2 h-4 w-4" /> Templates</Button>
             </Link>
+            <Button variant="outline" onClick={() => setShowBulkCreateProducts(true)}>
+              <Package className="mr-2 h-4 w-4" /> Bulk Create Products
+            </Button>
             <Button variant="outline" onClick={() => setShowImportDialog(true)}>
               <Upload className="mr-2 h-4 w-4" /> Bulk Import
             </Button>
@@ -888,6 +893,11 @@ export default function InvoicesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BulkCreateProductsDialog
+        open={showBulkCreateProducts}
+        onOpenChange={setShowBulkCreateProducts}
+      />
 
       {confirmDialog}
     </DashboardLayout>

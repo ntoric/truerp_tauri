@@ -44,6 +44,7 @@ export interface CreatedProduct {
   stock_qty: number
   category: string
   sale_price_with_tax: boolean
+  enable_batching?: boolean
 }
 
 interface Category {
@@ -312,6 +313,7 @@ export default function CreateProductDialog({
           stock_qty: 0,
           category: String(created.category ?? newItem.category ?? ''),
           sale_price_with_tax: Boolean(created.sale_price_with_tax ?? newItem.sale_price_with_tax),
+          enable_batching: Boolean(created.enable_batching ?? newItem.enable_batching),
         }
         showSuccessToast('Product created successfully')
         onOpenChange(false)

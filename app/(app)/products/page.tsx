@@ -24,10 +24,11 @@ import { useFormErrors } from '@/hooks/useFormErrors'
 import { asArray, cn, skuFromProductName } from '@/lib/utils'
 import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
 import { notifyError, notifySuccess } from '@/lib/notify'
-import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
+import { accountingExportDateStamp, downloadBlob } from '@/lib/accountingExport'
 import { isProductGstEnabled } from '@/lib/numbers'
 import { runWithExportProgress } from '@/lib/exportProgress'
 import ProductImageField from '@/components/ProductImageField'
+import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -86,48 +87,6 @@ interface Product {
   image_url?: string
   is_active: boolean
 }
-
-const PRODUCT_IMPORT_HEADERS = [
-  'Name',
-  'SKU',
-  'Item Code',
-  'PLU',
-  'Category',
-  'Unit',
-  'HSN Code',
-  'Purchase Price',
-  'Sale Price',
-  'MRP',
-  'Tax Rate %',
-  'Discount',
-  'Min Stock',
-  'Item Type',
-  'Low Stock Alert',
-  'Enable Batching',
-  'Sale Price With Tax',
-  'Purchase Price With Tax',
-]
-
-const PRODUCT_IMPORT_SAMPLE_ROW: (string | number)[] = [
-  'Sample Product',
-  'SKU001',
-  'ITEM001',
-  '1',
-  'General',
-  'PCS',
-  '8471',
-  100,
-  150,
-  180,
-  18,
-  '5',
-  10,
-  'product',
-  'true',
-  'false',
-  'true',
-  'true',
-]
 
 export default function ProductsPage() {
   const router = useRouter()
@@ -215,11 +174,6 @@ export default function ProductsPage() {
     productName?: string
   }>({ isDuplicate: false })
   const [showImportDialog, setShowImportDialog] = useState(false)
-  const [importFile, setImportFile] = useState<File | null>(null)
-  const [importing, setImporting] = useState(false)
-  const [importedCount, setImportedCount] = useState<number | null>(null)
-  const [importErrors, setImportErrors] = useState<string[]>([])
-  const importFileRef = useRef<HTMLInputElement>(null)
   const skuManuallyEdited = useRef(false)
 
   useEffect(() => { if (!authLoading && user) fetchCategories() }, [authLoading, user])
@@ -522,73 +476,6 @@ export default function ProductsPage() {
     } catch (err) {
       console.error(err)
       notifyError(err instanceof Error ? err.message : 'Failed to export products Excel')
-    }
-  }
-
-  const handleDownloadImportTemplate = () => {
-    void downloadCsv(`products_import_template_${accountingExportDateStamp()}.csv`, [
-      PRODUCT_IMPORT_HEADERS,
-      PRODUCT_IMPORT_SAMPLE_ROW,
-    ], { label: 'Exporting import template' })
-  }
-
-  const resetImportDialog = () => {
-    setImportFile(null)
-    setImportedCount(null)
-    setImportErrors([])
-    if (importFileRef.current) importFileRef.current.value = ''
-  }
-
-  const handleImportDialogChange = (open: boolean) => {
-    setShowImportDialog(open)
-    if (!open) resetImportDialog()
-  }
-
-  const handleImportProducts = async () => {
-    if (!importFile) {
-      notifyError('Please select a CSV or Excel file to import')
-      return
-    }
-
-    setImporting(true)
-    setImportedCount(null)
-    setImportErrors([])
-
-    try {
-      const formData = new FormData()
-      formData.append('file', importFile)
-      const fileName = importFile.name.toLowerCase()
-      const endpoint = fileName.endsWith('.xlsx') || fileName.endsWith('.xls')
-        ? '/products/import/excel'
-        : '/products/import/csv'
-
-      const res = await apiFetch(endpoint, { method: 'POST', body: formData })
-      const data = await res.json()
-
-      if (res.ok) {
-        const count = data.imported ?? 0
-        const errors: string[] = data.errors ?? []
-        setImportedCount(count)
-        setImportErrors(errors)
-
-        if (count > 0) {
-          fetchProducts()
-          notifySuccess(`Successfully imported ${count} product${count === 1 ? '' : 's'}`)
-        }
-
-        if (count === 0 && errors.length > 0) {
-          notifyError('No products were imported. Please review the errors below.')
-        } else if (errors.length > 0) {
-          notifyError(`${errors.length} row${errors.length === 1 ? '' : 's'} could not be imported`)
-        }
-      } else {
-        notifyError(data.error || 'Import failed')
-      }
-    } catch (err) {
-      console.error(err)
-      notifyError('Import failed')
-    } finally {
-      setImporting(false)
     }
   }
 
@@ -1402,7 +1289,7 @@ export default function ProductsPage() {
               <div className="flex gap-2 ml-auto">
                 <Button variant="outline" size="sm" onClick={() => setShowImportDialog(true)} className="gap-2">
                   <Upload className="h-4 w-4" />
-                  Bulk Import
+                  Bulk Create
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleExportCSV} className="gap-2">
                   <Download className="h-4 w-4" />
@@ -1498,53 +1385,14 @@ export default function ProductsPage() {
         </Card>
       </div>
 
-      <Dialog open={showImportDialog} onOpenChange={handleImportDialogChange}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Bulk Import Products</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              Upload a CSV or Excel file with your product data. Download the template first to see the required columns and format.
-            </p>
-            <Button variant="outline" onClick={handleDownloadImportTemplate} className="gap-2 w-full sm:w-auto">
-              <Download className="h-4 w-4" />
-              Download Import Template
-            </Button>
-            <div className="space-y-2">
-              <Label htmlFor="product_import_file">Import file</Label>
-              <Input
-                id="product_import_file"
-                ref={importFileRef}
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-              />
-              {importFile && (
-                <p className="text-sm text-gray-500">Selected: {importFile.name}</p>
-              )}
-            </div>
-            {importedCount !== null && (
-              <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-                Imported {importedCount} product{importedCount === 1 ? '' : 's'} successfully.
-              </div>
-            )}
-            {importErrors.length > 0 && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 max-h-40 overflow-y-auto space-y-1">
-                {importErrors.map((error, index) => (
-                  <p key={`${error}-${index}`}>{error}</p>
-                ))}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => handleImportDialogChange(false)}>Cancel</Button>
-            <Button onClick={handleImportProducts} disabled={importing || !importFile}>
-              {importing ? 'Importing...' : 'Import Products'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <BulkCreateProductsDialog
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        onCreated={() => {
+          fetchProducts()
+          fetchCategories()
+        }}
+      />
 
       <Dialog open={showPrintDialog} onOpenChange={setShowPrintDialog}>
         <DialogContent>
