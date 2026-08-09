@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Label } from '@/components/ui/label'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
-import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange, Check, X } from 'lucide-react'
+import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange, Check, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { asArray } from '@/lib/utils'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -132,6 +132,17 @@ const STOCK_BULK_UPDATE_SAMPLE_ROW: (string | number)[] = [
   'Bulk stock update',
 ]
 
+function matchesProductSearch(
+  query: string,
+  fields: { name?: string; sku?: string; itemCode?: string; itemName?: string }
+): boolean {
+  const trimmed = query.trim().toLowerCase()
+  if (!trimmed) return true
+  return [fields.name, fields.sku, fields.itemCode, fields.itemName]
+    .filter(Boolean)
+    .some((field) => field!.toLowerCase().includes(trimmed))
+}
+
 export default function InventoryPage() {
   const router = useRouter()
   const { user, loading: authLoading } = useAuth()
@@ -199,7 +210,9 @@ export default function InventoryPage() {
   const [customFromDate, setCustomFromDate] = useState('')
   const [customToDate, setCustomToDate] = useState('')
   const [entryApprovalFilter, setEntryApprovalFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
+  const [productSearchQuery, setProductSearchQuery] = useState('')
   const [approvingEntryId, setApprovingEntryId] = useState<string | null>(null)
+  const [showLowStockAlerts, setShowLowStockAlerts] = useState(false)
 
   const dateRange = useMemo(
     () => getDateRangeForPeriod(datePeriod, customFromDate, customToDate),
@@ -218,35 +231,62 @@ export default function InventoryPage() {
     return Boolean(selectedItem?.type === 'product' && selectedItem.enable_batching)
   }, [inventoryItems, newEntry.selected_item_id])
 
+  const filteredBalance = useMemo(
+    () => balance.filter((item) =>
+      matchesProductSearch(productSearchQuery, { name: item.product_name, sku: item.sku })
+    ),
+    [balance, productSearchQuery]
+  )
   const filteredEntries = useMemo(
     () => entries.filter((entry) => {
       if (!isDateWithinRange(entry.entry_date, dateRange.from, dateRange.to)) return false
-      if (entryApprovalFilter === 'all') return true
-      const status = entry.approval_status || 'approved'
-      return status === entryApprovalFilter
+      if (entryApprovalFilter !== 'all') {
+        const status = entry.approval_status || 'approved'
+        if (status !== entryApprovalFilter) return false
+      }
+      return matchesProductSearch(productSearchQuery, {
+        name: entry.product?.name,
+        sku: entry.product?.sku,
+        itemCode: entry.item_code,
+        itemName: entry.item_name,
+      })
     }),
-    [entries, dateRange, entryApprovalFilter]
+    [entries, dateRange, entryApprovalFilter, productSearchQuery]
   )
   const filteredTransfers = useMemo(
     () => transfers.filter((transfer) => isDateWithinRange(transfer.created_at, dateRange.from, dateRange.to)),
     [transfers, dateRange]
   )
+  const filteredStocks = useMemo(
+    () => stocks.filter((stock) =>
+      matchesProductSearch(productSearchQuery, { name: stock.product?.name, sku: stock.product?.sku })
+    ),
+    [stocks, productSearchQuery]
+  )
   // Inventory stocks always show current batch-level rows; date filter applies to entries/transfers only.
+
+  const isProductSearchActive = productSearchQuery.trim().length > 0
 
   useEffect(() => { if (!authLoading && user) fetchData() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchInventoryItems() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchWarehouses() }, [authLoading, user])
 
   const lowStockPagination = usePagination(lowStockAlerts)
-  const balancePagination = usePagination(balance)
+  const balancePagination = usePagination(filteredBalance)
   const entriesPagination = usePagination(filteredEntries)
   const transfersPagination = usePagination(filteredTransfers)
-  const stocksPagination = usePagination(stocks)
+  const stocksPagination = usePagination(filteredStocks)
 
   useEffect(() => {
     entriesPagination.resetPage()
     transfersPagination.resetPage()
   }, [datePeriod, customFromDate, customToDate, entryApprovalFilter])
+
+  useEffect(() => {
+    balancePagination.resetPage()
+    entriesPagination.resetPage()
+    stocksPagination.resetPage()
+  }, [productSearchQuery])
 
   const fetchData = async () => {
     try {
@@ -1196,12 +1236,24 @@ export default function InventoryPage() {
         {/* Low Stock Alerts */}
         {lowStockAlerts.length > 0 && (
           <Card className="border-orange-200 bg-orange-50">
-            <CardHeader>
-              <CardTitle className="text-orange-800 flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5" />
-                Low Stock Alerts ({lowStockAlerts.length})
-              </CardTitle>
+            <CardHeader className="pb-2">
+              <button
+                type="button"
+                onClick={() => setShowLowStockAlerts((prev) => !prev)}
+                className="flex w-full items-center justify-between text-left"
+              >
+                <CardTitle className="text-orange-800 flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5" />
+                  Low Stock Alerts ({lowStockAlerts.length})
+                </CardTitle>
+                {showLowStockAlerts ? (
+                  <ChevronUp className="h-5 w-5 shrink-0 text-orange-700" />
+                ) : (
+                  <ChevronDown className="h-5 w-5 shrink-0 text-orange-700" />
+                )}
+              </button>
             </CardHeader>
+            {showLowStockAlerts && (
             <CardContent>
               <Table>
                 <TableHeader>
@@ -1241,52 +1293,68 @@ export default function InventoryPage() {
                 onPageChange={lowStockPagination.setPage}
               />
             </CardContent>
+            )}
           </Card>
         )}
 
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div className="space-y-2">
-                <Label htmlFor="inventory_date_period">Period</Label>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <div className="flex items-center gap-2">
-                    <CalendarRange className="h-4 w-4 text-gray-500" />
-                    <Select
-                      value={datePeriod}
-                      onValueChange={(value) => setDatePeriod(value as DatePeriod)}
-                    >
-                      <SelectTrigger id="inventory_date_period" className="w-[180px]">
-                        <SelectValue placeholder="Select period" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DATE_PERIOD_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {datePeriod === 'custom' && (
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <Input
-                        type="date"
-                        value={customFromDate}
-                        onChange={(e) => setCustomFromDate(e.target.value)}
-                        className="w-full sm:w-auto"
-                        aria-label="From date"
-                      />
-                      <span className="hidden text-sm text-gray-400 sm:inline">to</span>
-                      <Input
-                        type="date"
-                        value={customToDate}
-                        onChange={(e) => setCustomToDate(e.target.value)}
-                        className="w-full sm:w-auto"
-                        aria-label="To date"
-                      />
+              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+                <div className="space-y-2">
+                  <Label htmlFor="inventory_date_period">Period</Label>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="flex items-center gap-2">
+                      <CalendarRange className="h-4 w-4 text-gray-500" />
+                      <Select
+                        value={datePeriod}
+                        onValueChange={(value) => setDatePeriod(value as DatePeriod)}
+                      >
+                        <SelectTrigger id="inventory_date_period" className="w-[180px]">
+                          <SelectValue placeholder="Select period" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DATE_PERIOD_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  )}
+                    {datePeriod === 'custom' && (
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <Input
+                          type="date"
+                          value={customFromDate}
+                          onChange={(e) => setCustomFromDate(e.target.value)}
+                          className="w-full sm:w-auto"
+                          aria-label="From date"
+                        />
+                        <span className="hidden text-sm text-gray-400 sm:inline">to</span>
+                        <Input
+                          type="date"
+                          value={customToDate}
+                          onChange={(e) => setCustomToDate(e.target.value)}
+                          className="w-full sm:w-auto"
+                          aria-label="To date"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="inventory_product_search">Product search</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <Input
+                      id="inventory_product_search"
+                      placeholder="Search by name, SKU, or item code..."
+                      value={productSearchQuery}
+                      onChange={(e) => setProductSearchQuery(e.target.value)}
+                      className="w-full pl-9 sm:w-[280px]"
+                    />
+                  </div>
                 </div>
               </div>
               <div className="text-sm text-gray-500">
@@ -1297,6 +1365,11 @@ export default function InventoryPage() {
                   </p>
                 ) : (
                   <p>Stock Balance, Inventory Stocks, and Low Stock Alerts always show current data.</p>
+                )}
+                {isProductSearchActive && (
+                  <p className="mt-1">
+                    Product search applies to Stock Balance, Stock Entries, and Inventory Stocks.
+                  </p>
                 )}
               </div>
             </div>
@@ -1324,6 +1397,9 @@ export default function InventoryPage() {
                 <CardTitle>Stock Balance</CardTitle>
                 <p className="text-sm text-gray-500">
                   Totals consolidated across all batches per product and outlet.
+                  {isProductSearchActive && (
+                    <> · {filteredBalance.length} of {balance.length} records</>
+                  )}
                 </p>
               </CardHeader>
               <CardContent>
@@ -1342,7 +1418,9 @@ export default function InventoryPage() {
                     {balancePagination.paginatedItems.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                          No stock balance records
+                          {balance.length === 0
+                            ? 'No stock balance records'
+                            : 'No stock balance records match your product search'}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -1379,6 +1457,11 @@ export default function InventoryPage() {
                     {isDateFilterActive && (
                       <p className="text-sm text-gray-500">
                         Filtered by {dateRangeLabel} · {filteredEntries.length} of {entries.length} entries
+                      </p>
+                    )}
+                    {isProductSearchActive && !isDateFilterActive && (
+                      <p className="text-sm text-gray-500">
+                        {filteredEntries.length} of {entries.length} entries match your product search
                       </p>
                     )}
                     {pendingEntriesCount > 0 && (
@@ -1588,6 +1671,9 @@ export default function InventoryPage() {
                 <CardTitle>Inventory Stocks</CardTitle>
                 <p className="text-sm text-gray-500">
                   Current stock by batch where batch tracking applies; one row per product when no batch is used.
+                  {isProductSearchActive && (
+                    <> · {filteredStocks.length} of {stocks.length} records</>
+                  )}
                 </p>
               </CardHeader>
               <CardContent>
@@ -1611,7 +1697,9 @@ export default function InventoryPage() {
                     {stocksPagination.paginatedItems.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={11} className="py-8 text-center text-gray-500">
-                          No inventory stock records
+                          {stocks.length === 0
+                            ? 'No inventory stock records'
+                            : 'No inventory stock records match your product search'}
                         </TableCell>
                       </TableRow>
                     ) : (
