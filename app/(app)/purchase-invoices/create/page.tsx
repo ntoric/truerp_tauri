@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn, formatCurrency } from '@/lib/utils'
 import { exclusiveUnitPrice, limitDecimalInput, parseItemNumber, parseMoney, productPurchaseUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
@@ -120,6 +121,7 @@ export default function CreatePurchaseInvoicePage() {
   const [terms, setTerms] = useState('')
   const [additionalCharges, setAdditionalCharges] = useState(0)
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
+  const [taxExempt, setTaxExempt] = useState(false)
   const [autoRoundOff, setAutoRoundOff] = useState(true)
   const [amountPaid, setAmountPaid] = useState(0)
   const [paidFrom, setPaidFrom] = useState(CASH_IN_HAND_ACCOUNT)
@@ -166,6 +168,8 @@ export default function CreatePurchaseInvoicePage() {
   const formHydratedRef = useRef(!editId)
   const suppressAutosaveRef = useRef(false)
   const persistDraftRef = useRef<() => Promise<void>>(async () => {})
+  /** Line tax rates captured before Exempt Tax is turned on, so turning it off restores them. */
+  const preExemptTaxRatesRef = useRef<number[] | null>(null)
 
   useEffect(() => {
     fetchData()
@@ -239,9 +243,14 @@ export default function CreatePurchaseInvoicePage() {
             p.name.toLowerCase() === (item.description || '').toLowerCase() ||
             (item.item_code && p.item_code === item.item_code)
           )
-          const taxRate = matchedProduct
-            ? productTaxRate(matchedProduct)
-            : parseItemNumber(item.tax_rate)
+          // Prefer the parsed line tax (including explicit 0). Only fall back to the
+          // product master rate when the scan omitted tax_rate entirely.
+          const hasParsedTax = item.tax_rate !== undefined && item.tax_rate !== null && item.tax_rate !== ''
+          const taxRate = hasParsedTax
+            ? parseItemNumber(item.tax_rate)
+            : matchedProduct
+              ? productTaxRate(matchedProduct)
+              : 0
           const withTax = matchedProduct?.purchase_price_with_tax ?? item.purchase_price_with_tax ?? false
           const rawPrice = matchedProduct
             ? matchedProduct.purchase_price
@@ -336,11 +345,23 @@ export default function CreatePurchaseInvoicePage() {
         setBillStatus(bill.status || '')
         setSavedBillId(bill.id || editId)
         setAutosaveEnabled((bill.status || '') === 'draft')
+        const billItems = bill.items || []
+        // Prefer persisted flag; if missing (older bills), treat all-zero tax lines as exempt
+        // so reopening does not look like product GST (often 18%) should apply.
+        const allLinesZeroTax =
+          billItems.length > 0 &&
+          billItems.every((item: any) => parseItemNumber(item.tax_rate) === 0) &&
+          parseItemNumber(bill.tax_total) === 0
+        const loadedTaxExempt = Boolean(bill.tax_exempt) || allLinesZeroTax
+        setTaxExempt(loadedTaxExempt)
+        preExemptTaxRatesRef.current = null
         formHydratedRef.current = true
         suppressAutosaveRef.current = true
         setItems(
-          (bill.items || []).map((item: any) => {
+          billItems.map((item: any) => {
             const prod = products.find((p: Product) => p.id === item.product_id)
+            // Always use the saved line tax_rate — never the product master rate.
+            const savedTaxRate = loadedTaxExempt ? 0 : parseItemNumber(item.tax_rate)
             return calcItemTotals({
               product_id: item.product_id || '',
               item_code: item.item_code || '',
@@ -349,7 +370,7 @@ export default function CreatePurchaseInvoicePage() {
               quantity: parseItemNumber(item.quantity),
               unit_price: parseItemNumber(item.unit_price),
               discount: parseItemNumber(item.discount),
-              tax_rate: parseItemNumber(item.tax_rate),
+              tax_rate: savedTaxRate,
               mrp: parseItemNumber(item.mrp),
               sale_price: parseItemNumber(item.sale_price),
               unit: item.unit || 'PCS',
@@ -360,7 +381,7 @@ export default function CreatePurchaseInvoicePage() {
               mfg_date: item.mfg_date ? String(item.mfg_date).slice(0, 10) : '',
               exp_date: item.exp_date ? String(item.exp_date).slice(0, 10) : '',
               enable_batching: prod?.enable_batching ?? Boolean(item.batch_no),
-            })
+            }, loadedTaxExempt)
           })
         )
       }
@@ -389,11 +410,11 @@ export default function CreatePurchaseInvoicePage() {
     setFilteredProducts(filtered)
   }
 
-  const calcItemTotals = (item: PurchaseBillItem): PurchaseBillItem => {
+  const calcItemTotals = (item: PurchaseBillItem, exempt = taxExempt): PurchaseBillItem => {
     const qty = parseItemNumber(item.quantity)
     const price = parseItemNumber(item.unit_price)
     const disc = parseItemNumber(item.discount)
-    const tax = parseItemNumber(item.tax_rate)
+    const tax = exempt ? 0 : parseItemNumber(item.tax_rate)
 
     const itemTotal = qty * price
     const itemDiscount = itemTotal * (disc / 100)
@@ -410,6 +431,28 @@ export default function CreatePurchaseInvoicePage() {
     }
   }
 
+  const applyTaxExempt = (exempt: boolean) => {
+    setTaxExempt(exempt)
+    setItems((prev) => {
+      if (exempt) {
+        // Snapshot current rates so disabling exempt can restore them (not product master 18%).
+        preExemptTaxRatesRef.current = prev.map((item) => parseItemNumber(item.tax_rate))
+        return prev.map((item) => calcItemTotals({ ...item, tax_rate: 0 }, true))
+      }
+      const stashed = preExemptTaxRatesRef.current
+      preExemptTaxRatesRef.current = null
+      return prev.map((item, index) => {
+        // Prefer rates from before exempt was enabled. Never pull product master tax here —
+        // that was overwriting intentionally saved 0% with the product's 18% GST.
+        const restoredRate =
+          stashed && stashed[index] !== undefined
+            ? stashed[index]
+            : parseItemNumber(item.tax_rate)
+        return calcItemTotals({ ...item, tax_rate: restoredRate }, false)
+      })
+    })
+  }
+
   const buildPurchaseItemFromProduct = (product: Product, scannedCode?: string): PurchaseBillItem => {
     const itemItemCode = scannedCode || product.item_code || ''
     return calcItemTotals({
@@ -420,7 +463,7 @@ export default function CreatePurchaseInvoicePage() {
       quantity: 1,
       unit_price: productPurchaseUnitPrice(product),
       discount: 0,
-      tax_rate: productTaxRate(product),
+      tax_rate: taxExempt ? 0 : productTaxRate(product),
       mrp: parseItemNumber(product.mrp),
       sale_price: parseItemNumber(product.sale_price),
       unit: product.unit,
@@ -677,7 +720,7 @@ export default function CreatePurchaseInvoicePage() {
       if (product) {
         newItems[index].description = product.name
         newItems[index].unit_price = productPurchaseUnitPrice(product)
-        newItems[index].tax_rate = productTaxRate(product)
+        newItems[index].tax_rate = taxExempt ? 0 : productTaxRate(product)
         newItems[index].mrp = parseItemNumber(product.mrp)
         newItems[index].sale_price = parseItemNumber(product.sale_price)
         newItems[index].unit = product.unit
@@ -690,6 +733,10 @@ export default function CreatePurchaseInvoicePage() {
           newItems[index].exp_date = ''
         }
       }
+    }
+
+    if (field === 'tax_rate' && taxExempt) {
+      newItems[index].tax_rate = 0
     }
 
     // Recalculate totals
@@ -782,6 +829,7 @@ export default function CreatePurchaseInvoicePage() {
         status,
         notes,
         terms,
+        tax_exempt: taxExempt,
         items: sourceItems.map((item) => ({
           product_id: item.product_id || null,
           item_code: item.item_code,
@@ -790,7 +838,7 @@ export default function CreatePurchaseInvoicePage() {
           unit: item.unit,
           unit_price: parseMoney(item.unit_price),
           discount: parseItemNumber(item.discount),
-          tax_rate: parseItemNumber(item.tax_rate),
+          tax_rate: taxExempt ? 0 : parseItemNumber(item.tax_rate),
           mrp: parseMoney(item.mrp),
           sale_price: parseMoney(item.sale_price),
           hsn_code: item.hsn_code,
@@ -856,6 +904,7 @@ export default function CreatePurchaseInvoicePage() {
           status: 'draft',
           notes,
           terms,
+          tax_exempt: taxExempt,
           items: readyItems.map((item) => ({
             product_id: item.product_id || null,
             item_code: item.item_code,
@@ -864,7 +913,7 @@ export default function CreatePurchaseInvoicePage() {
             unit: item.unit,
             unit_price: parseMoney(item.unit_price),
             discount: parseItemNumber(item.discount),
-            tax_rate: parseItemNumber(item.tax_rate),
+            tax_rate: taxExempt ? 0 : parseItemNumber(item.tax_rate),
             mrp: parseMoney(item.mrp),
             sale_price: parseMoney(item.sale_price),
             hsn_code: item.hsn_code,
@@ -937,6 +986,7 @@ export default function CreatePurchaseInvoicePage() {
     invoiceDiscount,
     additionalCharges,
     autoRoundOff,
+    taxExempt,
     items,
     totalAmount,
     savedBillId,
@@ -1131,6 +1181,19 @@ export default function CreatePurchaseInvoicePage() {
                   Linked products will update inventory stock when this purchase is saved.
                 </p>
               </div>
+              <div className="space-y-2 md:col-span-2 xl:col-span-1">
+                <Label htmlFor="tax_exempt">Exempt Tax</Label>
+                <div className="flex h-10 items-center gap-3">
+                  <Switch
+                    id="tax_exempt"
+                    checked={taxExempt}
+                    onCheckedChange={applyTaxExempt}
+                  />
+                  <span className="text-sm text-gray-600">
+                    {taxExempt ? 'Tax set to 0% on all items' : 'Use each line item tax %'}
+                  </span>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -1279,6 +1342,7 @@ export default function CreatePurchaseInvoicePage() {
                             value={item.tax_rate}
                             onChange={(e) => updateItem(index, 'tax_rate', e.target.value)}
                             className="h-8 w-full text-right"
+                            disabled={taxExempt}
                             required
                           />
                         </td>
@@ -1439,7 +1503,7 @@ export default function CreatePurchaseInvoicePage() {
                   <span className="font-medium">{formatCurrency(additionalCharges)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Tax Total</span>
+                  <span className="text-gray-600">{taxExempt ? 'Tax Total (Exempt)' : 'Tax Total'}</span>
                   <span className="font-medium">{formatCurrency(taxTotal)}</span>
                 </div>
                 {autoRoundOff && roundOff !== 0 && (
