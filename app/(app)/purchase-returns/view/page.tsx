@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -58,9 +59,7 @@ function PurchaseReturnViewContent() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex h-96 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-        </div>
+        <FormPageSkeleton />
       </DashboardLayout>
     )
   }
@@ -121,7 +120,7 @@ function PurchaseReturnViewContent() {
           <CardContent className="p-8">
             <div className="flex justify-between items-start mb-8">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">PURCHASE RETURN</h1>
+                <h1 className="app-page-title">PURCHASE RETURN</h1>
                 <p className="text-gray-500 mt-1">{purchaseReturn.return_number}</p>
               </div>
               <div className="text-right">

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -175,25 +176,24 @@ export default function ExpenseCategoriesPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-      </div>
+      <DashboardLayout>
+        <PageSkeleton />
+      </DashboardLayout>
     )
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
           <div>
             <Link
               href="/expenses"
-              className="mb-2 inline-flex items-center text-sm text-gray-500 hover:text-gray-900"
+              className="mb-0.5 inline-flex items-center text-xs text-gray-500 hover:text-gray-900"
             >
-              <ArrowLeft className="mr-1 h-4 w-4" /> Back to Expenses
+              <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Back to Expenses
             </Link>
-            <h1 className="text-2xl font-bold text-gray-900">Expense Categories</h1>
-            <p className="text-sm text-gray-500">Create and manage categories used on expenses</p>
+            <h1 className="app-page-title">Expense Categories</h1>
           </div>
           <Button onClick={openCreateDialog}>
             <Plus className="mr-2 h-4 w-4" /> Add Category

@@ -21,6 +21,7 @@ import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface Expense {
   id: string
@@ -175,20 +176,19 @@ export default function ExpensesPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Expenses</h1>
-            <p className="text-sm text-gray-500">Total: {formatCurrency(totalExpenses)}</p>
+            <h1 className="app-page-title">Expenses</h1>
           </div>
-          <div className="flex gap-2">
+          <PageHeaderActions>
             <Link href="/expense-categories">
               <Button variant="outline"><Tags className="mr-2 h-4 w-4" /> Expense Categories</Button>
             </Link>
             <Link href="/expenses/create">
               <Button><Plus className="mr-2 h-4 w-4" /> Add Expense</Button>
             </Link>
-          </div>
+          </PageHeaderActions>
         </div>
 
         <Card>
@@ -236,7 +236,7 @@ export default function ExpensesPage() {
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
                 {selectedExpenses.size > 0 && (
                   <div className="mb-3 flex items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
                     <span className="text-sm text-gray-600">{selectedExpenses.size} selected</span>
@@ -250,6 +250,7 @@ export default function ExpensesPage() {
                     </div>
                   </div>
                 )}
+                <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-gray-500">
@@ -322,7 +323,8 @@ export default function ExpensesPage() {
                     )}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
             )}
             {!loading && (
               <PaginationControls

@@ -427,16 +427,9 @@ export default function StoresPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="space-y-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Stores</h1>
-          <p className="text-sm text-slate-500">
-            Create stores and switch the active backoffice context from the header. Manage users in{' '}
-            <Link href="/user-management" className="text-blue-600 hover:underline">
-              User Management
-            </Link>
-            .
-          </p>
+          <h1 className="app-page-title">Stores</h1>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[280px_1fr]">

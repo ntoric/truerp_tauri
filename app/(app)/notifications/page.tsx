@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -373,22 +374,17 @@ export default function NotificationsPage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex h-96 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-        </div>
+        <FormPageSkeleton />
       </DashboardLayout>
     )
   }
 
   return (
     <DashboardLayout>
-      <div className="max-w-5xl space-y-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="max-w-5xl space-y-3">
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Notifications &amp; Reminders</h1>
-            <p className="text-sm text-gray-600">
-              Enable channels, manage automated reminders, and review internal alerts.
-            </p>
+            <h1 className="app-page-title">Notifications &amp; Reminders</h1>
           </div>
           {unreadCount > 0 && (
             <Badge variant="secondary" className="w-fit">

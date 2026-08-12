@@ -11,11 +11,11 @@ import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate, asArray } from '@/lib/utils'
 import { accountingExportDateStamp, downloadBlob, downloadCsv, rowsToCsv } from '@/lib/accountingExport'
 import { runWithExportProgress } from '@/lib/exportProgress'
-import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2, Package } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2, Package, BarChart3, ChevronUp, ChevronDown } from 'lucide-react'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import JSZip from 'jszip'
 import { notifyError, notifySuccess } from '@/lib/notify'
-import { downloadPurchaseBillPdf, printHtmlDocument } from '@/lib/printDocument'
+import { printHtmlDocument } from '@/lib/printDocument'
 import { printBarcodeLabels, type BarcodeLabelsPayload } from '@/lib/barcodeLabelPrint'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
@@ -34,6 +34,7 @@ import {
   type A4LabelSheetLayout,
   type A4LabelSheetPresetKey,
 } from '@/lib/a4LabelSheets'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 const THERMAL_LABEL_DIMENSIONS: Record<BarcodeLabelSize, { width: number; height: number }> = {
   '1inch': { width: 25.4, height: 15 },
@@ -75,6 +76,7 @@ export default function PurchaseInvoicesPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
   const [bills, setBills] = useState<PurchaseBill[]>([])
   const [stats, setStats] = useState<PurchaseBillStats>({ total_purchase: 0, paid: 0, unpaid: 0 })
+  const [showStats, setShowStats] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('')
@@ -82,10 +84,6 @@ export default function PurchaseInvoicesPage() {
   const [dateTo, setDateTo] = useState('')
   const [actionMenu, setActionMenu] = useState<string | null>(null)
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set())
-  const [previewId, setPreviewId] = useState<string | null>(null)
-  const [previewData, setPreviewData] = useState<any>(null)
-  const [previewLoading, setPreviewLoading] = useState(false)
-  const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [labelModal, setLabelModal] = useState<string | null>(null)
   const [labelConfig, setLabelConfig] = useState({
     paperSize: 'a4' as string,
@@ -118,14 +116,6 @@ export default function PurchaseInvoicesPage() {
     fetchBills()
     fetchStats()
   }, [filter, dateFrom, dateTo])
-
-  useEffect(() => {
-    if (previewId) {
-      fetchPreview(previewId)
-    } else {
-      setPreviewData(null)
-    }
-  }, [previewId])
 
   const fetchBills = async () => {
     try {
@@ -302,39 +292,6 @@ export default function PurchaseInvoicesPage() {
       console.error(err)
     }
     setActionMenu(null)
-  }
-
-  const fetchPreview = async (id: string) => {
-    try {
-      setPreviewLoading(true)
-      const res = await apiFetch(`/purchase/bills/${id}`)
-      if (res.ok) {
-        setPreviewData(await res.json())
-      }
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setPreviewLoading(false)
-    }
-  }
-
-  const closePreview = () => {
-    setPreviewId(null)
-    setPreviewData(null)
-  }
-
-  const handleDownloadPreviewPdf = async () => {
-    if (!previewId || downloadingPdf) return
-    setDownloadingPdf(true)
-    try {
-      await downloadPurchaseBillPdf(previewId, {
-        billNumber: previewData?.bill_number,
-      })
-    } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Failed to download PDF')
-    } finally {
-      setDownloadingPdf(false)
-    }
   }
 
   const toggleSelectBill = (id: string) => {
@@ -666,10 +623,22 @@ export default function PurchaseInvoicesPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Purchase Invoices</h1>
-          <div className="flex gap-2">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
+          <h1 className="app-page-title">Purchase Invoices</h1>
+          <PageHeaderActions>
+            <Button
+              type="button"
+              variant={showStats ? 'secondary' : 'outline'}
+              className="gap-1.5"
+              onClick={() => setShowStats((prev) => !prev)}
+              aria-expanded={showStats}
+              aria-controls="purchase-invoices-stats"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Stats
+              {showStats ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -694,36 +663,37 @@ export default function PurchaseInvoicesPage() {
             <Link href="/purchase-invoices/create">
               <Button><Plus className="mr-2 h-4 w-4" /> New Purchase Invoice</Button>
             </Link>
-          </div>
+          </PageHeaderActions>
         </div>
 
-        {/* Summary Widgets */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Purchase</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-gray-900">{formatCurrency(stats.total_purchase)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Paid</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.paid)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Unpaid</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.unpaid)}</div>
-            </CardContent>
-          </Card>
-        </div>
+        {showStats && (
+          <div id="purchase-invoices-stats" className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Total Purchase</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-gray-900">{formatCurrency(stats.total_purchase)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Paid</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.paid)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Unpaid</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.unpaid)}</div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         <Card>
           <CardHeader className="pb-4">
@@ -799,6 +769,7 @@ export default function PurchaseInvoicesPage() {
                     </div>
                   </div>
                 )}
+                <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-gray-500">
@@ -833,12 +804,12 @@ export default function PurchaseInvoicesPage() {
                         </td>
                         <td className="py-3 text-gray-500">{formatDate(bill.bill_date)}</td>
                         <td className="py-3">
-                          <button
-                            onClick={() => setPreviewId(bill.id)}
+                          <Link
+                            href={`/purchase-invoices/view?id=${bill.id}`}
                             className="font-medium text-blue-600 hover:underline"
                           >
                             {bill.bill_number}
-                          </button>
+                          </Link>
                         </td>
                         <td className="py-3 text-gray-600">{bill.party?.name || 'N/A'}</td>
                         <td className="py-3 text-gray-500">{getDueIn(bill.due_date)}</td>
@@ -856,12 +827,6 @@ export default function PurchaseInvoicesPage() {
                             {actionMenu === bill.id && (
                               <div className="absolute right-0 top-full z-10 mt-1 w-40 rounded-md border bg-white shadow-lg">
                                 <div className="py-1">
-                                  <button
-                                    onClick={() => { setPreviewId(bill.id); setActionMenu(null) }}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    <Eye className="h-4 w-4" /> Preview
-                                  </button>
                                   <Link
                                     href={`/purchase-invoices/view?id=${bill.id}`}
                                     className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -915,6 +880,7 @@ export default function PurchaseInvoicesPage() {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
             {!loading && (
@@ -930,168 +896,10 @@ export default function PurchaseInvoicesPage() {
         </Card>
       </div>
 
-        {/* Preview Modal */}
-        {previewId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white shadow-xl">
-              <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-6 py-4">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  {previewData?.bill_number || 'Purchase Invoice Preview'}
-                </h2>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleDownloadPreviewPdf()}
-                    disabled={downloadingPdf}
-                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                  >
-                    {downloadingPdf ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4" />
-                    )}
-                    Download PDF
-                  </button>
-                  <button
-                    onClick={closePreview}
-                    className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-
-              {previewLoading ? (
-                <div className="flex h-64 items-center justify-center">
-                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-                </div>
-              ) : previewData ? (
-                <div className="space-y-6 p-6">
-                  {/* Header */}
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500">Bill Date</p>
-                      <p className="font-medium">{formatDate(previewData.bill_date)}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-500">Due Date</p>
-                      <p className="font-medium">{previewData.due_date ? formatDate(previewData.due_date) : '—'}</p>
-                    </div>
-                  </div>
-
-                  {/* Party */}
-                  <div className="rounded-lg border bg-gray-50 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Vendor</p>
-                    <p className="mt-1 text-lg font-semibold text-gray-900">{previewData.party?.name || 'N/A'}</p>
-                    {previewData.party?.gstin && (
-                      <p className="text-sm text-gray-600">GSTIN: {previewData.party.gstin}</p>
-                    )}
-                    {previewData.party?.address && (
-                      <p className="text-sm text-gray-600">
-                        {previewData.party.address}
-                        {previewData.party.city && `, ${previewData.party.city}`}
-                        {previewData.party.state && `, ${previewData.party.state}`}
-                        {previewData.party.pincode && ` - ${previewData.party.pincode}`}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Status */}
-                  <div className="flex flex-wrap items-center gap-3">
-                    {getStatusBadge(previewData.status)}
-                    {getStockStatusBadge(previewData.stock_status)}
-                    {previewData.paid_amount > 0 && (
-                      <span className="text-sm text-gray-500">Paid: {formatCurrency(previewData.paid_amount)}</span>
-                    )}
-                    {previewData.stock_status === 'pending' && (
-                      <Link href="/inventory" className="text-sm font-medium text-amber-700 hover:underline">
-                        Review in Inventory →
-                      </Link>
-                    )}
-                  </div>
-
-                  {/* Items */}
-                  <div>
-                    <p className="mb-2 text-sm font-semibold text-gray-700">Items</p>
-                    <div className="overflow-x-auto rounded-lg border">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50">
-                          <tr className="text-left text-gray-600">
-                            <th className="px-3 py-2 font-medium">Description</th>
-                            <th className="px-3 py-2 font-medium text-right">Qty</th>
-                            <th className="px-3 py-2 font-medium text-right">Rate</th>
-                            <th className="px-3 py-2 font-medium text-right">Disc%</th>
-                            <th className="px-3 py-2 font-medium text-right">Tax%</th>
-                            <th className="px-3 py-2 font-medium text-right">Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(previewData.items || []).map((item: any, idx: number) => (
-                            <tr key={idx} className="border-t">
-                              <td className="px-3 py-2">{item.description}</td>
-                              <td className="px-3 py-2 text-right">{item.quantity} {item.unit}</td>
-                              <td className="px-3 py-2 text-right">{formatCurrency(item.unit_price)}</td>
-                              <td className="px-3 py-2 text-right">{item.discount || 0}%</td>
-                              <td className="px-3 py-2 text-right">{item.tax_rate || 0}%</td>
-                              <td className="px-3 py-2 text-right font-medium">{formatCurrency(item.total)}</td>
-                            </tr>
-                          ))}
-                          {(previewData.items || []).length === 0 && (
-                            <tr>
-                              <td colSpan={6} className="px-3 py-4 text-center text-gray-500">No items</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Totals */}
-                  <div>
-                    <div className="w-full space-y-2 text-sm border rounded-lg p-4 bg-gray-50">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Sub Total</span>
-                        <span className="font-medium">{formatCurrency(previewData.sub_total)}</span>
-                      </div>
-                      {previewData.tax_total > 0 && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Tax</span>
-                          <span className="font-medium">{formatCurrency(previewData.tax_total)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between border-t pt-2 text-base font-bold">
-                        <span>Total</span>
-                        <span>{formatCurrency(previewData.total_amount)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Amount Paid</span>
-                        <span className="font-medium text-green-600">{formatCurrency(previewData.paid_amount)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Balance Due</span>
-                        <span className="font-medium text-orange-600">{formatCurrency(previewData.balance_due)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Notes */}
-                  {previewData.notes && (
-                    <div className="rounded-lg border bg-gray-50 p-4 text-sm text-gray-600">
-                      <p><span className="font-medium">Notes:</span> {previewData.notes}</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex h-64 items-center justify-center text-gray-500">Failed to load preview</div>
-              )}
-            </div>
-          </div>
-        )}
-
       {/* Label Printing Modal */}
       {labelModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[min(90vh,calc(100dvh-var(--app-bottom-nav-offset)-2rem))] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Print Item Labels</h2>
               <button

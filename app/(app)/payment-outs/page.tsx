@@ -23,6 +23,7 @@ import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface PaymentOut {
   id: string
@@ -391,10 +392,10 @@ export default function PaymentOutsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Payments Out</h1>
-          <div className="flex items-center gap-2">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
+          <h1 className="app-page-title">Payments Out</h1>
+          <PageHeaderActions>
             <Button
               variant="outline"
               onClick={handleExport}
@@ -587,7 +588,7 @@ export default function PaymentOutsPage() {
                 </form>
               </DialogContent>
             </Dialog>
-          </div>
+          </PageHeaderActions>
         </div>
 
         <Card>
@@ -656,7 +657,7 @@ export default function PaymentOutsPage() {
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-gray-500">

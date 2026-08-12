@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,6 +39,7 @@ import { cn, formatDate } from '@/lib/utils'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface Category {
   id: string
@@ -319,18 +321,18 @@ export default function CategoriesPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-      </div>
+      <DashboardLayout>
+        <PageSkeleton />
+      </DashboardLayout>
     )
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Product Categories</h1>
-          <div className="flex gap-2">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
+          <h1 className="app-page-title">Product Categories</h1>
+          <PageHeaderActions>
             <Button variant="outline" onClick={handleExport} disabled={categories.length === 0}>
               <Download className="mr-2 h-4 w-4" /> Export
             </Button>
@@ -340,7 +342,7 @@ export default function CategoriesPage() {
             <Button onClick={() => { setEditingCategory(null); setFormData({ name: '', description: '', is_active: true }); setIsDialogOpen(true) }}>
               <Plus className="mr-2 h-4 w-4" /> Add Category
             </Button>
-          </div>
+          </PageHeaderActions>
         </div>
 
         <Card>

@@ -31,15 +31,28 @@ const ToastViewport = React.forwardRef<
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName
 
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-full items-center gap-2.5 overflow-hidden rounded-xl border border-white/60 bg-white/70 p-3 pr-8 text-foreground shadow-[0_8px_30px_rgb(0,0,0,0.08)] backdrop-blur-xl backdrop-saturate-150 transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full dark:border-white/15 dark:bg-white/10 dark:text-foreground dark:shadow-black/30",
+  [
+    "group pointer-events-auto relative flex w-full items-start gap-2.5 overflow-hidden rounded-xl",
+    "border border-white/70 bg-white/85 p-3.5 pr-9 text-foreground",
+    "shadow-[0_1px_1px_rgba(0,0,0,0.06),0_4px_8px_rgba(0,0,0,0.08),0_12px_28px_rgba(0,0,0,0.14),0_24px_48px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.75)]",
+    "ring-1 ring-black/5",
+    "before:absolute before:inset-y-0 before:left-0 before:w-1 before:content-['']",
+    "backdrop-blur-xl backdrop-saturate-150 transition-all",
+    "data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none",
+    "data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out",
+    "data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full",
+    "dark:border-white/15 dark:bg-white/10 dark:text-foreground",
+    "dark:shadow-[0_1px_1px_rgba(0,0,0,0.35),0_6px_12px_rgba(0,0,0,0.35),0_16px_36px_rgba(0,0,0,0.45),0_28px_56px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.12)]",
+    "dark:ring-white/10",
+  ].join(" "),
   {
     variants: {
       variant: {
-        default: "default",
-        info: "info",
-        success: "success",
-        warning: "warning",
-        destructive: "destructive",
+        default: "before:bg-sky-500",
+        info: "before:bg-sky-500",
+        success: "before:bg-emerald-500",
+        warning: "before:bg-amber-500",
+        destructive: "before:bg-red-500",
       },
     },
     defaultVariants: {
@@ -70,10 +83,20 @@ function ToastIcon({ variant = "default" }: { variant?: ToastVariant | null }) {
   const key = (variant ?? "default") as ToastVariant
   const Icon = toastIconMap[key] ?? Info
   return (
-    <Icon
-      className={cn("h-4 w-4 shrink-0", toastIconClassMap[key] ?? toastIconClassMap.default)}
-      aria-hidden
-    />
+    <div
+      className={cn(
+        "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+        key === "success" && "bg-emerald-500/10",
+        key === "destructive" && "bg-red-500/10",
+        key === "warning" && "bg-amber-500/10",
+        (key === "info" || key === "default") && "bg-sky-500/10"
+      )}
+    >
+      <Icon
+        className={cn("h-4 w-4", toastIconClassMap[key] ?? toastIconClassMap.default)}
+        aria-hidden
+      />
+    </div>
   )
 }
 

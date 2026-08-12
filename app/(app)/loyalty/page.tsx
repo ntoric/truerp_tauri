@@ -180,13 +180,10 @@ export default function LoyaltyPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Customer Loyalty Program</h1>
-            <p className="text-sm text-gray-500">
-              Reward repeat customers with points on purchases and let them redeem on future bills.
-            </p>
+            <h1 className="app-page-title">Customer Loyalty Program</h1>
           </div>
           <div className="flex items-center gap-2 rounded-lg border bg-white px-4 py-2">
             <Gift className="h-5 w-5 text-amber-500" />
@@ -351,7 +348,7 @@ export default function LoyaltyPage() {
                 {loading ? (
                   <p className="py-8 text-center text-gray-500">Loading...</p>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="table-scroll">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b text-left text-gray-500">

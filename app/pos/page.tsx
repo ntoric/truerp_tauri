@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { formatCurrency } from '@/lib/utils'
 import { offlineStorage } from '@/lib/offlineStorage'
 import Link from 'next/link'
-import { Search, Plus, Minus, Trash2, Wifi, WifiOff, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
@@ -65,7 +65,6 @@ interface CartItem {
 
 const cartLineKey = (productId: string, batchNo?: string) => `${productId}::${batchNo || ''}`
 
-
 interface POSSession {
   id: string
   opening_cash: number
@@ -108,8 +107,10 @@ export default function POSPage() {
   ])
   const [activeTabId, setActiveTabId] = useState('tab-1')
   const [searchTerm, setSearchTerm] = useState('')
-  const [barcodeScannerEnabled, setBarcodeScannerEnabled] = useState(true)
   const barcodeInputRef = useRef<BarcodeScannerInputHandle>(null)
+  const tabListRef = useRef<HTMLDivElement>(null)
+  const [canScrollTabsLeft, setCanScrollTabsLeft] = useState(false)
+  const [canScrollTabsRight, setCanScrollTabsRight] = useState(false)
   const [session, setSession] = useState<POSSession | null>(null)
   const [openingCash, setOpeningCash] = useState('')
   const [showSessionModal, setShowSessionModal] = useState(false)
@@ -504,9 +505,52 @@ export default function POSPage() {
   }
 
   useEffect(() => {
-    if (!barcodeScannerEnabled) return
     barcodeInputRef.current?.focus()
-  }, [barcodeScannerEnabled, activeTabId])
+  }, [activeTabId])
+
+  const updateTabScrollState = () => {
+    const container = tabListRef.current
+    if (!container) return
+    const { scrollLeft, scrollWidth, clientWidth } = container
+    setCanScrollTabsLeft(scrollLeft > 1)
+    setCanScrollTabsRight(scrollLeft + clientWidth < scrollWidth - 1)
+  }
+
+  const scrollTabs = (direction: 'left' | 'right') => {
+    const container = tabListRef.current
+    if (!container) return
+    const amount = Math.max(160, Math.floor(container.clientWidth * 0.6))
+    container.scrollBy({
+      left: direction === 'left' ? -amount : amount,
+      behavior: 'smooth',
+    })
+  }
+
+  useEffect(() => {
+    const container = tabListRef.current
+    if (!container) return
+    const activeEl = container.querySelector<HTMLElement>(`[data-tab-id="${activeTabId}"]`)
+    if (!activeEl) return
+    activeEl.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' })
+  }, [activeTabId, tabs.length])
+
+  useEffect(() => {
+    const container = tabListRef.current
+    if (!container) return
+
+    updateTabScrollState()
+    container.addEventListener('scroll', updateTabScrollState, { passive: true })
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateTabScrollState)
+      : null
+    resizeObserver?.observe(container)
+
+    return () => {
+      container.removeEventListener('scroll', updateTabScrollState)
+      resizeObserver?.disconnect()
+    }
+  }, [tabs.length])
 
   const applyScaleWeightToCartItem = (productId: string, unit: string, batchNo?: string) => {
     const qty = getQuantityForProduct(unit)
@@ -949,16 +993,6 @@ export default function POSPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {mounted && (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-gray-100">
-              {syncStatus.isOnline ? (
-                <Wifi className="h-4 w-4 text-green-500" />
-              ) : (
-                <WifiOff className="h-4 w-4 text-red-500" />
-              )}
-              <span className="text-xs text-gray-600">{syncStatus.isOnline ? 'Online' : 'Offline'}</span>
-            </div>
-          )}
           {mounted && syncStatus.pending > 0 && (
             <Button
               variant="ghost"
@@ -971,6 +1005,36 @@ export default function POSPage() {
             </Button>
           )}
           <KeyboardShortcutsTrigger variant="compact" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={saveAsDraft}
+            disabled={activeTab.cart.length === 0}
+            className="h-8"
+          >
+            <Save className="h-4 w-4 mr-1" />
+            Save Draft
+          </Button>
+          {drafts.length > 0 && (
+            <select
+              className="h-8 text-xs rounded border border-gray-300 bg-white px-2"
+              onChange={(e) => {
+                if (e.target.value) {
+                  const draft = drafts.find(d => d.id === e.target.value)
+                  if (draft) loadDraft(draft)
+                  e.target.value = ''
+                }
+              }}
+              value=""
+            >
+              <option value="">Load Draft...</option>
+              {drafts.map((draft) => (
+                <option key={draft.id} value={draft.id}>
+                  {draft.title}
+                </option>
+              ))}
+            </select>
+          )}
           <Button variant="ghost" size="sm" asChild className="h-8">
             <Link href="/pos/sessions">
               <History className="h-4 w-4 mr-1" />
@@ -978,7 +1042,12 @@ export default function POSPage() {
             </Link>
           </Button>
           {session && (
-            <Button variant="ghost" size="sm" onClick={closeSession} className="h-8">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={closeSession}
+              className="h-8 text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
               Close Session
             </Button>
           )}
@@ -986,83 +1055,101 @@ export default function POSPage() {
       </div>
 
       {/* Compact Tab Bar */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-white border-b">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${
-              activeTabId === tab.id
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-            onClick={() => setActiveTabId(tab.id)}
+      <div className="flex items-center gap-2 px-2 py-1 bg-white border-b min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-0.5">
+          {canScrollTabsLeft && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => scrollTabs('left')}
+              className="h-7 w-7 shrink-0 p-0"
+              aria-label="Scroll tabs left"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <div
+            ref={tabListRef}
+            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           >
-            <FileText className="h-3.5 w-3.5" />
-            <span className="font-medium">{tab.title}</span>
-            {tab.cart.length > 0 && (
-              <span className="bg-white/20 text-white text-xs px-1.5 py-0.5 rounded">
-                {tab.cart.length}
-              </span>
-            )}
-            {tabs.length > 1 && (
+            {tabs.map((tab) => (
               <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  closeTab(tab.id)
-                }}
-                className="ml-0.5 hover:text-red-200"
+                key={tab.id}
+                data-tab-id={tab.id}
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded text-sm transition-colors ${
+                  activeTabId === tab.id
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                onClick={() => setActiveTabId(tab.id)}
               >
-                <X className="h-3 w-3" />
+                <FileText className="h-3.5 w-3.5 shrink-0" />
+                <span className="font-medium">{tab.title}</span>
+                {tab.cart.length > 0 && (
+                  <span className="bg-white/20 text-white text-xs px-1.5 py-0.5 rounded">
+                    {tab.cart.length}
+                  </span>
+                )}
+                {tabs.length > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeTab(tab.id)
+                    }}
+                    className="ml-0.5 hover:text-red-200"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
               </button>
-            )}
-          </button>
-        ))}
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={createNewTab}
-          className="h-7 px-2 text-xs"
-        >
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          New
-        </Button>
-        <div className="flex-1" />
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={saveAsDraft}
-          disabled={activeTab.cart.length === 0}
-          className="h-7 px-2 text-xs"
-        >
-          <Save className="h-3.5 w-3.5 mr-1" />
-          Save Draft
-        </Button>
-        {drafts.length > 0 && (
-          <select
-            className="h-7 text-xs rounded border border-gray-300 bg-white px-2"
-            onChange={(e) => {
-              if (e.target.value) {
-                const draft = drafts.find(d => d.id === e.target.value)
-                if (draft) loadDraft(draft)
-                e.target.value = ''
-              }
-            }}
-            value=""
-          >
-            <option value="">Load Draft...</option>
-            {drafts.map((draft) => (
-              <option key={draft.id} value={draft.id}>
-                {draft.title}
-              </option>
             ))}
-          </select>
-        )}
+          </div>
+          {canScrollTabsRight && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => scrollTabs('right')}
+              className="h-7 w-7 shrink-0 p-0"
+              aria-label="Scroll tabs right"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={createNewTab}
+            className="h-7 px-2 text-xs"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            New
+          </Button>
+          <div className="relative w-80 sm:w-96">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <Input
+              placeholder="Search products..."
+              className="h-7 pl-8 text-xs"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Session Modal - Compact */}
       {showSessionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-lg shadow-xl p-4 w-80">
+          <form
+            className="bg-white rounded-lg shadow-xl p-4 w-80"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void openSession()
+            }}
+          >
             <h3 className="font-semibold text-gray-900 mb-3">Open POS Session</h3>
             <div className="mb-3">
               <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -1074,13 +1161,15 @@ export default function POSPage() {
                 value={openingCash}
                 onChange={(e) => setOpeningCash(e.target.value)}
                 className="h-9 text-sm"
+                autoFocus
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Button onClick={openSession} className="w-full h-9 text-sm">
+              <Button type="submit" className="w-full h-9 text-sm">
                 <CheckCircle className="mr-2 h-4 w-4" /> Open Session
               </Button>
               <Button
+                type="button"
                 variant="outline"
                 onClick={() => { window.location.href = '/dashboard' }}
                 className="w-full h-9 text-sm"
@@ -1088,7 +1177,7 @@ export default function POSPage() {
                 <X className="mr-2 h-4 w-4" /> Cancel
               </Button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
@@ -1096,22 +1185,10 @@ export default function POSPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Products Section */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Search Bar */}
-          <div className="p-3 bg-white border-b space-y-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                placeholder="Search products (name, SKU, item code)..."
-                className="pl-9 h-9 text-sm"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
+          {/* Barcode scanner */}
+          <div className="p-3 bg-white border-b">
             <BarcodeScannerInput
               ref={barcodeInputRef}
-              showToggle
-              enabled={barcodeScannerEnabled}
-              onEnabledChange={setBarcodeScannerEnabled}
               onScan={handlePosItemCodeScan}
               placeholder={
                 scaleSettings.barcode_scan_enabled
@@ -1158,7 +1235,7 @@ export default function POSPage() {
         </div>
 
         {/* Cart Sidebar */}
-        <div className="w-80 flex flex-col bg-white border-l shadow-lg">
+        <div className="w-80 flex flex-col bg-white border-l">
           {/* Cart Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
             <div className="flex items-center gap-2">
@@ -1518,29 +1595,30 @@ export default function POSPage() {
               )}
             </div>
           )}
+        </div>
+      </div>
 
-          {/* Checkout Buttons */}
-          {activeTab.cart.length > 0 && (
-            <div className="p-2 border-t bg-gray-50 grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                className="h-9 text-sm"
-                onClick={() => handleCheckout(false)}
-                disabled={!activeTab.selectedParty}
-              >
-                <CheckCircle className="mr-1.5 h-4 w-4" />
-                Checkout
-              </Button>
-              <Button
-                className="h-9 text-sm"
-                onClick={() => handleCheckout(true)}
-                disabled={!activeTab.selectedParty}
-              >
-                <Printer className="mr-1.5 h-4 w-4" />
-                Checkout & Print
-              </Button>
-            </div>
-          )}
+      {/* Sticky bottom menubar — full width, cart-aligned actions on the right */}
+      <div className="z-40 flex shrink-0 border-t bg-white">
+        <div className="min-w-0 flex-1" />
+        <div className="flex w-80 shrink-0 items-center justify-end gap-2 px-2 py-2">
+          <Button
+            variant="outline"
+            className="h-10 flex-1 text-sm"
+            onClick={() => handleCheckout(false)}
+            disabled={activeTab.cart.length === 0 || !activeTab.selectedParty}
+          >
+            <CheckCircle className="mr-1.5 h-4 w-4" />
+            Checkout
+          </Button>
+          <Button
+            className="h-10 flex-1 text-sm"
+            onClick={() => handleCheckout(true)}
+            disabled={activeTab.cart.length === 0 || !activeTab.selectedParty}
+          >
+            <Printer className="mr-1.5 h-4 w-4" />
+            Checkout & Print
+          </Button>
         </div>
       </div>
 

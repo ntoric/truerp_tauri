@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface PaginationControlsProps {
   page: number
@@ -27,31 +28,39 @@ export default function PaginationControls({
   const end = Math.min(page * pageSize, totalItems)
 
   return (
-    <div className={`flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${className}`}>
-      <p className="text-sm text-gray-500">
+    <div
+      className={cn(
+        // Stay above the fixed bottom menubar while the page scrolls.
+        'sticky bottom-[var(--app-bottom-nav-offset)] z-10 flex flex-col gap-1.5 border-t bg-card/95 px-3 py-1.5 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between',
+        className
+      )}
+    >
+      <p className="text-xs text-gray-500">
         Showing {start}–{end} of {totalItems}
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <Button
           variant="outline"
           size="sm"
+          className="h-6 gap-0.5 px-2 text-[11px]"
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
         >
-          <ChevronLeft className="h-4 w-4" />
+          <ChevronLeft className="h-3.5 w-3.5" />
           Previous
         </Button>
-        <span className="min-w-[88px] text-center text-sm text-gray-600">
+        <span className="min-w-[4.5rem] text-center text-[11px] text-gray-600">
           Page {page} of {totalPages}
         </span>
         <Button
           variant="outline"
           size="sm"
+          className="h-6 gap-0.5 px-2 text-[11px]"
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
         >
           Next
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className="h-3.5 w-3.5" />
         </Button>
       </div>
     </div>

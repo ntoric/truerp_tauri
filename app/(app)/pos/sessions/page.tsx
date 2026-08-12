@@ -82,21 +82,18 @@ export default function POSSessionHistoryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+          <div className="mb-0.5 flex items-center gap-2 text-xs text-muted-foreground">
             <Link href="/pos" className="inline-flex items-center gap-1 hover:text-foreground">
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeft className="h-3.5 w-3.5" />
               Back to POS
             </Link>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <History className="h-6 w-6" />
+          <h1 className="app-page-title flex items-center gap-2">
+            <History className="h-5 w-5" />
             POS Session History
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Review past and active register sessions with opening/closing balances and sales.
-          </p>
         </div>
         <Button asChild>
           <Link href="/pos">
@@ -205,7 +202,7 @@ export default function POSSessionHistoryPage() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-muted-foreground">

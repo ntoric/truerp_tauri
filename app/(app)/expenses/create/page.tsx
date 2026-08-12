@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageHeader from '@/components/layout/PageHeader'
+import PageActionBar from '@/components/layout/PageActionBar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,7 +20,7 @@ import {
   defaultBankAccountSelection,
   useBankAccounts,
 } from '@/hooks/useBankAccounts'
-import { Save, Loader2, Plus, Trash2, ArrowLeft } from 'lucide-react'
+import { Save, Loader2, Plus, Trash2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 
@@ -168,14 +170,9 @@ export default function CreateExpensePage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" size="icon" onClick={() => router.push('/expenses')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1 className="text-2xl font-bold text-gray-900">Create Expense</h1>
-        </div>
-        <form onSubmit={handleSubmit}>
+      <div className="space-y-4 pb-2">
+        <PageHeader title="Create Expense" backHref="/expenses" />
+        <form onSubmit={handleSubmit} className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Expense Details</CardTitle>
@@ -185,11 +182,11 @@ export default function CreateExpensePage() {
                 <div className="space-y-2">
                   <Label htmlFor="category">Expense Category *</Label>
                   {loading ? (
-                    <div className="h-10 animate-pulse rounded-md bg-gray-200" />
+                    <div className="h-8 animate-pulse rounded-md bg-gray-200" />
                   ) : (
                     <select id="category" value={form.category} onChange={(e) => handleChange('category', e.target.value)}
                       className={cn(
-                        'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm',
+                        'flex h-8 w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm',
                         fieldErrors.category && 'border-red-500'
                       )} required>
                       {categories.length === 0 ? (
@@ -222,13 +219,13 @@ export default function CreateExpensePage() {
                 <div className="space-y-2">
                   <Label htmlFor="paid_from">Paid From Account *</Label>
                   {bankAccountsLoading ? (
-                    <div className="h-10 animate-pulse rounded-md bg-gray-200" />
+                    <div className="h-8 animate-pulse rounded-md bg-gray-200" />
                   ) : (
                     <select
                       id="paid_from"
                       value={paidFrom}
                       onChange={(e) => setPaidFrom(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="flex h-8 w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
                       required
                     >
                       <option value={CASH_IN_HAND_ACCOUNT}>Cash in-hand</option>
@@ -325,7 +322,7 @@ export default function CreateExpensePage() {
                       </div>
                       <div>
                         <Label className="text-xs">Total</Label>
-                        <div className="h-10 flex items-center px-3 bg-gray-50 rounded-md text-sm font-medium">
+                        <div className="h-8 flex items-center px-2.5 bg-gray-50 rounded-md text-sm font-medium">
                           {formatCurrency(item.total)}
                         </div>
                       </div>
@@ -358,13 +355,17 @@ export default function CreateExpensePage() {
                   <span>{formatCurrency(total)}</span>
                 </div>
               </div>
-
-              <Button type="submit" disabled={saving} className="w-full">
-                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Create Expense
-              </Button>
             </CardContent>
           </Card>
+          <PageActionBar meta={<span className="font-medium text-slate-700">Total: {formatCurrency(total)}</span>}>
+            <Button type="button" variant="outline" onClick={() => router.push('/expenses')}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Create Expense
+            </Button>
+          </PageActionBar>
         </form>
       </div>
     </DashboardLayout>

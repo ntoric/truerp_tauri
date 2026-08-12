@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageHeader from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -19,7 +20,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { downloadInvoicePdf } from '@/lib/printDocument'
-import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2, Package } from 'lucide-react'
+import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2, Package, BarChart3, ChevronUp, ChevronDown } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -72,6 +73,7 @@ export default function InvoicesPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [stats, setStats] = useState<InvoiceStats>({ total_sales: 0, paid: 0, unpaid: 0, cancelled: 0 })
+  const [showStats, setShowStats] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('')
@@ -428,63 +430,78 @@ export default function InvoicesPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
-          <div className="flex gap-2">
-            <Link href="/invoices/templates">
-              <Button variant="outline"><FileText className="mr-2 h-4 w-4" /> Templates</Button>
-            </Link>
-            <Button variant="outline" onClick={() => setShowBulkCreateProducts(true)}>
-              <Package className="mr-2 h-4 w-4" /> Bulk Create Products
-            </Button>
-            <Button variant="outline" onClick={() => setShowImportDialog(true)}>
-              <Upload className="mr-2 h-4 w-4" /> Bulk Import
-            </Button>
-            <Button variant="outline" onClick={handleExport}>
-              <Download className="mr-2 h-4 w-4" /> Export
-            </Button>
-            <Link href="/invoices/create">
-              <Button><Plus className="mr-2 h-4 w-4" /> New Invoice</Button>
-            </Link>
-          </div>
-        </div>
+      <div className="space-y-4">
+        <PageHeader
+          title="Invoices"
+          actions={
+            <>
+              <Button
+                type="button"
+                variant={showStats ? 'secondary' : 'outline'}
+                className="gap-1.5"
+                onClick={() => setShowStats((prev) => !prev)}
+                aria-expanded={showStats}
+                aria-controls="invoices-stats"
+              >
+                <BarChart3 className="h-4 w-4" />
+                Stats
+                {showStats ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </Button>
+              <Link href="/invoices/templates">
+                <Button variant="outline"><FileText className="mr-2 h-4 w-4" /> Templates</Button>
+              </Link>
+              <Button variant="outline" onClick={() => setShowBulkCreateProducts(true)}>
+                <Package className="mr-2 h-4 w-4" /> Bulk Create Products
+              </Button>
+              <Button variant="outline" onClick={() => setShowImportDialog(true)}>
+                <Upload className="mr-2 h-4 w-4" /> Bulk Import
+              </Button>
+              <Button variant="outline" onClick={handleExport}>
+                <Download className="mr-2 h-4 w-4" /> Export
+              </Button>
+              <Link href="/invoices/create">
+                <Button><Plus className="mr-2 h-4 w-4" /> New Invoice</Button>
+              </Link>
+            </>
+          }
+        />
 
-        {/* Summary Widgets */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Sales</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-gray-900">{formatCurrency(stats.total_sales)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Paid</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.paid)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Unpaid</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.unpaid)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Cancelled</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">{formatCurrency(stats.cancelled)}</div>
-            </CardContent>
-          </Card>
-        </div>
+        {showStats && (
+          <div id="invoices-stats" className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Total Sales</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-gray-900">{formatCurrency(stats.total_sales)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Paid</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.paid)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Unpaid</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.unpaid)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">Cancelled</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">{formatCurrency(stats.cancelled)}</div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         <Card>
           <CardHeader className="pb-4">
@@ -531,7 +548,7 @@ export default function InvoicesPage() {
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
                 {selectedInvoices.size > 0 && (
                   <div className="mb-3 flex items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
                     <span className="text-sm text-gray-600">{selectedInvoices.size} selected</span>
@@ -548,6 +565,7 @@ export default function InvoicesPage() {
                     </div>
                   </div>
                 )}
+                <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-gray-500">
@@ -640,7 +658,8 @@ export default function InvoicesPage() {
                     )}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
             )}
             {!loading && (
               <PaginationControls
@@ -657,7 +676,7 @@ export default function InvoicesPage() {
         {/* Preview Modal */}
         {previewId && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white shadow-xl">
+            <div className="relative max-h-[min(90vh,calc(100dvh-var(--app-bottom-nav-offset)-2rem))] w-full max-w-3xl overflow-y-auto rounded-lg bg-white shadow-xl">
               <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-6 py-4">
                 <h2 className="text-lg font-semibold text-gray-900">
                   {previewData?.invoice_number || 'Invoice Preview'}
@@ -734,7 +753,7 @@ export default function InvoicesPage() {
                   {/* Items */}
                   <div>
                     <p className="mb-2 text-sm font-semibold text-gray-700">Items</p>
-                    <div className="overflow-x-auto rounded-lg border">
+                    <div className="table-scroll rounded-lg border">
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50">
                           <tr className="text-left text-gray-600">

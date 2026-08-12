@@ -18,6 +18,7 @@ import { isSuperAdmin } from '@/lib/roles'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface AuditLog {
   id: string
@@ -245,19 +246,18 @@ export default function AuditDashboard() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="space-y-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <Button asChild variant="ghost" size="sm" className="-ml-2 mb-1 h-8 px-2 text-gray-500">
+            <Button asChild variant="ghost" size="sm" className="-ml-2 mb-0.5 h-7 px-2 text-xs text-gray-500">
               <Link href="/user-management">
-                <ArrowLeft className="mr-1 h-4 w-4" />
+                <ArrowLeft className="mr-1 h-3.5 w-3.5" />
                 User management
               </Link>
             </Button>
-            <h1 className="text-2xl font-bold text-gray-900">Audit Logs</h1>
-            <p className="text-sm text-gray-500">Track and monitor all user activities</p>
+            <h1 className="app-page-title">Audit Logs</h1>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <PageHeaderActions>
             <Button onClick={exportLogs} variant="outline" size="sm">
               <Download className="mr-2 h-4 w-4" />
               Export
@@ -274,7 +274,7 @@ export default function AuditDashboard() {
               <Trash2 className="mr-2 h-4 w-4" />
               Delete
             </Button>
-          </div>
+          </PageHeaderActions>
         </div>
 
         {stats && (
@@ -453,8 +453,7 @@ export default function AuditDashboard() {
             ) : logs.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-500">No audit logs found</div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
+              <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Timestamp</TableHead>
@@ -501,7 +500,6 @@ export default function AuditDashboard() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
             )}
 
             <PaginationControls

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +25,7 @@ import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { formatDate } from '@/lib/utils'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface Staff {
   id: string
@@ -362,19 +364,25 @@ export default function StaffPage() {
     setSelectedStaff(new Set())
   }, [search, statusFilter, departmentFilter, designationFilter, salaryTypeFilter])
 
-  if (authLoading || loading) return <div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>
+  if (authLoading || loading) {
+    return (
+      <DashboardLayout>
+        <PageSkeleton />
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Staff Management</h1>
-          <div className="flex gap-2">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
+          <h1 className="app-page-title">Staff Management</h1>
+          <PageHeaderActions>
             <Button variant="outline" onClick={handleExport} disabled={loading || filteredStaffs.length === 0}>
               <Download className="mr-2 h-4 w-4" /> Export
             </Button>
             <Button onClick={() => { setEditingStaff(null); resetForm(); setIsDialogOpen(true) }}><Plus className="mr-2 h-4 w-4" /> Add Staff</Button>
-          </div>
+          </PageHeaderActions>
         </div>
 
         <Card>

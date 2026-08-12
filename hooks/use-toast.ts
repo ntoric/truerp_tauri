@@ -136,8 +136,50 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">
 
+const TOAST_CATEGORY_TITLE: Record<
+  NonNullable<ToastProps["variant"]>,
+  string
+> = {
+  default: "Notice",
+  info: "Info",
+  success: "Success",
+  warning: "Warning",
+  destructive: "Error",
+}
+
+/** Normalize every toast to: category title + message description. */
+function normalizeToastProps(props: Toast): Toast {
+  const variant = props.variant ?? "default"
+  const category =
+    TOAST_CATEGORY_TITLE[variant as keyof typeof TOAST_CATEGORY_TITLE] ?? "Notice"
+
+  if (props.title != null && props.description == null) {
+    return {
+      ...props,
+      variant,
+      title: category,
+      description: props.title,
+    }
+  }
+
+  if (props.title == null && props.description != null) {
+    return {
+      ...props,
+      variant,
+      title: category,
+    }
+  }
+
+  return {
+    ...props,
+    variant,
+    title: props.title ?? category,
+  }
+}
+
 function toast({ ...props }: Toast) {
   const id = genId()
+  const normalized = normalizeToastProps(props)
 
   const update = (props: ToasterToast) =>
     dispatch({
@@ -149,7 +191,7 @@ function toast({ ...props }: Toast) {
   dispatch({
     type: "ADD_TOAST",
     toast: {
-      ...props,
+      ...normalized,
       id,
       open: true,
       onOpenChange: (open) => {

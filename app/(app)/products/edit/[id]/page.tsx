@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageHeader from '@/components/layout/PageHeader'
+import PageActionBar from '@/components/layout/PageActionBar'
+import { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -14,7 +17,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Save, Search } from 'lucide-react'
+import { Save, Search } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import ProductImageField from '@/components/ProductImageField'
@@ -327,33 +330,22 @@ export default function EditProductPage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <FormPageSkeleton />
       </DashboardLayout>
     )
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.push('/products')}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1 className="text-2xl font-bold">Edit Product</h1>
-        </div>
+      <div className="space-y-4 pb-2">
+        <PageHeader title="Edit Product" backHref="/products" />
 
         <Card>
           <CardHeader>
             <CardTitle>Product Information</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form id="edit-product-form" onSubmit={handleSubmit} className="space-y-4">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="basic">Basic</TabsTrigger>
@@ -757,22 +749,19 @@ export default function EditProductPage() {
                 </TabsContent>
               </Tabs>
 
-              <div className="flex gap-2 pt-4 border-t">
-                <Button type="submit" disabled={saving}>
-                  <Save className="h-4 w-4 mr-2" />
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => router.push('/products')}
-                >
-                  Cancel
-                </Button>
-              </div>
             </form>
           </CardContent>
         </Card>
+
+        <PageActionBar>
+          <Button type="button" variant="outline" onClick={() => router.push('/products')}>
+            Cancel
+          </Button>
+          <Button type="submit" form="edit-product-form" disabled={saving}>
+            <Save className="h-4 w-4 mr-2" />
+            {saving ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </PageActionBar>
       </div>
 
       <Dialog open={showHsnSearchModal} onOpenChange={setShowHsnSearchModal}>

@@ -4,12 +4,15 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
+import PageHeader from '@/components/layout/PageHeader'
+import PageActionBar from '@/components/layout/PageActionBar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn, formatCurrency } from '@/lib/utils'
-import { Plus, Trash2, Loader2, Save, ArrowLeft, Search, Barcode, X, Package } from 'lucide-react'
+import { Plus, Trash2, Loader2, Save, Search, Barcode, X, Package } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { notifyError } from '@/lib/notify'
@@ -399,33 +402,27 @@ export default function CreateSalesReturnPage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-        </div>
+        <FormPageSkeleton />
       </DashboardLayout>
     )
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => router.back()}>
-              <ArrowLeft className="h-5 w-5" />
+      <div className="space-y-4 pb-2">
+        <PageHeader
+          title={editId ? 'Edit Sales Return' : 'New Sales Return'}
+          backHref="/sales-returns"
+          actions={
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              {saving ? 'Saving...' : 'Save'}
             </Button>
-            <h1 className="text-2xl font-bold text-gray-900">
-              {editId ? 'Edit Sales Return' : 'New Sales Return'}
-            </h1>
-          </div>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-        </div>
+          }
+        />
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle>Basic Information</CardTitle>
@@ -676,7 +673,7 @@ export default function CreateSalesReturnPage() {
             </Card>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle>Summary</CardTitle>
@@ -728,7 +725,7 @@ export default function CreateSalesReturnPage() {
                   ))}
                 </select>
               </div>
-              <div className="max-h-96 overflow-auto">
+              <div className="table-scroll max-h-96">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-white">
                     <tr className="border-b">
@@ -772,6 +769,16 @@ export default function CreateSalesReturnPage() {
             </div>
           </div>
         )}
+
+        <PageActionBar>
+          <Button type="button" variant="outline" onClick={() => router.push('/sales-returns')}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </PageActionBar>
       </div>
     </DashboardLayout>
   )

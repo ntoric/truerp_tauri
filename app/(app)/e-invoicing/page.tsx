@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -153,13 +154,19 @@ export default function EInvoicingPage() {
 
   const selectedInvoice = invoices.find((inv: any) => inv.id === selectedInvoiceId)
 
-  if (authLoading) return <div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>
+  if (authLoading) {
+    return (
+      <DashboardLayout>
+        <PageSkeleton />
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold flex items-center gap-2"><FileDigit className="h-8 w-8" />E-Invoicing</h1>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="app-page-title flex items-center gap-2"><FileDigit className="h-5 w-5" />E-Invoicing</h1>
           <Button onClick={fetchHistory} variant="outline" className="flex items-center gap-2">
             <RefreshCw className="h-4 w-4" /> Refresh
           </Button>

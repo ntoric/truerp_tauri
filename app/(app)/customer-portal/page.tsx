@@ -192,12 +192,9 @@ export default function CustomerPortalAdminPage() {
 
   return (
     <DashboardLayout>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Customer Portal</h1>
-          <p className="text-muted-foreground">
-            Let customers view invoices, payments, loyalty points, statements, and raise support tickets.
-          </p>
+          <h1 className="app-page-title">Customer Portal</h1>
         </div>
         {portalUrl && (
           <Button variant="outline" asChild>
@@ -281,7 +278,7 @@ export default function CustomerPortalAdminPage() {
             <CardHeader>
               <CardTitle className="text-base">Customer login access</CardTitle>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
+            <CardContent className="table-scroll">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">

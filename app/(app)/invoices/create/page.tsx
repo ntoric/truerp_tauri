@@ -4,6 +4,9 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
+import PageHeader from '@/components/layout/PageHeader'
+import PageActionBar from '@/components/layout/PageActionBar'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -1008,22 +1011,24 @@ export default function CreateInvoicePage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex h-96 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-        </div>
+        <FormPageSkeleton />
       </DashboardLayout>
     )
   }
 
   return (
     <DashboardLayout>
-      <div className="max-w-7xl space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Create Sales Invoice</h1>
-          <Button variant="outline" onClick={() => router.push('/invoices')}>Cancel</Button>
-        </div>
+      <div className="max-w-7xl space-y-4 pb-2">
+        <PageHeader
+          title="Create Sales Invoice"
+          actions={
+            <Button variant="outline" onClick={() => router.push('/invoices')}>
+              Cancel
+            </Button>
+          }
+        />
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Invoice Details</CardTitle>
@@ -1180,7 +1185,7 @@ export default function CreateInvoicePage() {
                   </Button>
                 </div>
               )}
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full table-fixed text-sm">
                   <colgroup>
                     <col className="w-[4%]" />
@@ -1538,25 +1543,23 @@ export default function CreateInvoicePage() {
                     <span>{formatCurrency(totalAmount)}</span>
                   </div>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Button type="submit" className="w-full" disabled={saving}>
-                    {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save Invoice
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    disabled={saving}
-                    onClick={() => saveInvoice(true)}
-                  >
-                    {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
-                    Save & Print / PDF
-                  </Button>
-                </div>
               </CardContent>
             </Card>
           </div>
+
+          <PageActionBar meta={<span className="font-semibold text-slate-800">Total {formatCurrency(totalAmount)}</span>}>
+            <Button type="button" variant="outline" onClick={() => router.push('/invoices')}>
+              Cancel
+            </Button>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => saveInvoice(true)}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+              Save & Print
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Invoice
+            </Button>
+          </PageActionBar>
         </form>
 
         {/* Product Selection Modal */}
@@ -1599,7 +1602,7 @@ export default function CreateInvoicePage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="max-h-[60vh] overflow-auto">
+                <div className="table-scroll max-h-[60vh]">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-gray-500">

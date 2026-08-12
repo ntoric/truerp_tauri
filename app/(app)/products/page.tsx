@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
@@ -55,6 +56,7 @@ import {
   weighingItemCodeError,
 } from '@/lib/weighingScale'
 import { lookupProductsByPlu, fetchNextProductPlu } from '@/lib/itemCode'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface Category {
   id: string
@@ -803,17 +805,22 @@ export default function ProductsPage() {
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val)
 
-  if (authLoading || loading) return <div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>
+  if (authLoading || loading) {
+    return (
+      <DashboardLayout>
+        <PageSkeleton />
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Products</h1>
-            <p className="text-gray-500">Manage your product catalog</p>
+            <h1 className="app-page-title">Products</h1>
           </div>
-          <div className="flex gap-2">
+          <PageHeaderActions>
             <Button variant="outline" className="gap-2" onClick={() => setShowDraftsModal(true)}>
               <Package className="h-4 w-4" />
               Drafts
@@ -1228,8 +1235,10 @@ export default function ProductsPage() {
                 </div>
               </DialogContent>
             </Dialog>
+          </PageHeaderActions>
+        </div>
 
-            <Dialog open={showDraftsModal} onOpenChange={setShowDraftsModal}>
+          <Dialog open={showDraftsModal} onOpenChange={setShowDraftsModal}>
               <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Saved Drafts</DialogTitle>
@@ -1260,8 +1269,6 @@ export default function ProductsPage() {
                 )}
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
         
         <Card>
           <CardContent className="p-0">

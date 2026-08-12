@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,12 +18,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, DollarSign, Calendar, Download, Search, MoreVertical, Pencil, Trash2, Power } from 'lucide-react'
+import { Plus, DollarSign, Calendar, Download, Search, MoreVertical, Pencil, Trash2, Power, BarChart3, ChevronUp, ChevronDown } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { formatDate } from '@/lib/utils'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 import {
   useBankAccounts,
   CASH_IN_HAND_ACCOUNT,
@@ -113,6 +115,7 @@ export default function PayrollPage() {
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [payrolls, setPayrolls] = useState<Payroll[]>([])
   const [stats, setStats] = useState<PayrollStats | null>(null)
+  const [showStats, setShowStats] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [staffFilter, setStaffFilter] = useState('all')
@@ -442,23 +445,41 @@ export default function PayrollPage() {
     await downloadCsv(`payroll_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting payroll' })
   }
 
-  if (authLoading || loading) return <div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>
+  if (authLoading || loading) {
+    return (
+      <DashboardLayout>
+        <PageSkeleton />
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Payroll Management</h1>
-          <div className="flex gap-2">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
+          <h1 className="app-page-title">Payroll Management</h1>
+          <PageHeaderActions>
+            <Button
+              type="button"
+              variant={showStats ? 'secondary' : 'outline'}
+              className="gap-1.5"
+              onClick={() => setShowStats((prev) => !prev)}
+              aria-expanded={showStats}
+              aria-controls="payroll-stats"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Stats
+              {showStats ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </Button>
             <Button variant="outline" onClick={handleExport} disabled={loading || filteredPayrolls.length === 0}>
               <Download className="mr-2 h-4 w-4" /> Export
             </Button>
             <Button onClick={() => { resetForm(); setIsDialogOpen(true) }}><Plus className="mr-2 h-4 w-4" /> Make Payment</Button>
-          </div>
+          </PageHeaderActions>
         </div>
 
-        {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {showStats && stats && (
+          <div id="payroll-stats" className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2">
@@ -583,8 +604,7 @@ export default function PayrollPage() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table className="min-w-[1400px]">
+            <Table className="min-w-[1400px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">
@@ -680,7 +700,6 @@ export default function PayrollPage() {
                   )}
                 </TableBody>
               </Table>
-            </div>
             <PaginationControls
               page={page}
               totalPages={totalPages}

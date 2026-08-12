@@ -242,11 +242,10 @@ export default function SMSMarketingPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">SMS Marketing</h1>
-            <p className="text-sm text-gray-500">Manage your SMS campaigns</p>
+            <h1 className="app-page-title">SMS Marketing</h1>
           </div>
           <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
             <DialogTrigger asChild>
@@ -420,7 +419,7 @@ export default function SMSMarketingPage() {
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-gray-500">
@@ -565,7 +564,7 @@ export default function SMSMarketingPage() {
               {selectedCampaign.recipients && selectedCampaign.recipients.length > 0 && (
                 <div>
                   <Label>Recipients</Label>
-                  <div className="mt-2 max-h-60 overflow-y-auto border rounded-md">
+                  <div className="table-scroll mt-2 max-h-60 border rounded-md">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50">
                         <tr>
