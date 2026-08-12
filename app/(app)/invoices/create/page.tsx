@@ -137,6 +137,7 @@ export default function CreateInvoicePage() {
   const [saving, setSaving] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set())
+  const [productAddQuantities, setProductAddQuantities] = useState<Record<string, string>>({})
   const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set())
   const [showCreateProduct, setShowCreateProduct] = useState(false)
   const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
@@ -377,7 +378,7 @@ export default function CreateInvoicePage() {
     if (products.length === 0) return
 
     const builtItems = products
-      .map((product) => buildInvoiceItemFromProduct(product))
+      .map((product) => buildInvoiceItemFromProduct(product, resolveProductAddQuantity(product.id)))
       .filter((item): item is InvoiceItem => item !== null)
     if (builtItems.length === 0) return
 
@@ -396,6 +397,7 @@ export default function CreateInvoicePage() {
       setShowProductModal(false)
       setProductSearch('')
       setSelectedProductIds(new Set())
+      setProductAddQuantities({})
     }
   }
 
@@ -414,6 +416,19 @@ export default function CreateInvoicePage() {
     setShowProductModal(false)
     setProductSearch('')
     setSelectedProductIds(new Set())
+    setProductAddQuantities({})
+  }
+
+  /** Explicit modal qty, or undefined so scale auto-apply can still run. */
+  const resolveProductAddQuantity = (productId: string): number | undefined => {
+    const raw = productAddQuantities[productId]
+    if (raw === undefined || raw.trim() === '') return undefined
+    const parsed = parseItemNumber(raw, 1)
+    return parsed > 0 ? parsed : undefined
+  }
+
+  const setProductAddQuantity = (productId: string, value: string) => {
+    setProductAddQuantities((prev) => ({ ...prev, [productId]: value }))
   }
 
   const toggleProductSelection = (productId: string) => {
@@ -443,12 +458,14 @@ export default function CreateInvoicePage() {
 
   const openProductModal = () => {
     setSelectedProductIds(new Set())
+    setProductAddQuantities({})
     setShowProductModal(true)
   }
 
   const closeProductModal = () => {
     setShowProductModal(false)
     setSelectedProductIds(new Set())
+    setProductAddQuantities({})
   }
 
   const applyScaleWeightToInvoiceLine = (index: number, unit: string) => {
@@ -1615,6 +1632,7 @@ export default function CreateInvoicePage() {
                         <th className="pb-2 font-medium text-right">Stock</th>
                         <th className="pb-2 font-medium text-right">Sale Price</th>
                         <th className="pb-2 font-medium text-right">Purchase Price</th>
+                        <th className="pb-2 font-medium text-right">Qty</th>
                         <th className="pb-2 font-medium">Action</th>
                       </tr>
                     </thead>
@@ -1633,11 +1651,23 @@ export default function CreateInvoicePage() {
                           <td className="py-2 text-right">{product.stock_qty} {product.unit}</td>
                           <td className="py-2 text-right">{formatCurrency(product.sale_price)}</td>
                           <td className="py-2 text-right text-gray-500">{formatCurrency(product.purchase_price)}</td>
+                          <td className="py-2 text-right">
+                            <Input
+                              type="number"
+                              min="0.001"
+                              step="any"
+                              className="ml-auto h-8 w-20 text-right"
+                              value={productAddQuantities[product.id] ?? '1'}
+                              onChange={(e) => setProductAddQuantity(product.id, e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Quantity for ${product.name}`}
+                            />
+                          </td>
                           <td className="py-2">
                             <Button
                               type="button"
                               size="sm"
-                              onClick={() => addProductToInvoice(product)}
+                              onClick={() => addProductToInvoice(product, resolveProductAddQuantity(product.id))}
                             >
                               Add
                             </Button>
@@ -1646,7 +1676,7 @@ export default function CreateInvoicePage() {
                       ))}
                       {filteredProducts.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="py-8 text-center text-gray-500">
+                          <td colSpan={8} className="py-8 text-center text-gray-500">
                             No products found
                           </td>
                         </tr>

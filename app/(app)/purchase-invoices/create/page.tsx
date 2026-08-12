@@ -133,6 +133,7 @@ export default function CreatePurchaseInvoicePage() {
   const [saving, setSaving] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set())
+  const [productAddQuantities, setProductAddQuantities] = useState<Record<string, string>>({})
   const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set())
   const [showCreateProduct, setShowCreateProduct] = useState(false)
   const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
@@ -453,14 +454,19 @@ export default function CreatePurchaseInvoicePage() {
     })
   }
 
-  const buildPurchaseItemFromProduct = (product: Product, scannedCode?: string): PurchaseBillItem => {
+  const buildPurchaseItemFromProduct = (
+    product: Product,
+    scannedCode?: string,
+    quantity = 1
+  ): PurchaseBillItem => {
     const itemItemCode = scannedCode || product.item_code || ''
+    const qty = parseItemNumber(quantity, 1)
     return calcItemTotals({
       product_id: product.id,
       item_code: itemItemCode,
       description: product.name,
       hsn_code: product.hsn_code || '',
-      quantity: 1,
+      quantity: qty > 0 ? qty : 1,
       unit_price: productPurchaseUnitPrice(product),
       discount: 0,
       tax_rate: taxExempt ? 0 : productTaxRate(product),
@@ -480,9 +486,14 @@ export default function CreatePurchaseInvoicePage() {
   const mergeProductIntoItems = (
     prevItems: PurchaseBillItem[],
     product: Product,
-    scannedCode?: string
+    scannedCode?: string,
+    quantity = 1
   ): PurchaseBillItem[] => {
     const itemItemCode = scannedCode || product.item_code || ''
+    const addQty = (() => {
+      const parsed = parseItemNumber(quantity, 1)
+      return parsed > 0 ? parsed : 1
+    })()
     const existingItemIndex = prevItems.findIndex(
       (item) => item.product_id && item.product_id === product.id && item.item_code === itemItemCode
     )
@@ -491,13 +502,22 @@ export default function CreatePurchaseInvoicePage() {
       const updatedItems = [...prevItems]
       const updated = {
         ...updatedItems[existingItemIndex],
-        quantity: updatedItems[existingItemIndex].quantity + 1,
+        quantity: updatedItems[existingItemIndex].quantity + addQty,
       }
       updatedItems[existingItemIndex] = calcItemTotals(updated)
       return updatedItems
     }
 
-    return [...prevItems, buildPurchaseItemFromProduct(product, scannedCode)]
+    return [...prevItems, buildPurchaseItemFromProduct(product, scannedCode, addQty)]
+  }
+
+  const getProductAddQuantity = (productId: string) => {
+    const parsed = parseItemNumber(productAddQuantities[productId], 1)
+    return parsed > 0 ? parsed : 1
+  }
+
+  const setProductAddQuantity = (productId: string, value: string) => {
+    setProductAddQuantities((prev) => ({ ...prev, [productId]: value }))
   }
 
   const addProductsToInvoice = (products: Product[], options?: { closeModal?: boolean }) => {
@@ -506,7 +526,7 @@ export default function CreatePurchaseInvoicePage() {
     setItems((prevItems) => {
       let next = prevItems
       for (const product of products) {
-        next = mergeProductIntoItems(next, product)
+        next = mergeProductIntoItems(next, product, undefined, getProductAddQuantity(product.id))
       }
       return next
     })
@@ -522,15 +542,20 @@ export default function CreatePurchaseInvoicePage() {
       setShowProductModal(false)
       setProductSearch('')
       setSelectedProductIds(new Set())
+      setProductAddQuantities({})
     }
   }
 
-  const addProductToInvoice = (product: Product, scannedCode?: string) => {
+  const addProductToInvoice = (product: Product, scannedCode?: string, quantity = 1) => {
     const itemItemCode = scannedCode || product.item_code || ''
+    const addQty = (() => {
+      const parsed = parseItemNumber(quantity, 1)
+      return parsed > 0 ? parsed : 1
+    })()
     const hadExisting = items.some(
       (item) => item.product_id && item.product_id === product.id && item.item_code === itemItemCode
     )
-    setItems((prevItems) => mergeProductIntoItems(prevItems, product, scannedCode))
+    setItems((prevItems) => mergeProductIntoItems(prevItems, product, scannedCode, addQty))
     setToast({
       message: hadExisting ? `Quantity increased: ${product.name}` : `Added: ${product.name}`,
       type: 'success',
@@ -539,6 +564,7 @@ export default function CreatePurchaseInvoicePage() {
     setShowProductModal(false)
     setProductSearch('')
     setSelectedProductIds(new Set())
+    setProductAddQuantities({})
   }
 
   const toggleProductSelection = (productId: string) => {
@@ -565,12 +591,14 @@ export default function CreatePurchaseInvoicePage() {
 
   const openProductModal = () => {
     setSelectedProductIds(new Set())
+    setProductAddQuantities({})
     setShowProductModal(true)
   }
 
   const closeProductModal = () => {
     setShowProductModal(false)
     setSelectedProductIds(new Set())
+    setProductAddQuantities({})
   }
 
   const handleItemCodeScan = async (code: string) => {
@@ -1595,6 +1623,7 @@ export default function CreatePurchaseInvoicePage() {
                         <th className="pb-2 font-medium text-right w-24">Stock</th>
                         <th className="pb-2 font-medium text-right w-28">Sale Price</th>
                         <th className="pb-2 font-medium text-right w-28">Purchase Price</th>
+                        <th className="pb-2 font-medium text-right w-24">Qty</th>
                         <th className="pb-2 font-medium w-20">Action</th>
                       </tr>
                     </thead>
@@ -1613,11 +1642,23 @@ export default function CreatePurchaseInvoicePage() {
                           <td className="py-2 text-right w-24">{product.stock_qty} {product.unit}</td>
                           <td className="py-2 text-right w-28">{formatCurrency(product.sale_price)}</td>
                           <td className="py-2 text-right text-gray-500 w-28">{formatCurrency(product.purchase_price)}</td>
+                          <td className="py-2 text-right w-24">
+                            <Input
+                              type="number"
+                              min="0.001"
+                              step="any"
+                              className="ml-auto h-8 w-20 text-right"
+                              value={productAddQuantities[product.id] ?? '1'}
+                              onChange={(e) => setProductAddQuantity(product.id, e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Quantity for ${product.name}`}
+                            />
+                          </td>
                           <td className="py-2 w-20">
                             <Button
                               type="button"
                               size="sm"
-                              onClick={() => addProductToInvoice(product)}
+                              onClick={() => addProductToInvoice(product, undefined, getProductAddQuantity(product.id))}
                             >
                               Add
                             </Button>
@@ -1626,7 +1667,7 @@ export default function CreatePurchaseInvoicePage() {
                       ))}
                       {filteredProducts.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="py-8 text-center text-gray-500">
+                          <td colSpan={8} className="py-8 text-center text-gray-500">
                             No products found
                           </td>
                         </tr>
