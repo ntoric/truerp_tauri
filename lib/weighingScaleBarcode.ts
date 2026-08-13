@@ -1,5 +1,6 @@
 import {
   convertScaleWeightToProductQuantity,
+  isWeightBasedUnit,
   normalizeScaleWeightKg,
   type WeighingScaleSettings,
 } from '@/lib/weighingScale'
@@ -183,7 +184,27 @@ export function parseWeighingScaleBarcode(
   return parseEanScaleBarcode(rawBarcode, settings)
 }
 
-/** True when the scan looks like a scale barcode (for mismatch error messages). */
+/** Strip AIM identifiers (]C1, ]E0, …) some scanners prefix onto the payload. */
+export function normalizeScannedBarcode(raw: string): string {
+  let code = raw.trim()
+  if (/^\][A-Za-z0-9]{2}/.test(code)) {
+    code = code.slice(3).trim()
+  }
+  return code
+}
+
+function itemCodeMatchesScan(stored: string | undefined, scanned: string): boolean {
+  const a = stored?.trim() ?? ''
+  const b = scanned.trim()
+  if (!a || !b) return false
+  if (a === b) return true
+  // Some scanners omit the EAN-13 check digit (12 vs 13).
+  if (/^\d{13}$/.test(a) && /^\d{12}$/.test(b) && a.startsWith(b)) return true
+  if (/^\d{12}$/.test(a) && /^\d{13}$/.test(b) && b.startsWith(a)) return true
+  return false
+}
+
+/** True when the scan is a prefixed scale label (e.g. w0000112500), not a retail EAN. */
 export function looksLikeScaleBarcode(
   rawBarcode: string,
   settings: Pick<
@@ -195,7 +216,7 @@ export function looksLikeScaleBarcode(
     | 'barcode_payload_digits'
   >
 ): boolean {
-  const trimmed = rawBarcode.trim()
+  const trimmed = normalizeScannedBarcode(rawBarcode)
   const prefix = (settings.barcode_prefix || 'w').trim()
   const pluLen = settings.barcode_plu_digits
   const payloadLen = settings.barcode_payload_digits
@@ -205,15 +226,7 @@ export function looksLikeScaleBarcode(
     return digits.length >= pluLen + payloadLen
   }
 
-  const digits = trimmed.replace(/\D/g, '')
-  const minLen = 2 + pluLen + payloadLen
-  if (digits.length < minLen) return false
-  const prefixNum = parseInt(digits.slice(0, 2), 10)
-  return (
-    !Number.isNaN(prefixNum) &&
-    prefixNum >= settings.barcode_prefix_start &&
-    prefixNum <= settings.barcode_prefix_end
-  )
+  return false
 }
 
 /** Exact match on item_code or sku — takes priority over scale barcode parsing. */
@@ -221,11 +234,19 @@ export function findProductByExactScanCode<T extends { item_code?: string; sku?:
   code: string,
   products: T[]
 ): T | null {
-  const trimmed = code.trim()
-  if (!trimmed) return null
-  const byItemCode = products.find((p) => p.item_code?.trim() === trimmed)
-  const bySku = products.find((p) => p.sku?.trim() === trimmed)
-  return byItemCode ?? bySku ?? null
+  const matches = productsMatchingScanCode(code, products)
+  return matches[0] ?? null
+}
+
+export function productsMatchingScanCode<T extends { item_code?: string; sku?: string }>(
+  code: string,
+  products: T[]
+): T[] {
+  const scanned = normalizeScannedBarcode(code)
+  if (!scanned) return []
+  return products.filter(
+    (p) => itemCodeMatchesScan(p.item_code, scanned) || itemCodeMatchesScan(p.sku, scanned)
+  )
 }
 
 export function findProductByScalePlu(
@@ -276,6 +297,13 @@ export function resolveScaleBarcodeForPos(
 
   const full = products.find((p) => p.id === product.id)
   if (!full) return null
+
+  // EAN 20–29 also matches generated/retail item codes. Only treat that
+  // format as a scale label when the matched product is weight-based.
+  const prefix = (settings.barcode_prefix || 'w').trim()
+  const isPrefixed =
+    !!prefix && normalizeScannedBarcode(rawBarcode).toLowerCase().startsWith(prefix.toLowerCase())
+  if (!isPrefixed && !isWeightBasedUnit(full.unit)) return null
 
   let quantity: number | null
   if (settings.barcode_payload_type === 'price_paise') {

@@ -1167,13 +1167,16 @@ export default function PurchaseInvoicesPage() {
                       <span className="flex-1">{item.description}</span>
                       <Input
                         type="number"
-                        value={itemQuantities[item.id] || item.quantity}
-                        onChange={(e) => setItemQuantities({
-                          ...itemQuantities,
-                          [item.id]: Number(e.target.value)
-                        })}
+                        value={itemQuantities[item.id] ?? item.quantity}
+                        onChange={(e) => {
+                          const n = Number(e.target.value)
+                          setItemQuantities({
+                            ...itemQuantities,
+                            [item.id]: Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0,
+                          })
+                        }}
                         className="w-20 h-8"
-                        min="0"
+                        min={0}
                       />
                     </div>
                   ))}

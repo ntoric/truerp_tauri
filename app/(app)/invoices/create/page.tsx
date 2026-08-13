@@ -33,7 +33,7 @@ import { useFormKeyboardShortcuts } from '@/hooks/useFormKeyboardShortcuts'
 import CreateProductDialog, { type CreatedProduct } from '@/components/CreateProductDialog'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
-import { looksLikeScaleBarcode, resolveScaleBarcodeForPos } from '@/lib/weighingScaleBarcode'
+import { looksLikeScaleBarcode, productsMatchingScanCode, resolveScaleBarcodeForPos, normalizeScannedBarcode } from '@/lib/weighingScaleBarcode'
 import { fetchProductBatches, formatBatchLabel, type ProductBatchStock } from '@/lib/productBatches'
 
 interface Party {
@@ -479,13 +479,7 @@ export default function CreateInvoicePage() {
   }
 
   const findProductsByItemCodeOrSku = (code: string) => {
-    const normalized = code.trim()
-    if (!normalized) return []
-    return products.filter(
-      p =>
-        p.item_code?.trim() === normalized ||
-        p.sku?.trim() === normalized
-    )
+    return productsMatchingScanCode(code, products)
   }
 
   const productFromStockMatch = (match: Record<string, unknown>): Product | undefined => {
@@ -511,7 +505,7 @@ export default function CreateInvoicePage() {
   }
 
   const handleItemCodeScan = async (rawScannedCode: string) => {
-    const code = rawScannedCode.trim()
+    const code = normalizeScannedBarcode(rawScannedCode)
     if (!code) return
 
     const localMatches = findProductsByItemCodeOrSku(code)
@@ -525,6 +519,30 @@ export default function CreateInvoicePage() {
       setShowProductModal(true)
       notifyError('Multiple products match. Please select the correct item.')
       return
+    }
+
+    try {
+      const res = await apiFetch(`/inventory/stocks/search?item_code=${encodeURIComponent(code)}`)
+      if (res.ok) {
+        const data = await res.json()
+        const stockMatches: Record<string, unknown>[] = data.data || []
+        if (stockMatches.length === 1) {
+          const product = productFromStockMatch(stockMatches[0])
+          if (product) {
+            addProductToInvoice(product, 1)
+            notifySuccess(`Added: ${product.name}`)
+            return
+          }
+        }
+        if (stockMatches.length > 1) {
+          setProductSearch(code)
+          setShowProductModal(true)
+          notifyError('Multiple products match. Please select the correct item.')
+          return
+        }
+      }
+    } catch (err) {
+      console.error(err)
     }
 
     if (scaleSettings.barcode_scan_enabled) {
@@ -541,34 +559,6 @@ export default function CreateInvoicePage() {
         notifyError('Scale barcode recognized but no matching product PLU')
         return
       }
-    }
-
-    try {
-      const res = await apiFetch(`/inventory/stocks/search?item_code=${encodeURIComponent(code)}`)
-      if (res.ok) {
-        const data = await res.json()
-        const stockMatches: Record<string, unknown>[] = data.data || []
-        if (stockMatches.length === 0) {
-          notifyError('Product not found with this item code/SKU')
-          return
-        }
-        if (stockMatches.length > 1) {
-          setProductSearch(code)
-          setShowProductModal(true)
-          notifyError('Multiple products match. Please select the correct item.')
-          return
-        }
-        const product = productFromStockMatch(stockMatches[0])
-        if (product) {
-          addProductToInvoice(product, 1)
-          notifySuccess(`Added: ${product.name}`)
-        } else {
-          notifyError('Product not found with this item code/SKU')
-        }
-        return
-      }
-    } catch (err) {
-      console.error(err)
     }
 
     notifyError('Product not found with this item code/SKU')

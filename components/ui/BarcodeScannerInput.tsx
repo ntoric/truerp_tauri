@@ -57,11 +57,14 @@ const BarcodeScannerInput = forwardRef<BarcodeScannerInputHandle, BarcodeScanner
       }
     }, [enabled, autoFocusWhenEnabled])
 
-    const submit = () => {
-      const code = value.trim()
+    const submit = (raw?: string) => {
+      // Hardware scanners fire Enter before React state flushes the last digits.
+      // Always read the DOM value so generated 13-digit codes are not truncated.
+      const code = (raw ?? inputRef.current?.value ?? value).trim()
       if (!code) return
       onScan(code)
       setValue('')
+      if (inputRef.current) inputRef.current.value = ''
       if (enabled) {
         inputRef.current?.focus()
       }
@@ -89,9 +92,9 @@ const BarcodeScannerInput = forwardRef<BarcodeScannerInputHandle, BarcodeScanner
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' || e.key === 'Tab') {
                   e.preventDefault()
-                  submit()
+                  submit(e.currentTarget.value)
                 }
               }}
               placeholder={placeholder}

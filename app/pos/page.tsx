@@ -23,6 +23,7 @@ import {
   resolveScaleBarcodeForPos,
   looksLikeScaleBarcode,
   findProductByExactScanCode,
+  normalizeScannedBarcode,
 } from '@/lib/weighingScaleBarcode'
 import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/components/ui/BarcodeScannerInput'
 import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
@@ -466,8 +467,8 @@ export default function POSPage() {
     void addToCartWithQuantity(product, quantity)
   }
 
-  const handlePosItemCodeScan = (raw: string) => {
-    const code = raw.trim()
+  const handlePosItemCodeScan = async (raw: string) => {
+    const code = normalizeScannedBarcode(raw)
     if (!code) return
 
     // Retail barcodes: exact item_code/sku match — always qty 1 (never stale scale weight).
@@ -478,6 +479,27 @@ export default function POSPage() {
       barcodeInputRef.current?.clear()
       barcodeInputRef.current?.focus()
       return
+    }
+
+    try {
+      const res = await apiFetch(`/inventory/stocks/search?item_code=${encodeURIComponent(code)}`)
+      if (res.ok) {
+        const data = await res.json()
+        const matches: Array<Record<string, unknown>> = data.data || []
+        if (matches.length > 0) {
+          const id = String(matches[0].product_id ?? '')
+          const product = products.find((p) => p.id === id)
+          if (product) {
+            void addToCartWithQuantity(product, 1)
+            notifySuccess(`Added: ${product.name}`)
+            barcodeInputRef.current?.clear()
+            barcodeInputRef.current?.focus()
+            return
+          }
+        }
+      }
+    } catch {
+      /* offline — fall through to local-only scale / not-found */
     }
 
     if (scaleSettings.barcode_scan_enabled) {

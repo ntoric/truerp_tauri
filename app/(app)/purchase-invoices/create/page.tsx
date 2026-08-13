@@ -603,33 +603,38 @@ export default function CreatePurchaseInvoicePage() {
 
   const handleItemCodeScan = async (code: string) => {
     try {
-      const res = await apiFetch(`/inventory/stocks/search?item_code=${encodeURIComponent(code)}`)
+      const res = await apiFetch(`/inventory/stocks/search?item_code=${encodeURIComponent(code.trim())}`)
       
       if (res.ok) {
         const data = await res.json()
         const stockMatches = data.data || []
         
         if (stockMatches.length === 0) {
-          const skuMatches = products.filter(p => p.sku === code)
+          const localMatches = products.filter(
+            p => p.item_code?.trim() === code.trim() || p.sku?.trim() === code.trim()
+          )
           
-          if (skuMatches.length === 0) {
+          if (localMatches.length === 0) {
             setToast({ message: 'Product not found with this item code/SKU', type: 'error' })
             setTimeout(() => setToast(null), 3000)
-          } else if (skuMatches.length === 1) {
-            addProductToInvoice(skuMatches[0], code)
-            setToast({ message: `Added: ${skuMatches[0].name}`, type: 'success' })
+          } else if (localMatches.length === 1) {
+            addProductToInvoice(localMatches[0], code.trim())
+            setToast({ message: `Added: ${localMatches[0].name}`, type: 'success' })
             setTimeout(() => setToast(null), 2000)
           } else {
-            setMatchingProducts(skuMatches)
+            setMatchingProducts(localMatches)
             setShowProductSelector(true)
           }
         } else if (stockMatches.length === 1) {
           const stockMatch = stockMatches[0]
           const product = products.find(p => p.id === stockMatch.product_id)
           if (product) {
-            addProductToInvoice(product, stockMatch.item_code)
+            addProductToInvoice(product, stockMatch.item_code || code.trim())
             setToast({ message: `Added: ${product.name}`, type: 'success' })
             setTimeout(() => setToast(null), 2000)
+          } else {
+            setToast({ message: 'Product not found with this item code/SKU', type: 'error' })
+            setTimeout(() => setToast(null), 3000)
           }
         } else {
           const matchingProducts = stockMatches.map((s: any) => ({
