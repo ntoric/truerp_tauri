@@ -22,6 +22,16 @@ export function roundMoney(value: number): number {
   return Math.round((Number(value) || 0) * 100) / 100
 }
 
+/** Format qty/stock: whole numbers stay integers, floats show 2 decimal places. */
+export function formatQty(value: unknown, places = 2): string {
+  const n = parseItemNumber(value, 0)
+  const factor = 10 ** places
+  const rounded = Math.round(n * factor) / factor
+  if (Object.is(rounded, -0)) return '0'
+  if (Number.isInteger(rounded)) return String(rounded)
+  return rounded.toFixed(places)
+}
+
 /** Parse and clamp a money input to max 2 decimal places. */
 export function parseMoney(value: unknown, fallback = 0): number {
   return roundMoney(parseItemNumber(value, fallback))

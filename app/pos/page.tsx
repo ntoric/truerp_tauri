@@ -27,7 +27,7 @@ import {
 } from '@/lib/weighingScaleBarcode'
 import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/components/ui/BarcodeScannerInput'
 import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
-import { linePayableTotal, lineTaxAmount, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
+import { formatQty, linePayableTotal, lineTaxAmount, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
 import { fetchProductBatches, pickDefaultBatch } from '@/lib/productBatches'
 import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
 import KeyboardShortcutsTrigger from '@/components/keyboard-shortcuts/KeyboardShortcutsTrigger'
@@ -508,7 +508,7 @@ export default function POSPage() {
         const product = products.find((p) => p.id === scaleHit.product.id)
         if (product) {
           addToCartWithQuantity(product, scaleHit.quantity)
-          notifySuccess(`${product.name} · ${scaleHit.quantity} ${product.unit}`)
+          notifySuccess(`${product.name} · ${formatQty(scaleHit.quantity, scaleSettings.decimal_places)} ${product.unit}`)
           barcodeInputRef.current?.clear()
           barcodeInputRef.current?.focus()
           return
@@ -1165,7 +1165,7 @@ export default function POSPage() {
                       {formatCurrency(product.sale_price)}
                     </span>
                     <span className="text-xs text-gray-500">
-                      {product.stock_qty}
+                      {formatQty(product.stock_qty)}
                     </span>
                   </div>
                 </button>
