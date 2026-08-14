@@ -26,6 +26,7 @@ import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface WarehouseData {
   id: string
@@ -391,13 +392,12 @@ export default function WarehousesPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Warehouses / Outlets</h1>
-            <p className="text-gray-500">Manage your storage locations and outlets</p>
+            <h1 className="app-page-title">Warehouses / Outlets</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <PageHeaderActions>
             <Button
               variant="outline"
               onClick={handleExport}
@@ -536,7 +536,7 @@ export default function WarehousesPage() {
               </div>
             </DialogContent>
           </Dialog>
-          </div>
+          </PageHeaderActions>
         </div>
 
         <Card>

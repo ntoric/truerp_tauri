@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Label } from '@/components/ui/label'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
-import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange, Check, X, ChevronDown, ChevronUp } from 'lucide-react'
+import ExpandableTableCard from '@/components/ui/expandable-table-card'
+import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange, Check, X, Filter } from 'lucide-react'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { asArray } from '@/lib/utils'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -29,6 +30,7 @@ import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { isSuperAdmin } from '@/lib/roles'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface InventoryItemOption {
   id: string
@@ -212,7 +214,7 @@ export default function InventoryPage() {
   const [entryApprovalFilter, setEntryApprovalFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
   const [productSearchQuery, setProductSearchQuery] = useState('')
   const [approvingEntryId, setApprovingEntryId] = useState<string | null>(null)
-  const [showLowStockAlerts, setShowLowStockAlerts] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
 
   const dateRange = useMemo(
     () => getDateRangeForPeriod(datePeriod, customFromDate, customToDate),
@@ -220,6 +222,10 @@ export default function InventoryPage() {
   )
   const dateRangeLabel = useMemo(() => formatDateRangeLabel(dateRange), [dateRange])
   const isDateFilterActive = datePeriod !== 'all' && (datePeriod !== 'custom' || Boolean(customFromDate || customToDate))
+  const hasCustomizedFilters =
+    productSearchQuery.trim().length > 0 ||
+    datePeriod !== 'month' ||
+    (datePeriod === 'custom' && Boolean(customFromDate || customToDate))
 
   const pendingEntriesCount = useMemo(
     () => entries.filter((entry) => (entry.approval_status || 'approved') === 'pending').length,
@@ -783,13 +789,47 @@ export default function InventoryPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Inventory Management</h1>
-            <p className="text-gray-500">Track stock levels, movements, and transfers</p>
+            <h1 className="app-page-title">Inventory Management</h1>
           </div>
-          <div className="flex gap-2">
+          <PageHeaderActions>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className={`relative shrink-0 ${showFilters ? 'border-slate-300 bg-slate-100 text-slate-800' : ''}`}
+              onClick={() => setShowFilters((prev) => !prev)}
+              aria-label={showFilters ? 'Hide period and search filters' : 'Show period and search filters'}
+              aria-expanded={showFilters}
+              title={showFilters ? 'Hide filters' : 'Period & search'}
+            >
+              <Filter className="h-4 w-4" />
+              {(isProductSearchActive || datePeriod !== 'month') && (
+                <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-white" />
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className={`relative shrink-0 ${activeTab === 'low-stock' ? 'border-orange-300 bg-orange-50 text-orange-800' : ''}`}
+              onClick={() => setActiveTab('low-stock')}
+              aria-label={
+                lowStockAlerts.length > 0
+                  ? `Low stock alerts, ${lowStockAlerts.length} items`
+                  : 'Low stock alerts'
+              }
+              title="Low stock alerts"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              {lowStockAlerts.length > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
+                  {lowStockAlerts.length > 99 ? '99+' : lowStockAlerts.length}
+                </span>
+              )}
+            </Button>
             <Button variant="outline" onClick={() => setShowBulkStockUpdateDialog(true)} className="gap-2">
               <Upload className="h-4 w-4" />
               Bulk Stock Update
@@ -1006,7 +1046,7 @@ export default function InventoryPage() {
               <ArrowDownLeft className="h-4 w-4 mr-2" />
               Release Stock
             </Button>
-          </div>
+          </PageHeaderActions>
         </div>
 
         {/* Edit Stock Entry Modal */}
@@ -1233,28 +1273,496 @@ export default function InventoryPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Low Stock Alerts */}
-        {lowStockAlerts.length > 0 && (
-          <Card className="border-orange-200 bg-orange-50">
-            <CardHeader className="pb-2">
+        {showFilters && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+                  <div className="space-y-2">
+                    <Label htmlFor="inventory_date_period">Period</Label>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <div className="flex items-center gap-2">
+                        <CalendarRange className="h-4 w-4 text-gray-500" />
+                        <Select
+                          value={datePeriod}
+                          onValueChange={(value) => setDatePeriod(value as DatePeriod)}
+                        >
+                          <SelectTrigger id="inventory_date_period" className="w-[180px]">
+                            <SelectValue placeholder="Select period" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {DATE_PERIOD_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {datePeriod === 'custom' && (
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <Input
+                            type="date"
+                            value={customFromDate}
+                            onChange={(e) => setCustomFromDate(e.target.value)}
+                            className="w-full sm:w-auto"
+                            aria-label="From date"
+                          />
+                          <span className="hidden text-sm text-gray-400 sm:inline">to</span>
+                          <Input
+                            type="date"
+                            value={customToDate}
+                            onChange={(e) => setCustomToDate(e.target.value)}
+                            className="w-full sm:w-auto"
+                            aria-label="To date"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="inventory_product_search">Product search</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <Input
+                        id="inventory_product_search"
+                        placeholder="Search by name, SKU, or item code..."
+                        value={productSearchQuery}
+                        onChange={(e) => setProductSearchQuery(e.target.value)}
+                        className="w-full pl-9 sm:w-[280px]"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-500">
+                  {isDateFilterActive ? (
+                    <p>
+                      Showing <span className="font-medium text-gray-700">{dateRangeLabel}</span> on Stock Entries and Transfers.
+                      Stock Balance, Inventory Stocks, and Low Stock Alerts always show current data.
+                    </p>
+                  ) : (
+                    <p>Stock Balance, Inventory Stocks, and Low Stock Alerts always show current data.</p>
+                  )}
+                  {isProductSearchActive && (
+                    <p className="mt-1">
+                      Product search applies to Stock Balance, Stock Entries, and Inventory Stocks.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {!showFilters && hasCustomizedFilters && (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+            {datePeriod !== 'month' && isDateFilterActive && (
               <button
                 type="button"
-                onClick={() => setShowLowStockAlerts((prev) => !prev)}
-                className="flex w-full items-center justify-between text-left"
+                onClick={() => setShowFilters(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 hover:bg-slate-50"
               >
-                <CardTitle className="text-orange-800 flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5" />
-                  Low Stock Alerts ({lowStockAlerts.length})
-                </CardTitle>
-                {showLowStockAlerts ? (
-                  <ChevronUp className="h-5 w-5 shrink-0 text-orange-700" />
-                ) : (
-                  <ChevronDown className="h-5 w-5 shrink-0 text-orange-700" />
-                )}
+                <CalendarRange className="h-3.5 w-3.5 text-gray-500" />
+                {dateRangeLabel}
               </button>
-            </CardHeader>
-            {showLowStockAlerts && (
-            <CardContent>
+            )}
+            {isProductSearchActive && (
+              <button
+                type="button"
+                onClick={() => setShowFilters(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 hover:bg-slate-50"
+              >
+                <Search className="h-3.5 w-3.5 text-gray-500" />
+                “{productSearchQuery.trim()}”
+              </button>
+            )}
+          </div>
+        )}
+
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="balance">Stock Balance</TabsTrigger>
+            <TabsTrigger value="entries">
+              Stock Entries
+              {pendingEntriesCount > 0 && (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                  {pendingEntriesCount}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="transfers">Transfers</TabsTrigger>
+            <TabsTrigger value="stocks">Inventory Stocks</TabsTrigger>
+            <TabsTrigger value="low-stock">
+              Low Stock Alerts
+              {lowStockAlerts.length > 0 && (
+                <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
+                  {lowStockAlerts.length}
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="balance">
+            <ExpandableTableCard
+              title="Stock Balance"
+              description={
+                <p className="text-sm text-gray-500">
+                  Totals consolidated across all batches per product and outlet.
+                  {isProductSearchActive && (
+                    <> · {filteredBalance.length} of {balance.length} records</>
+                  )}
+                </p>
+              }
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product</TableHead>
+                    <TableHead>SKU</TableHead>
+                    <TableHead>Stock Qty</TableHead>
+                    <TableHead>Cost Price</TableHead>
+                    <TableHead>Value</TableHead>
+                    <TableHead>Outlet</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {balancePagination.paginatedItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-gray-500">
+                        {balance.length === 0
+                          ? 'No stock balance records'
+                          : 'No stock balance records match your product search'}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    balancePagination.paginatedItems.map((item) => (
+                      <TableRow key={`${item.product_id}-${item.outlet_id}`}>
+                        <TableCell className="font-medium">{item.product_name}</TableCell>
+                        <TableCell>{item.sku}</TableCell>
+                        <TableCell>{item.stock_qty}</TableCell>
+                        <TableCell>₹{item.cost_price.toFixed(2)}</TableCell>
+                        <TableCell>₹{item.value.toFixed(2)}</TableCell>
+                        <TableCell>{item.outlet_name || item.outlet_id}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              <PaginationControls
+                page={balancePagination.page}
+                totalPages={balancePagination.totalPages}
+                totalItems={balancePagination.totalItems}
+                pageSize={balancePagination.pageSize}
+                onPageChange={balancePagination.setPage}
+              />
+            </ExpandableTableCard>
+          </TabsContent>
+
+          <TabsContent value="entries">
+            <ExpandableTableCard
+              title={
+                <div>
+                  <CardTitle>Stock Entries</CardTitle>
+                  {isDateFilterActive && (
+                    <p className="mt-1 text-sm text-gray-500">
+                      Filtered by {dateRangeLabel} · {filteredEntries.length} of {entries.length} entries
+                    </p>
+                  )}
+                  {isProductSearchActive && !isDateFilterActive && (
+                    <p className="mt-1 text-sm text-gray-500">
+                      {filteredEntries.length} of {entries.length} entries match your product search
+                    </p>
+                  )}
+                  {pendingEntriesCount > 0 && (
+                    <p className="mt-1 text-sm text-amber-700">
+                      {pendingEntriesCount} purchase stock update{pendingEntriesCount === 1 ? '' : 's'} pending approval
+                    </p>
+                  )}
+                </div>
+              }
+              headerActions={
+                <>
+                  <Select
+                    value={entryApprovalFilter}
+                    onValueChange={(v) => setEntryApprovalFilter(v as typeof entryApprovalFilter)}
+                  >
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Approval status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="approved">Approved</SelectItem>
+                      <SelectItem value="rejected">Rejected</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {pendingEntriesCount > 0 && (
+                    <Button
+                      size="sm"
+                      onClick={handleApproveAllPending}
+                      disabled={approvingEntryId === 'all'}
+                    >
+                      <Check className="mr-1 h-4 w-4" />
+                      Approve all pending
+                    </Button>
+                  )}
+                </>
+              }
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Item</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Approval</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Cost Price</TableHead>
+                    <TableHead>Batch No</TableHead>
+                    <TableHead>Item code</TableHead>
+                    <TableHead>Outlet</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Notes</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {entriesPagination.paginatedItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={11} className="py-8 text-center text-gray-500">
+                        {entries.length === 0
+                          ? 'No stock entries found'
+                          : 'No stock entries found for the selected filters'}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    entriesPagination.paginatedItems.map((entry) => {
+                      const approvalStatus = entry.approval_status || 'approved'
+                      const isPending = approvalStatus === 'pending'
+                      return (
+                      <TableRow key={entry.id} className={isPending ? 'bg-amber-50/60' : undefined}>
+                        <TableCell className="font-medium">
+                          {entry.product?.name || entry.item_name}
+                          {entry.product?.sku && <span className="text-gray-500 text-xs ml-2">({entry.product.sku})</span>}
+                        </TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEntryTypeColor(entry.entry_type)}`}>
+                            {entry.entry_type}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getApprovalStatusColor(approvalStatus)}`}>
+                            {approvalStatus}
+                          </span>
+                        </TableCell>
+                        <TableCell className={entry.quantity < 0 ? 'text-red-600' : 'text-green-600'}>
+                          {entry.quantity}
+                        </TableCell>
+                        <TableCell>₹{entry.cost_price.toFixed(2)}</TableCell>
+                        <TableCell>{entry.batch_no || '-'}</TableCell>
+                        <TableCell>{entry.item_code || '-'}</TableCell>
+                        <TableCell>{entry.outlet_name || entry.outlet_id}</TableCell>
+                        <TableCell>{new Date(entry.entry_date).toLocaleDateString()}</TableCell>
+                        <TableCell>{entry.notes || '-'}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap items-center gap-1">
+                            {isPending && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-green-700 border-green-200 hover:bg-green-50"
+                                  disabled={approvingEntryId === entry.id}
+                                  onClick={() => handleApproveEntry(entry)}
+                                >
+                                  <Check className="mr-1 h-3.5 w-3.5" />
+                                  Approve
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-red-700 border-red-200 hover:bg-red-50"
+                                  disabled={approvingEntryId === entry.id}
+                                  onClick={() => handleRejectEntry(entry)}
+                                >
+                                  <X className="mr-1 h-3.5 w-3.5" />
+                                  Reject
+                                </Button>
+                              </>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditEntry(entry)}
+                            >
+                              Edit
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+              <PaginationControls
+                page={entriesPagination.page}
+                totalPages={entriesPagination.totalPages}
+                totalItems={entriesPagination.totalItems}
+                pageSize={entriesPagination.pageSize}
+                onPageChange={entriesPagination.setPage}
+              />
+            </ExpandableTableCard>
+          </TabsContent>
+
+          <TabsContent value="transfers">
+            <ExpandableTableCard
+              title="Stock Transfers"
+              description={
+                isDateFilterActive ? (
+                  <p className="text-sm text-gray-500">
+                    Filtered by {dateRangeLabel} · {filteredTransfers.length} of {transfers.length} transfers
+                  </p>
+                ) : undefined
+              }
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>From Outlet</TableHead>
+                    <TableHead>To Outlet</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Items</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {transfersPagination.paginatedItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-gray-500">
+                        {transfers.length === 0
+                          ? 'No stock transfers found'
+                          : 'No stock transfers found for the selected period'}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    transfersPagination.paginatedItems.map((transfer) => (
+                      <TableRow key={transfer.id}>
+                        <TableCell>{transfer.from_outlet_id || '-'}</TableCell>
+                        <TableCell>{transfer.to_outlet_id}</TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTransferStatusColor(transfer.status)}`}>
+                            {transfer.status}
+                          </span>
+                        </TableCell>
+                        <TableCell>{transfer.total_items}</TableCell>
+                        <TableCell>{transfer.total_quantity}</TableCell>
+                        <TableCell>{new Date(transfer.created_at).toLocaleDateString()}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              <PaginationControls
+                page={transfersPagination.page}
+                totalPages={transfersPagination.totalPages}
+                totalItems={transfersPagination.totalItems}
+                pageSize={transfersPagination.pageSize}
+                onPageChange={transfersPagination.setPage}
+              />
+            </ExpandableTableCard>
+          </TabsContent>
+
+          <TabsContent value="stocks">
+            <ExpandableTableCard
+              title="Inventory Stocks"
+              description={
+                <p className="text-sm text-gray-500">
+                  Current stock by batch where batch tracking applies; one row per product when no batch is used.
+                  {isProductSearchActive && (
+                    <> · {filteredStocks.length} of {stocks.length} records</>
+                  )}
+                </p>
+              }
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product</TableHead>
+                    <TableHead>SKU</TableHead>
+                    <TableHead>Batch</TableHead>
+                    <TableHead>Expiry</TableHead>
+                    <TableHead>Initial Qty</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Reserved</TableHead>
+                    <TableHead>Available</TableHead>
+                    <TableHead>Avg Cost</TableHead>
+                    <TableHead>Outlet</TableHead>
+                    <TableHead>Last Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stocksPagination.paginatedItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={11} className="py-8 text-center text-gray-500">
+                        {stocks.length === 0
+                          ? 'No inventory stock records'
+                          : 'No inventory stock records match your product search'}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    stocksPagination.paginatedItems.map((stock) => (
+                      <TableRow key={stock.id}>
+                        <TableCell className="font-medium">{stock.product?.name || '-'}</TableCell>
+                        <TableCell>{stock.product?.sku || '-'}</TableCell>
+                        <TableCell>{stock.batch_no || '-'}</TableCell>
+                        <TableCell>
+                          {stock.exp_date
+                            ? new Date(stock.exp_date).toLocaleDateString('en-IN')
+                            : '-'}
+                        </TableCell>
+                        <TableCell>{stock.initial_quantity ?? 0}</TableCell>
+                        <TableCell>{stock.quantity}</TableCell>
+                        <TableCell>{stock.reserved_qty}</TableCell>
+                        <TableCell className="font-medium text-green-600">{stock.available_qty}</TableCell>
+                        <TableCell>₹{stock.average_cost.toFixed(2)}</TableCell>
+                        <TableCell>{stock.outlet_name || stock.outlet_id}</TableCell>
+                        <TableCell>{new Date(stock.last_updated).toLocaleDateString()}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              <PaginationControls
+                page={stocksPagination.page}
+                totalPages={stocksPagination.totalPages}
+                totalItems={stocksPagination.totalItems}
+                pageSize={stocksPagination.pageSize}
+                onPageChange={stocksPagination.setPage}
+              />
+            </ExpandableTableCard>
+          </TabsContent>
+
+          <TabsContent value="low-stock">
+            <ExpandableTableCard
+              className={lowStockAlerts.length > 0 ? 'border-orange-200 bg-orange-50/40' : undefined}
+              title={
+                <CardTitle className="flex items-center gap-2 text-orange-800">
+                  <AlertTriangle className="h-5 w-5" />
+                  Low Stock Alerts
+                  {lowStockAlerts.length > 0 && (
+                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
+                      {lowStockAlerts.length}
+                    </span>
+                  )}
+                </CardTitle>
+              }
+              description={
+                <p className="text-sm text-gray-500">
+                  Products at or below their minimum stock level. Always shows current data.
+                </p>
+              }
+            >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1277,7 +1785,7 @@ export default function InventoryPage() {
                       <TableRow key={`${alert.product_id}-${alert.outlet_id}`}>
                         <TableCell className="font-medium">{alert.product_name}</TableCell>
                         <TableCell>{alert.sku}</TableCell>
-                        <TableCell className="text-red-600 font-medium">{alert.current_stock}</TableCell>
+                        <TableCell className="font-medium text-red-600">{alert.current_stock}</TableCell>
                         <TableCell>{alert.min_stock}</TableCell>
                         <TableCell>{alert.outlet_name || alert.outlet_id}</TableCell>
                       </TableRow>
@@ -1292,448 +1800,7 @@ export default function InventoryPage() {
                 pageSize={lowStockPagination.pageSize}
                 onPageChange={lowStockPagination.setPage}
               />
-            </CardContent>
-            )}
-          </Card>
-        )}
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
-                <div className="space-y-2">
-                  <Label htmlFor="inventory_date_period">Period</Label>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <div className="flex items-center gap-2">
-                      <CalendarRange className="h-4 w-4 text-gray-500" />
-                      <Select
-                        value={datePeriod}
-                        onValueChange={(value) => setDatePeriod(value as DatePeriod)}
-                      >
-                        <SelectTrigger id="inventory_date_period" className="w-[180px]">
-                          <SelectValue placeholder="Select period" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {DATE_PERIOD_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {datePeriod === 'custom' && (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                        <Input
-                          type="date"
-                          value={customFromDate}
-                          onChange={(e) => setCustomFromDate(e.target.value)}
-                          className="w-full sm:w-auto"
-                          aria-label="From date"
-                        />
-                        <span className="hidden text-sm text-gray-400 sm:inline">to</span>
-                        <Input
-                          type="date"
-                          value={customToDate}
-                          onChange={(e) => setCustomToDate(e.target.value)}
-                          className="w-full sm:w-auto"
-                          aria-label="To date"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="inventory_product_search">Product search</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                    <Input
-                      id="inventory_product_search"
-                      placeholder="Search by name, SKU, or item code..."
-                      value={productSearchQuery}
-                      onChange={(e) => setProductSearchQuery(e.target.value)}
-                      className="w-full pl-9 sm:w-[280px]"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="text-sm text-gray-500">
-                {isDateFilterActive ? (
-                  <p>
-                    Showing <span className="font-medium text-gray-700">{dateRangeLabel}</span> on Stock Entries and Transfers.
-                    Stock Balance, Inventory Stocks, and Low Stock Alerts always show current data.
-                  </p>
-                ) : (
-                  <p>Stock Balance, Inventory Stocks, and Low Stock Alerts always show current data.</p>
-                )}
-                {isProductSearchActive && (
-                  <p className="mt-1">
-                    Product search applies to Stock Balance, Stock Entries, and Inventory Stocks.
-                  </p>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value="balance">Stock Balance</TabsTrigger>
-            <TabsTrigger value="entries">
-              Stock Entries
-              {pendingEntriesCount > 0 && (
-                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                  {pendingEntriesCount}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="transfers">Transfers</TabsTrigger>
-            <TabsTrigger value="stocks">Inventory Stocks</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="balance">
-            <Card>
-              <CardHeader>
-                <CardTitle>Stock Balance</CardTitle>
-                <p className="text-sm text-gray-500">
-                  Totals consolidated across all batches per product and outlet.
-                  {isProductSearchActive && (
-                    <> · {filteredBalance.length} of {balance.length} records</>
-                  )}
-                </p>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Stock Qty</TableHead>
-                      <TableHead>Cost Price</TableHead>
-                      <TableHead>Value</TableHead>
-                      <TableHead>Outlet</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {balancePagination.paginatedItems.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                          {balance.length === 0
-                            ? 'No stock balance records'
-                            : 'No stock balance records match your product search'}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      balancePagination.paginatedItems.map((item) => (
-                        <TableRow key={`${item.product_id}-${item.outlet_id}`}>
-                          <TableCell className="font-medium">{item.product_name}</TableCell>
-                          <TableCell>{item.sku}</TableCell>
-                          <TableCell>{item.stock_qty}</TableCell>
-                          <TableCell>₹{item.cost_price.toFixed(2)}</TableCell>
-                          <TableCell>₹{item.value.toFixed(2)}</TableCell>
-                          <TableCell>{item.outlet_name || item.outlet_id}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-                <PaginationControls
-                  page={balancePagination.page}
-                  totalPages={balancePagination.totalPages}
-                  totalItems={balancePagination.totalItems}
-                  pageSize={balancePagination.pageSize}
-                  onPageChange={balancePagination.setPage}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="entries">
-            <Card>
-              <CardHeader>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle>Stock Entries</CardTitle>
-                    {isDateFilterActive && (
-                      <p className="text-sm text-gray-500">
-                        Filtered by {dateRangeLabel} · {filteredEntries.length} of {entries.length} entries
-                      </p>
-                    )}
-                    {isProductSearchActive && !isDateFilterActive && (
-                      <p className="text-sm text-gray-500">
-                        {filteredEntries.length} of {entries.length} entries match your product search
-                      </p>
-                    )}
-                    {pendingEntriesCount > 0 && (
-                      <p className="mt-1 text-sm text-amber-700">
-                        {pendingEntriesCount} purchase stock update{pendingEntriesCount === 1 ? '' : 's'} pending approval
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Select
-                      value={entryApprovalFilter}
-                      onValueChange={(v) => setEntryApprovalFilter(v as typeof entryApprovalFilter)}
-                    >
-                      <SelectTrigger className="w-[160px]">
-                        <SelectValue placeholder="Approval status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All statuses</SelectItem>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="approved">Approved</SelectItem>
-                        <SelectItem value="rejected">Rejected</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {pendingEntriesCount > 0 && (
-                      <Button
-                        size="sm"
-                        onClick={handleApproveAllPending}
-                        disabled={approvingEntryId === 'all'}
-                      >
-                        <Check className="mr-1 h-4 w-4" />
-                        Approve all pending
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Approval</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Cost Price</TableHead>
-                      <TableHead>Batch No</TableHead>
-                      <TableHead>Item code</TableHead>
-                      <TableHead>Outlet</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Notes</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {entriesPagination.paginatedItems.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={11} className="py-8 text-center text-gray-500">
-                          {entries.length === 0
-                            ? 'No stock entries found'
-                            : 'No stock entries found for the selected filters'}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      entriesPagination.paginatedItems.map((entry) => {
-                        const approvalStatus = entry.approval_status || 'approved'
-                        const isPending = approvalStatus === 'pending'
-                        return (
-                        <TableRow key={entry.id} className={isPending ? 'bg-amber-50/60' : undefined}>
-                          <TableCell className="font-medium">
-                            {entry.product?.name || entry.item_name}
-                            {entry.product?.sku && <span className="text-gray-500 text-xs ml-2">({entry.product.sku})</span>}
-                          </TableCell>
-                          <TableCell>
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEntryTypeColor(entry.entry_type)}`}>
-                              {entry.entry_type}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getApprovalStatusColor(approvalStatus)}`}>
-                              {approvalStatus}
-                            </span>
-                          </TableCell>
-                          <TableCell className={entry.quantity < 0 ? 'text-red-600' : 'text-green-600'}>
-                            {entry.quantity}
-                          </TableCell>
-                          <TableCell>₹{entry.cost_price.toFixed(2)}</TableCell>
-                          <TableCell>{entry.batch_no || '-'}</TableCell>
-                          <TableCell>{entry.item_code || '-'}</TableCell>
-                          <TableCell>{entry.outlet_name || entry.outlet_id}</TableCell>
-                          <TableCell>{new Date(entry.entry_date).toLocaleDateString()}</TableCell>
-                          <TableCell>{entry.notes || '-'}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap items-center gap-1">
-                              {isPending && (
-                                <>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-green-700 border-green-200 hover:bg-green-50"
-                                    disabled={approvingEntryId === entry.id}
-                                    onClick={() => handleApproveEntry(entry)}
-                                  >
-                                    <Check className="mr-1 h-3.5 w-3.5" />
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-red-700 border-red-200 hover:bg-red-50"
-                                    disabled={approvingEntryId === entry.id}
-                                    onClick={() => handleRejectEntry(entry)}
-                                  >
-                                    <X className="mr-1 h-3.5 w-3.5" />
-                                    Reject
-                                  </Button>
-                                </>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEditEntry(entry)}
-                              >
-                                Edit
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                        )
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-                <PaginationControls
-                  page={entriesPagination.page}
-                  totalPages={entriesPagination.totalPages}
-                  totalItems={entriesPagination.totalItems}
-                  pageSize={entriesPagination.pageSize}
-                  onPageChange={entriesPagination.setPage}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="transfers">
-            <Card>
-              <CardHeader>
-                <CardTitle>Stock Transfers</CardTitle>
-                {isDateFilterActive && (
-                  <p className="text-sm text-gray-500">
-                    Filtered by {dateRangeLabel} · {filteredTransfers.length} of {transfers.length} transfers
-                  </p>
-                )}
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>From Outlet</TableHead>
-                      <TableHead>To Outlet</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Items</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transfersPagination.paginatedItems.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                          {transfers.length === 0
-                            ? 'No stock transfers found'
-                            : 'No stock transfers found for the selected period'}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      transfersPagination.paginatedItems.map((transfer) => (
-                        <TableRow key={transfer.id}>
-                          <TableCell>{transfer.from_outlet_id || '-'}</TableCell>
-                          <TableCell>{transfer.to_outlet_id}</TableCell>
-                          <TableCell>
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTransferStatusColor(transfer.status)}`}>
-                              {transfer.status}
-                            </span>
-                          </TableCell>
-                          <TableCell>{transfer.total_items}</TableCell>
-                          <TableCell>{transfer.total_quantity}</TableCell>
-                          <TableCell>{new Date(transfer.created_at).toLocaleDateString()}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-                <PaginationControls
-                  page={transfersPagination.page}
-                  totalPages={transfersPagination.totalPages}
-                  totalItems={transfersPagination.totalItems}
-                  pageSize={transfersPagination.pageSize}
-                  onPageChange={transfersPagination.setPage}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="stocks">
-            <Card>
-              <CardHeader>
-                <CardTitle>Inventory Stocks</CardTitle>
-                <p className="text-sm text-gray-500">
-                  Current stock by batch where batch tracking applies; one row per product when no batch is used.
-                  {isProductSearchActive && (
-                    <> · {filteredStocks.length} of {stocks.length} records</>
-                  )}
-                </p>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Batch</TableHead>
-                      <TableHead>Expiry</TableHead>
-                      <TableHead>Initial Qty</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Reserved</TableHead>
-                      <TableHead>Available</TableHead>
-                      <TableHead>Avg Cost</TableHead>
-                      <TableHead>Outlet</TableHead>
-                      <TableHead>Last Updated</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {stocksPagination.paginatedItems.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={11} className="py-8 text-center text-gray-500">
-                          {stocks.length === 0
-                            ? 'No inventory stock records'
-                            : 'No inventory stock records match your product search'}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      stocksPagination.paginatedItems.map((stock) => (
-                        <TableRow key={stock.id}>
-                          <TableCell className="font-medium">{stock.product?.name || '-'}</TableCell>
-                          <TableCell>{stock.product?.sku || '-'}</TableCell>
-                          <TableCell>{stock.batch_no || '-'}</TableCell>
-                          <TableCell>
-                            {stock.exp_date
-                              ? new Date(stock.exp_date).toLocaleDateString('en-IN')
-                              : '-'}
-                          </TableCell>
-                          <TableCell>{stock.initial_quantity ?? 0}</TableCell>
-                          <TableCell>{stock.quantity}</TableCell>
-                          <TableCell>{stock.reserved_qty}</TableCell>
-                          <TableCell className="font-medium text-green-600">{stock.available_qty}</TableCell>
-                          <TableCell>₹{stock.average_cost.toFixed(2)}</TableCell>
-                          <TableCell>{stock.outlet_name || stock.outlet_id}</TableCell>
-                          <TableCell>{new Date(stock.last_updated).toLocaleDateString()}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-                <PaginationControls
-                  page={stocksPagination.page}
-                  totalPages={stocksPagination.totalPages}
-                  totalItems={stocksPagination.totalItems}
-                  pageSize={stocksPagination.pageSize}
-                  onPageChange={stocksPagination.setPage}
-                />
-              </CardContent>
-            </Card>
+            </ExpandableTableCard>
           </TabsContent>
         </Tabs>
       </div>

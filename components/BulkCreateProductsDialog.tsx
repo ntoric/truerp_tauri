@@ -15,6 +15,7 @@ import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCat
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import type { CreatedProduct } from '@/components/CreateProductDialog'
+import ProductItemCodeField from '@/components/ProductItemCodeField'
 
 const PRODUCT_IMPORT_HEADERS = [
   'Name',
@@ -391,7 +392,8 @@ export default function BulkCreateProductsDialog({
           <TabsContent value="quick" className="flex-1 min-h-0 mt-4 space-y-3 overflow-hidden flex flex-col">
             <p className="text-sm text-muted-foreground">
               Add multiple products at once. Only Name is required; SKU and PLU are assigned automatically when left blank.
-              Check <span className="font-medium text-foreground">Batch</span> to track stock by batch number.
+              Use the refresh icon on Item Code to generate a unique barcode. Check{' '}
+              <span className="font-medium text-foreground">Batch</span> to track stock by batch number.
             </p>
             <div className="flex-1 min-h-0 overflow-auto border rounded-md">
               <table className="w-full text-sm">
@@ -399,7 +401,7 @@ export default function BulkCreateProductsDialog({
                   <tr className="text-left">
                     <th className="p-2 font-medium min-w-[140px]">Name *</th>
                     <th className="p-2 font-medium min-w-[100px]">SKU</th>
-                    <th className="p-2 font-medium min-w-[100px]">Item Code</th>
+                    <th className="p-2 font-medium min-w-[160px]">Item Code</th>
                     <th className="p-2 font-medium min-w-[120px]">Category</th>
                     <th className="p-2 font-medium min-w-[90px]">Unit</th>
                     <th className="p-2 font-medium min-w-[90px]">HSN</th>
@@ -433,10 +435,15 @@ export default function BulkCreateProductsDialog({
                         />
                       </td>
                       <td className="p-1.5">
-                        <Input
+                        <ProductItemCodeField
                           value={row.item_code}
-                          onChange={(e) => updateRow(row.key, { item_code: e.target.value })}
-                          className="h-8"
+                          unit={row.unit}
+                          onChange={(item_code) => updateRow(row.key, { item_code })}
+                          compact
+                          reservedCodes={rows
+                            .filter((r) => r.key !== row.key)
+                            .map((r) => r.item_code)}
+                          onGenerateError={(message) => notifyError(message)}
                         />
                       </td>
                       <td className="p-1.5">

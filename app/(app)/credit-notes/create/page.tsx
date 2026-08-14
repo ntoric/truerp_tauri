@@ -149,7 +149,7 @@ export default function CreateCreditNotePage() {
           <Button variant="ghost" size="sm" onClick={() => router.push('/credit-notes')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-2xl font-bold">Create Credit Note</h1>
+          <h1 className="app-page-title">Create Credit Note</h1>
         </div>
         
         <form onSubmit={handleSubmit}>

@@ -288,11 +288,10 @@ export default function DeveloperSettingsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Developer Settings</h1>
-            <p className="text-gray-600">Configure integrations and control which pages are available</p>
+            <h1 className="app-page-title">Developer Settings</h1>
           </div>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}

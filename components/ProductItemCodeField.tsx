@@ -30,6 +30,10 @@ interface ProductItemCodeFieldProps {
   unit: string
   onChange: (value: string) => void
   inputClassName?: string
+  /** Tighter layout for table cells (hides duplicate panel / helper text). */
+  compact?: boolean
+  /** Codes already used elsewhere in the form; generate will avoid these. */
+  reservedCodes?: string[]
   canUseCameraScanner?: boolean
   onOpenCameraScanner?: () => void
   onGenerateError?: (message: string) => void
@@ -43,6 +47,8 @@ export default function ProductItemCodeField({
   unit,
   onChange,
   inputClassName,
+  compact = false,
+  reservedCodes,
   canUseCameraScanner = false,
   onOpenCameraScanner,
   onGenerateError,
@@ -102,7 +108,18 @@ export default function ProductItemCodeField({
     setGenerating(true)
     onClearError?.()
     try {
-      const code = await generateUniqueItemCode(unit)
+      const reserved = new Set(
+        (reservedCodes ?? [])
+          .map((code) => code.trim())
+          .filter((code) => code && code !== value.trim())
+      )
+      let code = await generateUniqueItemCode(unit)
+      for (let attempt = 0; attempt < 10 && reserved.has(code); attempt++) {
+        code = await generateUniqueItemCode(unit)
+      }
+      if (reserved.has(code)) {
+        throw new Error('Could not generate a unique barcode. Please try again.')
+      }
       onChange(code)
     } catch (err) {
       onGenerateError?.(
@@ -116,8 +133,8 @@ export default function ProductItemCodeField({
   const hasDuplicate = duplicateProducts.length > 0
 
   return (
-    <div className="space-y-2">
-      <div className="flex gap-2">
+    <div className={cn(!compact && 'space-y-2')}>
+      <div className={cn('flex', compact ? 'gap-1' : 'gap-2')}>
         <Input
           id={id}
           value={value}
@@ -127,18 +144,28 @@ export default function ProductItemCodeField({
             onChange(e.target.value)
           }}
           placeholder={
-            weighing
-              ? `Max ${ITEM_CODE_MAX_LEN} characters`
-              : canUseCameraScanner
-                ? `Enter item code or scan (max ${ITEM_CODE_MAX_LEN})`
-                : `Enter item code (max ${ITEM_CODE_MAX_LEN})`
+            compact
+              ? 'Barcode'
+              : weighing
+                ? `Max ${ITEM_CODE_MAX_LEN} characters`
+                : canUseCameraScanner
+                  ? `Enter item code or scan (max ${ITEM_CODE_MAX_LEN})`
+                  : `Enter item code (max ${ITEM_CODE_MAX_LEN})`
           }
-          className={cn(inputClassName, hasDuplicate && 'border-red-500')}
+          className={cn(compact && 'h-8', inputClassName, hasDuplicate && 'border-red-500')}
+          title={
+            hasDuplicate
+              ? duplicateProducts[0]?.name
+                ? `Already assigned to ${duplicateProducts[0].name}`
+                : 'This item code is already assigned to another product'
+              : undefined
+          }
         />
         <Button
           type="button"
           variant="outline"
           size="icon"
+          className={cn(compact && 'h-8 w-8 shrink-0')}
           onClick={() => void handleGenerate()}
           disabled={generating}
           title="Generate unique barcode"
@@ -154,6 +181,7 @@ export default function ProductItemCodeField({
             type="button"
             variant="outline"
             size="icon"
+            className={cn(compact && 'h-8 w-8 shrink-0')}
             onClick={onOpenCameraScanner}
             title="Scan barcode with camera"
           >
@@ -162,11 +190,11 @@ export default function ProductItemCodeField({
         )}
       </div>
 
-      {checking && value.trim() && (
+      {!compact && checking && value.trim() && (
         <p className="text-xs text-muted-foreground">Checking item code…</p>
       )}
 
-      {!checking && hasDuplicate && (
+      {!compact && !checking && hasDuplicate && (
         <div className="space-y-2 rounded-md border border-red-200 bg-red-50 p-3">
           <p className="text-sm font-medium text-red-700">
             This item code is already assigned to another product.

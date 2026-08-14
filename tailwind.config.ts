@@ -49,6 +49,16 @@ const config: Config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      keyframes: {
+        "nav-progress": {
+          "0%": { transform: "translateX(-100%)" },
+          "50%": { transform: "translateX(120%)" },
+          "100%": { transform: "translateX(320%)" },
+        },
+      },
+      animation: {
+        "nav-progress": "nav-progress 1.1s ease-in-out infinite",
+      },
     },
   },
   plugins: [],

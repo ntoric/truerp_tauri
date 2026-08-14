@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageHeader from '@/components/layout/PageHeader'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { formatCurrency } from '@/lib/utils'
 import {
   TrendingUp,
@@ -164,39 +166,38 @@ export default function DashboardPage() {
 
   if (authLoading || (loading && !stats)) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-      </div>
+      <DashboardLayout>
+        <PageSkeleton variant="dashboard" />
+      </DashboardLayout>
     )
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <p className="text-sm text-gray-500">Welcome back, {user?.name}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <CalendarRange className="h-4 w-4 text-gray-500" />
-            <Select value={period} onValueChange={(value) => setPeriod(value as DashboardPeriod)}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Select period" />
-              </SelectTrigger>
-              <SelectContent>
-                {PERIOD_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+      <div className="space-y-4">
+        <PageHeader
+          title="Dashboard"
+          actions={
+            <div className="flex items-center gap-2">
+              <CalendarRange className="h-4 w-4 text-gray-500" />
+              <Select value={period} onValueChange={(value) => setPeriod(value as DashboardPeriod)}>
+                <SelectTrigger className="h-8 w-[150px]">
+                  <SelectValue placeholder="Select period" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PERIOD_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          }
+        />
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {statCards.map((card) => (
             <StatWidget
               key={card.title}

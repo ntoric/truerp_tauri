@@ -245,7 +245,7 @@ export default function AIParseBillPage() {
             <Button variant="outline" size="icon" onClick={() => router.push('/purchase-invoices')}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <h1 className="text-2xl font-bold text-gray-900">AI Bill Parser</h1>
+            <h1 className="app-page-title">AI Bill Parser</h1>
           </div>
         </div>
 
@@ -457,7 +457,7 @@ export default function AIParseBillPage() {
                 {/* Items Table */}
                 <div className="space-y-2">
                   <Label>Items</Label>
-                  <div className="overflow-x-auto rounded-lg border">
+                  <div className="table-scroll rounded-lg border">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b bg-gray-50 text-left">

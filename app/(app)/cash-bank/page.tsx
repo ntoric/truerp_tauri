@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -20,13 +22,6 @@ import {
   savePaymentMethodMappings,
   usePaymentMethodMappings,
 } from '@/hooks/usePaymentMethodMappings'
-
-const CASH_IN_HAND_VALUE = 'cash'
-
-function accountIdForApi(selected: string): string | null {
-  if (!selected || selected === CASH_IN_HAND_VALUE) return null
-  return selected
-}
 import {
   IndianRupee,
   Plus,
@@ -35,11 +30,23 @@ import {
   Building2,
   Download,
   Trash2,
-  Edit,
   Filter,
   Calendar,
   Star,
+  List,
+  Settings,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
+
+const CASH_IN_HAND_VALUE = 'cash'
+
+function accountIdForApi(selected: string): string | null {
+  if (!selected || selected === CASH_IN_HAND_VALUE) return null
+  return selected
+}
 
 interface BankAccount {
   id: string
@@ -96,6 +103,8 @@ export default function CashBankPage() {
   const { mappings: paymentMethodMappings, refresh: refreshPaymentMappings } = usePaymentMethodMappings()
   const [mappingAccounts, setMappingAccounts] = useState<Record<string, string>>({})
   const [savingMappings, setSavingMappings] = useState(false)
+  const [activeTab, setActiveTab] = useState<'accounts' | 'transactions' | 'settings'>('accounts')
+  const [showStats, setShowStats] = useState(false)
 
   useEffect(() => {
     const next: Record<string, string> = {}
@@ -380,9 +389,9 @@ export default function CashBankPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-      </div>
+      <DashboardLayout>
+        <PageSkeleton />
+      </DashboardLayout>
     )
   }
 
@@ -400,13 +409,24 @@ export default function CashBankPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Cash & Bank</h1>
-            <p className="text-sm text-gray-500">Manage your cash and bank accounts</p>
+            <h1 className="app-page-title">Cash & Bank</h1>
           </div>
-          <div className="flex gap-2">
+          <PageHeaderActions>
+            <Button
+              type="button"
+              variant={showStats ? 'secondary' : 'outline'}
+              className="gap-1.5"
+              onClick={() => setShowStats((prev) => !prev)}
+              aria-expanded={showStats}
+              aria-controls="cash-bank-stats"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Stats
+              {showStats ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </Button>
             <Dialog
               open={showAddMoney}
               onOpenChange={(open) => {
@@ -626,268 +646,321 @@ export default function CashBankPage() {
                 </form>
               </DialogContent>
             </Dialog>
-          </div>
+          </PageHeaderActions>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Summary Cards — 2 cols until xl so values aren't crushed beside the sidebar */}
+        {showStats && (
+        <div id="cash-bank-stats" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-500">Total Balance</p>
-                  <p className="mt-2 text-3xl font-bold text-gray-900">{formatCurrency(summary?.total_balance || 0)}</p>
+                  <p className="mt-1 break-words text-xl font-bold tabular-nums text-gray-900 xl:text-2xl">
+                    {formatCurrency(summary?.total_balance || 0)}
+                  </p>
                 </div>
-                <div className="rounded-lg bg-blue-50 p-3">
-                  <IndianRupee className="h-6 w-6 text-blue-600" />
+                <div className="shrink-0 rounded-lg bg-blue-50 p-2.5">
+                  <IndianRupee className="h-5 w-5 text-blue-600" />
                 </div>
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-500">Cash in-hand</p>
-                  <p className="mt-2 text-3xl font-bold text-gray-900">{formatCurrency(summary?.cash_in_hand || 0)}</p>
+                  <p className="mt-1 break-words text-xl font-bold tabular-nums text-gray-900 xl:text-2xl">
+                    {formatCurrency(summary?.cash_in_hand || 0)}
+                  </p>
                 </div>
-                <div className="rounded-lg bg-green-50 p-3">
-                  <IndianRupee className="h-6 w-6 text-green-600" />
+                <div className="shrink-0 rounded-lg bg-green-50 p-2.5">
+                  <IndianRupee className="h-5 w-5 text-green-600" />
                 </div>
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-500">Bank Accounts</p>
-                  <p className="mt-2 text-3xl font-bold text-gray-900">{summary?.bank_accounts.length || 0}</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-gray-900 xl:text-2xl">
+                    {summary?.bank_accounts.length || 0}
+                  </p>
                 </div>
-                <div className="rounded-lg bg-purple-50 p-3">
-                  <Building2 className="h-6 w-6 text-purple-600" />
+                <div className="shrink-0 rounded-lg bg-purple-50 p-2.5">
+                  <Building2 className="h-5 w-5 text-purple-600" />
                 </div>
               </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Unlinked Transactions</p>
-                  <p className="mt-2 text-3xl font-bold text-gray-900">{summary?.unlinked_count || 0}</p>
-                  <p className="text-xs text-gray-500">{formatCurrency(summary?.unlinked_amount || 0)}</p>
+          <Card
+            className="cursor-pointer transition-colors hover:border-orange-300"
+            onClick={() => {
+              setActiveTab('transactions')
+              setFilterUnlinked(true)
+            }}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium leading-snug text-gray-500">Unlinked Transactions</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-gray-900 xl:text-2xl">
+                    {summary?.unlinked_count || 0}
+                  </p>
+                  <p className="break-words text-xs text-gray-500">
+                    {formatCurrency(summary?.unlinked_amount || 0)}
+                  </p>
                 </div>
-                <div className="rounded-lg bg-orange-50 p-3">
-                  <Filter className="h-6 w-6 text-orange-600" />
+                <div className="shrink-0 rounded-lg bg-orange-50 p-2.5">
+                  <Filter className="h-5 w-5 text-orange-600" />
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
+        )}
 
-        {/* Bank Accounts */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Bank Accounts</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {summary?.bank_accounts.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">No bank accounts yet. Add one to get started.</p>
-            ) : (
-              <div className="space-y-4">
-                {summary?.bank_accounts.map((account) => (
-                  <div key={account.id} className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="flex items-center gap-4">
-                      <div className="rounded-lg bg-blue-50 p-3">
-                        <Building2 className="h-6 w-6 text-blue-600" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-gray-900">{account.account_name}</p>
-                          {account.is_primary && (
-                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                              Primary
-                            </span>
-                          )}
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as 'accounts' | 'transactions' | 'settings')}
+          className="space-y-4"
+        >
+          <TabsList>
+            <TabsTrigger value="accounts" className="gap-1.5">
+              <Building2 className="h-3.5 w-3.5" />
+              Accounts
+            </TabsTrigger>
+            <TabsTrigger value="transactions" className="gap-1.5">
+              <List className="h-3.5 w-3.5" />
+              Transactions
+              {(summary?.unlinked_count || 0) > 0 && (
+                <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700">
+                  {summary?.unlinked_count}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="gap-1.5">
+              <Settings className="h-3.5 w-3.5" />
+              Settings
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="accounts" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Bank Accounts</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {summary?.bank_accounts.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">No bank accounts yet. Add one to get started.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {summary?.bank_accounts.map((account) => (
+                      <div key={account.id} className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-lg bg-blue-50 p-2.5">
+                            <Building2 className="h-5 w-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-gray-900">{account.account_name}</p>
+                              {account.is_primary && (
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                                  Primary
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-500">{account.bank_name} - {account.account_type}</p>
+                            <p className="text-xs text-gray-400">{account.account_number} | {account.ifsc_code}</p>
+                          </div>
                         </div>
-                        <p className="text-sm text-gray-500">{account.bank_name} - {account.account_type}</p>
-                        <p className="text-xs text-gray-400">{account.account_number} | {account.ifsc_code}</p>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className="text-base font-bold text-gray-900">{formatCurrency(account.balance)}</p>
+                            <p className="text-xs text-gray-500">Balance</p>
+                          </div>
+                          <Button
+                            variant={account.is_primary ? 'secondary' : 'outline'}
+                            size="sm"
+                            onClick={() => handleSetPrimary(account.id)}
+                            disabled={account.is_primary}
+                            title="Set as primary account for sales & purchases"
+                          >
+                            <Star className={`h-4 w-4 mr-1 ${account.is_primary ? 'fill-amber-500 text-amber-500' : ''}`} />
+                            {account.is_primary ? 'Primary' : 'Set Primary'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteAccount(account.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-gray-900">{formatCurrency(account.balance)}</p>
-                        <p className="text-xs text-gray-500">Balance</p>
-                      </div>
-                      <Button
-                        variant={account.is_primary ? 'secondary' : 'outline'}
-                        size="sm"
-                        onClick={() => handleSetPrimary(account.id)}
-                        disabled={account.is_primary}
-                        title="Set as primary account for sales & purchases"
-                      >
-                        <Star className={`h-4 w-4 mr-1 ${account.is_primary ? 'fill-amber-500 text-amber-500' : ''}`} />
-                        {account.is_primary ? 'Primary' : 'Set Primary'}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteAccount(account.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-600" />
-                      </Button>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Payment method accounts</CardTitle>
-              <p className="text-sm text-gray-500 mt-1">
-                Map each payment method used in Sales, Purchase, and POS to a Cash &amp; Bank account.
-              </p>
-            </div>
-            <Button onClick={handleSavePaymentMappings} disabled={savingMappings || paymentMethodMappings.length === 0}>
-              {savingMappings ? 'Saving…' : 'Save mappings'}
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {paymentMethodMappings.length === 0 ? (
-              <p className="text-sm text-gray-500">Loading payment methods…</p>
-            ) : (
-              <div className="space-y-3">
-                {paymentMethodMappings.map((row) => (
-                  <div key={row.payment_method} className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center border rounded-lg p-3">
-                    <div>
-                      <p className="font-medium text-gray-900">{row.label}</p>
-                      <p className="text-xs text-gray-500">{row.payment_method}</p>
-                    </div>
-                    <Select
-                      value={mappingAccounts[row.payment_method] ?? CASH_IN_HAND_VALUE}
-                      onValueChange={(value) =>
-                        setMappingAccounts((prev) => ({ ...prev, [row.payment_method]: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select account" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={CASH_IN_HAND_VALUE}>Cash in-hand</SelectItem>
-                        {summary?.bank_accounts.map((acc) => (
-                          <SelectItem key={acc.id} value={acc.id}>
-                            {acc.account_name} — {acc.bank_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+          <TabsContent value="transactions">
+            <Card>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Account Transactions</CardTitle>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Cash and bank movements across all accounts
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-gray-500" />
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-auto"
+                    />
+                    <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-auto"
+                    />
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <Button
+                    variant={filterUnlinked ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setFilterUnlinked(!filterUnlinked)}
+                  >
+                    <Filter className="h-4 w-4 mr-2" />
+                    Unlinked Only
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleExport}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="table-scroll">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-gray-500">
+                        <th className="pb-3 font-medium">Date</th>
+                        <th className="pb-3 font-medium">Type</th>
+                        <th className="pb-3 font-medium">Account</th>
+                        <th className="pb-3 font-medium">Amount</th>
+                        <th className="pb-3 font-medium">Description</th>
+                        <th className="pb-3 font-medium">Reference</th>
+                        <th className="pb-3 font-medium">Linked</th>
+                        <th className="pb-3 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedItems.map((trans) => (
+                        <tr key={trans.id} className="border-b last:border-0">
+                          <td className="py-3 text-gray-600">{formatDate(trans.date)}</td>
+                          <td className="py-3">{getTransactionTypeBadge(trans.transaction_type)}</td>
+                          <td className="py-3 text-gray-600">{trans.account?.account_name || 'Cash in-hand'}</td>
+                          <td className="py-3 font-medium text-gray-900">{formatCurrency(trans.amount)}</td>
+                          <td className="py-3 text-gray-600">{trans.description || '-'}</td>
+                          <td className="py-3 text-gray-600">{trans.reference || '-'}</td>
+                          <td className="py-3">
+                            {trans.is_linked ? (
+                              <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">Yes</span>
+                            ) : (
+                              <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">No</span>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteTransaction(trans.id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-600" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                      {transactions.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-gray-500">
+                            No transactions found.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <PaginationControls
+                  page={page}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  pageSize={pageSize}
+                  onPageChange={setPage}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        {/* Transactions */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Transactions</CardTitle>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-gray-500" />
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-auto"
-                />
-                <Input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-auto"
-                />
-              </div>
-              <Button
-                variant={filterUnlinked ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilterUnlinked(!filterUnlinked)}
-              >
-                <Filter className="h-4 w-4 mr-2" />
-                Unlinked Only
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleExport}>
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-gray-500">
-                    <th className="pb-3 font-medium">Date</th>
-                    <th className="pb-3 font-medium">Type</th>
-                    <th className="pb-3 font-medium">Account</th>
-                    <th className="pb-3 font-medium">Amount</th>
-                    <th className="pb-3 font-medium">Description</th>
-                    <th className="pb-3 font-medium">Reference</th>
-                    <th className="pb-3 font-medium">Linked</th>
-                    <th className="pb-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedItems.map((trans) => (
-                    <tr key={trans.id} className="border-b last:border-0">
-                      <td className="py-3 text-gray-600">{formatDate(trans.date)}</td>
-                      <td className="py-3">{getTransactionTypeBadge(trans.transaction_type)}</td>
-                      <td className="py-3 text-gray-600">{trans.account?.account_name || 'Cash in-hand'}</td>
-                      <td className="py-3 font-medium text-gray-900">{formatCurrency(trans.amount)}</td>
-                      <td className="py-3 text-gray-600">{trans.description || '-'}</td>
-                      <td className="py-3 text-gray-600">{trans.reference || '-'}</td>
-                      <td className="py-3">
-                        {trans.is_linked ? (
-                          <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">Yes</span>
-                        ) : (
-                          <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">No</span>
-                        )}
-                      </td>
-                      <td className="py-3">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteTransaction(trans.id)}
+          <TabsContent value="settings" className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Payment method accounts</CardTitle>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Map each payment method used in Sales, Purchase, and POS to a Cash &amp; Bank account.
+                  </p>
+                </div>
+                <Button onClick={handleSavePaymentMappings} disabled={savingMappings || paymentMethodMappings.length === 0}>
+                  {savingMappings ? 'Saving…' : 'Save mappings'}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {paymentMethodMappings.length === 0 ? (
+                  <p className="text-sm text-gray-500">Loading payment methods…</p>
+                ) : (
+                  <div className="space-y-3">
+                    {paymentMethodMappings.map((row) => (
+                      <div key={row.payment_method} className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center border rounded-lg p-3">
+                        <div>
+                          <p className="font-medium text-gray-900">{row.label}</p>
+                          <p className="text-xs text-gray-500">{row.payment_method}</p>
+                        </div>
+                        <Select
+                          value={mappingAccounts[row.payment_method] ?? CASH_IN_HAND_VALUE}
+                          onValueChange={(value) =>
+                            setMappingAccounts((prev) => ({ ...prev, [row.payment_method]: value }))
+                          }
                         >
-                          <Trash2 className="h-4 w-4 text-red-600" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                  {transactions.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="py-8 text-center text-gray-500">
-                        No transactions found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <PaginationControls
-              page={page}
-              totalPages={totalPages}
-              totalItems={totalItems}
-              pageSize={pageSize}
-              onPageChange={setPage}
-            />
-          </CardContent>
-        </Card>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select account" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={CASH_IN_HAND_VALUE}>Cash in-hand</SelectItem>
+                            {summary?.bank_accounts.map((acc) => (
+                              <SelectItem key={acc.id} value={acc.id}>
+                                {acc.account_name} — {acc.bank_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
       {confirmDialog}
     </DashboardLayout>

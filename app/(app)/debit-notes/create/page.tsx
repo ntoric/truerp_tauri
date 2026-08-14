@@ -149,7 +149,7 @@ export default function CreateDebitNotePage() {
           <Button variant="ghost" size="sm" onClick={() => router.push('/debit-notes')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-2xl font-bold">Create Debit Note</h1>
+          <h1 className="app-page-title">Create Debit Note</h1>
         </div>
         
         <form onSubmit={handleSubmit}>

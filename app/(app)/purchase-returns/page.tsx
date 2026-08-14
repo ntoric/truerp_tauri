@@ -19,6 +19,7 @@ import { Plus, Search, MoreVertical, Edit, Trash2, CheckCircle, Download } from 
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface PurchaseReturn {
   id: string
@@ -132,10 +133,10 @@ export default function PurchaseReturnsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Purchase Returns</h1>
-          <div className="flex items-center gap-2">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
+          <h1 className="app-page-title">Purchase Returns</h1>
+          <PageHeaderActions>
             <Button
               variant="outline"
               onClick={handleExport}
@@ -147,7 +148,7 @@ export default function PurchaseReturnsPage() {
             <Link href="/purchase-returns/create">
               <Button><Plus className="mr-2 h-4 w-4" /> New Purchase Return</Button>
             </Link>
-          </div>
+          </PageHeaderActions>
         </div>
 
         <Card>
@@ -192,7 +193,7 @@ export default function PurchaseReturnsPage() {
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-gray-500">

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { useStore } from '@/hooks/useStore'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -481,9 +482,7 @@ export default function UserManagementPage() {
   if (authLoading || loading) {
     return (
       <DashboardLayout>
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-        </div>
+        <FormPageSkeleton />
       </DashboardLayout>
     )
   }
@@ -642,14 +641,9 @@ export default function UserManagementPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="space-y-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-          <p className="text-sm text-gray-500">
-            {isSA
-              ? 'Manage all users, assign stores, roles, permissions, and security settings.'
-              : 'Create and manage staff for your store. Enable or disable accounts and assign admin or staff roles.'}
-          </p>
+          <h1 className="app-page-title">User Management</h1>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>

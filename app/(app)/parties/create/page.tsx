@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageHeader from '@/components/layout/PageHeader'
+import PageActionBar from '@/components/layout/PageActionBar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Loader2, Save } from 'lucide-react'
+import { Loader2, Save } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { cn } from '@/lib/utils'
@@ -109,17 +111,13 @@ export default function CreatePartyPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl space-y-6">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Create New {formData.party_type === 'customer' ? 'Customer' : 'Vendor'}
-          </h1>
-        </div>
+      <div className="max-w-3xl space-y-4 pb-2">
+        <PageHeader
+          title={`Create New ${formData.party_type === 'customer' ? 'Customer' : 'Vendor'}`}
+          backHref="/parties"
+        />
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Basic Information</CardTitle>
@@ -329,15 +327,15 @@ export default function CreatePartyPage() {
             </CardContent>
           </Card>
 
-          <div className="flex gap-4">
+          <PageActionBar>
             <Button type="button" variant="outline" onClick={() => router.back()}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving} className="flex-1">
+            <Button type="submit" disabled={saving}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Save {formData.party_type === 'customer' ? 'Customer' : 'Vendor'}
             </Button>
-          </div>
+          </PageActionBar>
         </form>
       </div>
     </DashboardLayout>

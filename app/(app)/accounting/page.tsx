@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -14,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadBlob, downloadCsv, downloadJson, rowsToCsv } from '@/lib/accountingExport'
-import { useToast } from '@/hooks/use-toast'
+import { notifyError, notifySuccess } from '@/lib/notify'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,10 +23,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import JSZip from 'jszip'
-import { Plus, Trash2, Info, BookOpen, CheckCircle, Eye, Download, MoreVertical } from 'lucide-react'
+import { Plus, Trash2, Info, BookOpen, CheckCircle, Eye, Download, MoreVertical, BarChart3, ChevronDown, ChevronUp, CircleHelp } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface Account {
   id: string
@@ -175,7 +177,6 @@ function ExportActions({
 
 export default function AccountingPage() {
   const { user, loading: authLoading } = useAuth()
-  const { toast } = useToast()
   const { confirm, confirmDialog } = useConfirmDialog()
   const { accounts: bankAccounts, refresh: refreshBankAccounts } = useBankAccounts()
 
@@ -207,6 +208,8 @@ export default function AccountingPage() {
   const reconciliationsPagination = usePagination(reconciliations)
 
   const [loading, setLoading] = useState(true)
+  const [showStats, setShowStats] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [accountDialogOpen, setAccountDialogOpen] = useState(false)
   const [journalDialogOpen, setJournalDialogOpen] = useState(false)
   const [reconDialogOpen, setReconDialogOpen] = useState(false)
@@ -731,7 +734,7 @@ export default function AccountingPage() {
     ]),
   ]
 
-  const notifyExported = (label: string) => toast({ title: `${label} exported` })
+  const notifyExported = (label: string) => notifySuccess(`${label} exported`)
 
   const exportAllAccountingZip = async () => {
     try {
@@ -772,28 +775,49 @@ export default function AccountingPage() {
       notifyExported('Accounting bundle')
     } catch (err) {
       console.error(err)
-      toast({
-        title: 'Export failed',
-        description: err instanceof Error ? err.message : undefined,
-        variant: 'destructive',
-      })
+      notifyError(err instanceof Error ? err.message : 'Export failed', 'Export failed')
     }
   }
 
   if (authLoading || loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-      </div>
+      <DashboardLayout>
+        <PageSkeleton />
+      </DashboardLayout>
     )
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold">Accounting</h1>
-          <div className="flex flex-wrap gap-2">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
+          <h1 className="app-page-title">Accounting</h1>
+          <PageHeaderActions>
+            <Button
+              type="button"
+              variant={showHelp ? 'secondary' : 'outline'}
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setShowHelp((prev) => !prev)}
+              aria-expanded={showHelp}
+              aria-controls="accounting-help"
+              title={showHelp ? 'Hide help' : 'Show help'}
+            >
+              <CircleHelp className="h-4 w-4" />
+              <span className="sr-only">Help</span>
+            </Button>
+            <Button
+              type="button"
+              variant={showStats ? 'secondary' : 'outline'}
+              className="gap-1.5"
+              onClick={() => setShowStats((prev) => !prev)}
+              aria-expanded={showStats}
+              aria-controls="accounting-stats"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Stats
+              {showStats ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="gap-2">
@@ -813,59 +837,63 @@ export default function AccountingPage() {
             <Button onClick={() => setAccountDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" /> New Account
             </Button>
+          </PageHeaderActions>
+        </div>
+
+        {showStats && (
+          <div id="accounting-stats" className="grid gap-3 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Total Assets</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-xl font-bold text-blue-600">
+                  {formatCurrency(balanceSheet?.total_assets ?? accounts.filter((a) => a.account_type === 'asset').reduce((s, a) => s + a.balance, 0))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Total Liabilities</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-xl font-bold text-red-600">
+                  {formatCurrency(balanceSheet?.total_liabilities ?? accounts.filter((a) => a.account_type === 'liability').reduce((s, a) => s + a.balance, 0))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Total Income</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-xl font-bold text-green-600">{formatCurrency(profitLoss?.total_income ?? 0)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className={`text-xl font-bold ${(profitLoss?.net_profit ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(profitLoss?.net_profit ?? 0)}
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </div>
+        )}
 
-        <Card className="border-blue-100 bg-blue-50/50">
-          <CardContent className="flex gap-3 pt-4 text-sm text-gray-700">
-            <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
-            <p>
-              Chart of accounts, journal entries, ledger, trial balance, P&amp;L, balance sheet, and bank reconciliation.
-              Operational cash movements still live under Cash &amp; Bank; sales, purchases, and payments auto-post to the general ledger.
-            </p>
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Total Assets</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">
-                {formatCurrency(balanceSheet?.total_assets ?? accounts.filter((a) => a.account_type === 'asset').reduce((s, a) => s + a.balance, 0))}
-              </div>
+        {showHelp && (
+          <Card id="accounting-help" className="border-blue-100 bg-blue-50/50">
+            <CardContent className="flex gap-3 pt-4 text-sm text-gray-700">
+              <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
+              <p>
+                Chart of accounts, journal entries, ledger, trial balance, P&amp;L, balance sheet, and bank reconciliation.
+                Operational cash movements still live under Cash &amp; Bank; sales, purchases, and payments auto-post to the general ledger.
+              </p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Total Liabilities</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {formatCurrency(balanceSheet?.total_liabilities ?? accounts.filter((a) => a.account_type === 'liability').reduce((s, a) => s + a.balance, 0))}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Total Income</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatCurrency(profitLoss?.total_income ?? 0)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${(profitLoss?.net_profit ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(profitLoss?.net_profit ?? 0)}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        )}
 
         <Tabs defaultValue="accounts">
           <TabsList className="flex h-auto flex-wrap">
@@ -1197,7 +1225,7 @@ export default function AccountingPage() {
                   <ExportActions
                     onCsv={async () => {
                       if (!glAccountId) {
-                        toast({ title: 'Select an account first', variant: 'destructive' })
+                        notifyError('Select an account first')
                         return
                       }
                       const code = generalLedger?.account?.code || 'account'
@@ -1206,7 +1234,7 @@ export default function AccountingPage() {
                     }}
                     onJson={async () => {
                       if (!glAccountId) {
-                        toast({ title: 'Select an account first', variant: 'destructive' })
+                        notifyError('Select an account first')
                         return
                       }
                       await downloadJson(`general-ledger-${exportStamp}.json`, generalLedger)

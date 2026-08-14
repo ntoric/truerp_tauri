@@ -138,7 +138,7 @@ export default function CreatePurchaseOrderPage() {
           <Button variant="ghost" size="sm" onClick={() => router.push('/purchase-orders')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-2xl font-bold">Create Purchase Order</h1>
+          <h1 className="app-page-title">Create Purchase Order</h1>
         </div>
         
         <form onSubmit={handleSubmit}>

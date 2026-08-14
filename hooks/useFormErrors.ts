@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { toast } from '@/hooks/use-toast'
+import { notifyError, notifySuccess } from '@/lib/notify'
 import {
   FieldErrors,
   firstFieldError,
@@ -27,19 +27,11 @@ export function useFormErrors() {
   }, [])
 
   const showErrorToast = useCallback((message: string, title = 'Error') => {
-    toast({
-      title,
-      description: message,
-      variant: 'destructive',
-    })
+    notifyError(message, title)
   }, [])
 
   const showSuccessToast = useCallback((message: string, title = 'Success') => {
-    toast({
-      title,
-      description: message,
-      variant: 'success',
-    })
+    notifySuccess(message, title)
   }, [])
 
   const handleApiError = useCallback(

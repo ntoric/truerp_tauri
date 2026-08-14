@@ -28,7 +28,7 @@ import {
 } from '@/lib/reportsExport'
 import { downloadBlob, rowsToCsv } from '@/lib/accountingExport'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { useToast } from '@/hooks/use-toast'
+import { notifyError, notifySuccess } from '@/lib/notify'
 import JSZip from 'jszip'
 import {
   BarChart,
@@ -427,7 +427,6 @@ export default function ReportsPage() {
   const [customResult, setCustomResult] = useState<CustomReportResult | null>(null)
   const [customLoading, setCustomLoading] = useState(false)
   const [exportingAll, setExportingAll] = useState(false)
-  const { toast } = useToast()
 
   const salesSeriesPagination = usePagination(salesReport?.series ?? [])
   const salesStatusPagination = usePagination(salesReport?.status_breakdown ?? [])
@@ -445,7 +444,7 @@ export default function ReportsPage() {
   const inventoryItemsPagination = usePagination(inventory?.items ?? [])
   const customRowsPagination = usePagination(customResult?.rows ?? [])
 
-  const notifyExported = (label: string) => toast({ title: `${label} exported` })
+  const notifyExported = (label: string) => notifySuccess(`${label} exported`)
 
   const periodQuery = `period=${period}`
   const periodWindow = reportPeriodWindowLabel(period)
@@ -631,7 +630,7 @@ export default function ReportsPage() {
       notifyExported('All reports')
     } catch (err) {
       console.error(err)
-      toast({ title: 'Export failed', variant: 'destructive' })
+      notifyError('Export failed')
     } finally {
       setExportingAll(false)
     }
@@ -655,14 +654,10 @@ export default function ReportsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="space-y-3">
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Reports & Analytics</h1>
-            <p className="text-sm text-gray-500">
-              Detailed breakdowns by period — sales, collections, receivables, customers, stock, and tax.
-              Use the period control to switch between daily, weekly, monthly, and yearly views.
-            </p>
+            <h1 className="app-page-title">Reports & Analytics</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2">

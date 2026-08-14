@@ -77,18 +77,15 @@ export default function InvoiceTemplatesPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl space-y-6">
-        <div className="flex items-center gap-4">
+      <div className="max-w-3xl space-y-3">
+        <div className="flex items-center gap-2">
           <Link href="/invoices">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Invoices
+            <Button variant="outline" size="sm" className="h-7">
+              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Invoices
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900">Invoice templates</h1>
+          <h1 className="app-page-title">Invoice templates</h1>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Save reusable line items, terms, and notes. Apply a template when creating a new invoice. PDF layout (Classic / Modern / Minimal) is configured under Settings → Invoice.
-        </p>
 
         <Card>
           <CardHeader>

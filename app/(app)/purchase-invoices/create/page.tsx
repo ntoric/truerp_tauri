@@ -4,6 +4,9 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
+import PageHeader from '@/components/layout/PageHeader'
+import PageActionBar from '@/components/layout/PageActionBar'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -15,7 +18,7 @@ import { exclusiveUnitPrice, limitDecimalInput, parseItemNumber, parseMoney, pro
 import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
 import CreateProductDialog, { type CreatedProduct } from '@/components/CreateProductDialog'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
-import { Plus, Trash2, Loader2, Save, ArrowLeft, Search, Package, X, Camera } from 'lucide-react'
+import { Plus, Trash2, Loader2, Save, Search, Package, X, Camera } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import {
@@ -1107,122 +1110,127 @@ export default function CreatePurchaseInvoicePage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex h-96 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-        </div>
+        <FormPageSkeleton />
       </DashboardLayout>
     )
   }
 
   return (
     <DashboardLayout>
-      <div className="max-w-7xl space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon" onClick={() => router.push('/purchase-invoices')}>
-              <ArrowLeft className="h-4 w-4" />
+      <div className="w-full space-y-4 pb-2">
+        <PageHeader
+          title={`${editId || savedBillId ? 'Edit' : 'Create'} Purchase Invoice`}
+          backHref="/purchase-invoices"
+          actions={
+            <Button type="button" variant="outline" onClick={() => router.push('/purchase-invoices/ai-parse')}>
+              <Camera className="mr-2 h-4 w-4" />
+              Scan Invoice
             </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{editId || savedBillId ? 'Edit' : 'Create'} Purchase Invoice</h1>
-              {autosaveEnabled && draftSaveStatus !== 'idle' && (
-                <p className={cn(
-                  'mt-1 text-xs',
-                  draftSaveStatus === 'saving' && 'text-gray-500',
-                  draftSaveStatus === 'saved' && 'text-green-600',
-                  draftSaveStatus === 'need_vendor' && 'text-amber-600',
-                  draftSaveStatus === 'error' && 'text-red-600',
-                )}>
-                  {draftSaveStatus === 'saving' && 'Saving draft…'}
-                  {draftSaveStatus === 'saved' && 'Draft saved'}
-                  {draftSaveStatus === 'need_vendor' && 'Select a vendor to autosave draft'}
-                  {draftSaveStatus === 'error' && (draftSaveError || 'Draft autosave failed')}
-                </p>
-              )}
-            </div>
-          </div>
-          <Button type="button" variant="outline" onClick={() => router.push('/purchase-invoices/ai-parse')}>
-            <Camera className="mr-2 h-4 w-4" />
-            Scan Invoice
-          </Button>
-        </div>
+          }
+        />
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Invoice Details</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="space-y-2">
-                <Label>Purchase Invoice Number</Label>
-                <Input 
-                  value={billNumber} 
-                  onChange={(e) => setBillNumber(e.target.value)} 
-                  placeholder="Auto-generated if empty"
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2 xl:col-span-1">
-                <Label>Vendor *</Label>
-                <div className="flex min-w-0 items-center gap-2">
-                  <select
-                    value={vendorId}
-                    onChange={(e) => {
-                      clearFieldError('vendor_id')
-                      setVendorId(e.target.value)
-                    }}
-                    className={cn(
-                      'flex h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm',
-                      fieldErrors.vendor_id && 'border-red-500'
-                    )}
-                    required
-                  >
-                    <option value="">Select Vendor</option>
-                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                  </select>
-                  <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => setShowAddVendor(true)}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="min-w-0 space-y-2">
+                  <Label>Purchase Invoice Number</Label>
+                  <Input
+                    value={billNumber}
+                    onChange={(e) => setBillNumber(e.target.value)}
+                    placeholder="Auto-generated if empty"
+                    className="min-w-0"
+                  />
                 </div>
-                <FieldError message={fieldErrors.vendor_id} />
+                <div className="min-w-0 space-y-2">
+                  <Label>Vendor *</Label>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <select
+                      value={vendorId}
+                      onChange={(e) => {
+                        clearFieldError('vendor_id')
+                        setVendorId(e.target.value)
+                      }}
+                      className={cn(
+                        'flex h-10 w-full min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm',
+                        fieldErrors.vendor_id && 'border-red-500'
+                      )}
+                      required
+                    >
+                      <option value="">Select Vendor</option>
+                      {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                    <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => setShowAddVendor(true)}>
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <FieldError message={fieldErrors.vendor_id} />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Purchase Invoice Date</Label>
-                <Input type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} required />
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="min-w-0 space-y-2">
+                  <Label>Purchase Invoice Date</Label>
+                  <Input
+                    type="date"
+                    value={billDate}
+                    onChange={(e) => setBillDate(e.target.value)}
+                    className="min-w-0"
+                    required
+                  />
+                </div>
+                <div className="min-w-0 space-y-2">
+                  <Label>Payment Terms (Days)</Label>
+                  <Input
+                    type="number"
+                    value={paymentTerms}
+                    onChange={(e) => setPaymentTerms(Number(e.target.value))}
+                    min="0"
+                    className="min-w-0"
+                  />
+                </div>
+                <div className="min-w-0 space-y-2">
+                  <Label>Due Date</Label>
+                  <Input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="min-w-0"
+                  />
+                </div>
+                <div className="min-w-0 space-y-2">
+                  <Label>Warehouse</Label>
+                  <select
+                    value={warehouseId}
+                    onChange={(e) => setWarehouseId(e.target.value)}
+                    className="flex h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="">Default warehouse</option>
+                    {warehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}{w.is_default ? ' (Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs leading-snug text-gray-500">
+                    Linked products will update inventory stock when this purchase is saved.
+                  </p>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Payment Terms (Days)</Label>
-                <Input type="number" value={paymentTerms} onChange={(e) => setPaymentTerms(Number(e.target.value))} min="0" />
-              </div>
-              <div className="space-y-2">
-                <Label>Due Date</Label>
-                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Warehouse</Label>
-                <select
-                  value={warehouseId}
-                  onChange={(e) => setWarehouseId(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="">Default warehouse</option>
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}{w.is_default ? ' (Default)' : ''}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-500">
-                  Linked products will update inventory stock when this purchase is saved.
-                </p>
-              </div>
-              <div className="space-y-2 md:col-span-2 xl:col-span-1">
+
+              <div className="min-w-0 space-y-2">
                 <Label htmlFor="tax_exempt">Exempt Tax</Label>
-                <div className="flex h-10 items-center gap-3">
+                <div className="flex min-h-10 items-center gap-3">
                   <Switch
                     id="tax_exempt"
                     checked={taxExempt}
                     onCheckedChange={applyTaxExempt}
+                    className="shrink-0"
                   />
-                  <span className="text-sm text-gray-600">
+                  <span className="min-w-0 text-sm leading-snug text-gray-600">
                     {taxExempt ? 'Tax set to 0% on all items' : 'Use each line item tax %'}
                   </span>
                 </div>
@@ -1232,9 +1240,9 @@ export default function CreatePurchaseInvoicePage() {
 
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <CardTitle>Items</CardTitle>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={openProductModal}>
                     <Package className="mr-2 h-4 w-4" /> Add Item to Bill
                   </Button>
@@ -1244,6 +1252,7 @@ export default function CreatePurchaseInvoicePage() {
                     onEnabledChange={setBarcodeScannerEnabled}
                     onScan={handleItemCodeScan}
                     placeholder="Scan product barcode…"
+                    className="min-w-0 flex-1 sm:flex-initial"
                   />
                 </div>
               </div>
@@ -1251,40 +1260,42 @@ export default function CreatePurchaseInvoicePage() {
             <CardContent className="space-y-4">
               <FieldError message={fieldErrors.items} />
               {selectedLineIndices.size > 0 && (
-                <div className="flex items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
                   <span className="text-sm text-gray-600">{selectedLineIndices.size} line item(s) selected</span>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="ml-auto text-red-600 hover:bg-red-50"
+                    className="sm:ml-auto text-red-600 hover:bg-red-50"
                     onClick={removeSelectedLineItems}
                   >
                     <Trash2 className="mr-1 h-3.5 w-3.5" /> Remove Selected
                   </Button>
                 </div>
               )}
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="table-scroll">
+                <table className={cn('w-full text-sm', taxExempt ? 'min-w-[62rem]' : 'min-w-[68rem]')}>
                   <thead>
                     <tr className="border-b text-left text-gray-500">
-                      <th className="pb-2 pr-2 w-10">
+                      <th className="w-10 min-w-10 whitespace-nowrap pb-2 pr-2">
                         <Checkbox
                           checked={items.length > 0 && selectedLineIndices.size === items.length}
                           onCheckedChange={toggleSelectAllLineItems}
                           aria-label="Select all line items"
                         />
                       </th>
-                      <th className="pb-2 font-medium w-48">Item</th>
-                      <th className="pb-2 font-medium w-24">HSN</th>
-                      <th className="pb-2 font-medium w-28">Batch</th>
-                      <th className="pb-2 font-medium w-28">Expiry</th>
-                      <th className="pb-2 font-medium text-right w-24">Quantity</th>
-                      <th className="pb-2 font-medium text-right w-28">Unit Price</th>
-                      <th className="pb-2 font-medium text-right w-24">Discount %</th>
-                      <th className="pb-2 font-medium text-right w-20">Tax %</th>
-                      <th className="pb-2 font-medium text-right w-28">Amount</th>
-                      <th className="pb-2 font-medium w-12"></th>
+                      <th className="min-w-[12rem] whitespace-nowrap pb-2 pr-2 font-medium">Item</th>
+                      <th className="min-w-[5.5rem] whitespace-nowrap pb-2 px-1 font-medium">HSN</th>
+                      <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium">Batch</th>
+                      <th className="min-w-[8rem] whitespace-nowrap pb-2 px-1 font-medium">Expiry</th>
+                      <th className="min-w-[6rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Quantity</th>
+                      <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Unit Price</th>
+                      <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
+                      {!taxExempt && (
+                        <th className="min-w-[5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Tax %</th>
+                      )}
+                      <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Amount</th>
+                      <th className="w-12 min-w-12 pb-2 pl-1 font-medium"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1294,59 +1305,59 @@ export default function CreatePurchaseInvoicePage() {
                         Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
                       return (
                       <tr key={index} className="border-b">
-                        <td className="py-2 pr-2 w-10">
+                        <td className="py-2 pr-2">
                           <Checkbox
                             checked={selectedLineIndices.has(index)}
                             onCheckedChange={() => toggleLineItemSelection(index)}
                             aria-label={`Select line item ${index + 1}`}
                           />
                         </td>
-                        <td className="py-2 w-48">
+                        <td className="py-2 pr-2">
                           <select
                             value={item.product_id}
                             onChange={(e) => updateItem(index, 'product_id', e.target.value)}
-                            className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                            className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm"
                           >
                             <option value="">Select Product</option>
                             {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
                         </td>
-                        <td className="py-2 w-24">
+                        <td className="px-1 py-2">
                           <Input
                             value={item.hsn_code}
                             onChange={(e) => updateItem(index, 'hsn_code', e.target.value)}
-                            className="h-8 w-full"
+                            className="h-8 w-full min-w-0"
                           />
                         </td>
-                        <td className="py-2 w-28">
+                        <td className="px-1 py-2">
                           <Input
                             value={item.batch_no}
                             onChange={(e) => updateItem(index, 'batch_no', e.target.value)}
                             placeholder={needsBatch ? 'Required' : 'Optional'}
-                            className={`h-8 w-full ${needsBatch && !item.batch_no ? 'border-amber-500' : ''}`}
+                            className={`h-8 w-full min-w-0 ${needsBatch && !item.batch_no ? 'border-amber-500' : ''}`}
                             required={needsBatch}
                           />
                         </td>
-                        <td className="py-2 w-28">
+                        <td className="px-1 py-2">
                           <Input
                             type="date"
                             value={item.exp_date}
                             onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
-                            className="h-8 w-full"
+                            className="h-8 w-full min-w-0"
                           />
                         </td>
-                        <td className="py-2 w-24">
+                        <td className="px-1 py-2">
                           <Input
                             type="number"
                             min="0"
                             step="0.01"
                             value={item.quantity}
                             onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                            className="h-8 w-full text-right"
+                            className="h-8 w-full min-w-0 text-right"
                             required
                           />
                         </td>
-                        <td className="py-2 w-28">
+                        <td className="px-1 py-2">
                           <Input
                             type="number"
                             min="0"
@@ -1355,32 +1366,35 @@ export default function CreatePurchaseInvoicePage() {
                             value={item.unit_price}
                             onChange={(e) => updateItem(index, 'unit_price', limitDecimalInput(e.target.value, 2))}
                             onBlur={() => updateItem(index, 'unit_price', parseMoney(item.unit_price))}
-                            className="h-8 w-full text-right"
+                            className="h-8 w-full min-w-0 text-right"
                             required
                           />
                         </td>
-                        <td className="py-2 w-24">
+                        <td className="px-1 py-2">
                           <Input
                             type="number"
                             min="0"
                             max="100"
                             value={item.discount}
                             onChange={(e) => updateItem(index, 'discount', e.target.value)}
-                            className="h-8 w-full text-right"
+                            className="h-8 w-full min-w-0 text-right"
                           />
                         </td>
-                        <td className="py-2 w-20">
-                          <Input
-                            type="number"
-                            value={item.tax_rate}
-                            onChange={(e) => updateItem(index, 'tax_rate', e.target.value)}
-                            className="h-8 w-full text-right"
-                            disabled={taxExempt}
-                            required
-                          />
+                        {!taxExempt && (
+                          <td className="px-1 py-2">
+                            <Input
+                              type="number"
+                              value={item.tax_rate}
+                              onChange={(e) => updateItem(index, 'tax_rate', e.target.value)}
+                              className="h-8 w-full min-w-0 text-right"
+                              required
+                            />
+                          </td>
+                        )}
+                        <td className="whitespace-nowrap px-1 py-2 text-right font-medium tabular-nums">
+                          {formatCurrency(item.total)}
                         </td>
-                        <td className="py-2 text-right font-medium w-28">{formatCurrency(item.total)}</td>
-                        <td className="py-2 w-12">
+                        <td className="py-2 pl-1">
                           <button type="button" onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700">
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -1394,12 +1408,12 @@ export default function CreatePurchaseInvoicePage() {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <Card className="lg:col-span-2 space-y-4">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <Card className="space-y-4 xl:col-span-2">
               <CardHeader>
                 <CardTitle>Additional Charges & Discount</CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4">
+              <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Additional Charges</Label>
                   <Input type="number" min="0" step="0.01" value={additionalCharges} onChange={(e) => setAdditionalCharges(Number(e.target.value))} />
@@ -1424,7 +1438,7 @@ export default function CreatePurchaseInvoicePage() {
               <CardHeader>
                 <CardTitle>Payment Details</CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4">
+              <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Amount Received</Label>
                   <Input type="number" min="0" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(Number(e.target.value))} />
@@ -1481,7 +1495,7 @@ export default function CreatePurchaseInvoicePage() {
                   ref={canvasRef}
                   width={400}
                   height={150}
-                  className="border rounded cursor-crosshair"
+                  className="max-w-full cursor-crosshair rounded border"
                   onMouseDown={startDrawing}
                   onMouseMove={draw}
                   onMouseUp={stopDrawing}
@@ -1535,10 +1549,12 @@ export default function CreatePurchaseInvoicePage() {
                   <span className="text-gray-600">Additional Charges</span>
                   <span className="font-medium">{formatCurrency(additionalCharges)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">{taxExempt ? 'Tax Total (Exempt)' : 'Tax Total'}</span>
-                  <span className="font-medium">{formatCurrency(taxTotal)}</span>
-                </div>
+                {!taxExempt && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Tax Total</span>
+                    <span className="font-medium">{formatCurrency(taxTotal)}</span>
+                  </div>
+                )}
                 {autoRoundOff && roundOff !== 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Round Off</span>
@@ -1551,48 +1567,76 @@ export default function CreatePurchaseInvoicePage() {
                     <span>{formatCurrency(totalAmount)}</span>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    disabled={saving}
-                    onClick={(e) => handleSubmit(e as any, true)}
-                  >
-                    {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save as Draft
-                  </Button>
-                  <Button type="submit" className="flex-1" disabled={saving}>
-                    {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save Invoice
-                  </Button>
-                </div>
               </CardContent>
             </Card>
           </div>
+
+          <PageActionBar
+            meta={
+              autosaveEnabled && draftSaveStatus !== 'idle' ? (
+                <span
+                  className={cn(
+                    'text-xs sm:text-sm',
+                    draftSaveStatus === 'saving' && 'text-gray-500',
+                    draftSaveStatus === 'saved' && 'text-green-600',
+                    draftSaveStatus === 'need_vendor' && 'text-amber-600',
+                    draftSaveStatus === 'error' && 'text-red-600',
+                  )}
+                >
+                  {draftSaveStatus === 'saving' && 'Saving draft…'}
+                  {draftSaveStatus === 'saved' && 'Draft saved'}
+                  {draftSaveStatus === 'need_vendor' && 'Select a vendor to autosave draft'}
+                  {draftSaveStatus === 'error' && (draftSaveError || 'Draft autosave failed')}
+                </span>
+              ) : (
+                <span className="font-semibold tabular-nums text-slate-800">
+                  Total {formatCurrency(totalAmount)}
+                </span>
+              )
+            }
+          >
+            <Button type="button" variant="outline" onClick={() => router.push('/purchase-invoices')}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={(e) => handleSubmit(e as React.FormEvent, true)}
+            >
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              <span className="sm:hidden">Draft</span>
+              <span className="hidden sm:inline">Save as Draft</span>
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              <span className="sm:hidden">Save</span>
+              <span className="hidden sm:inline">Save Invoice</span>
+            </Button>
+          </PageActionBar>
         </form>
 
         {/* Product Selection Modal */}
         {showProductModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <Card className="max-h-[80vh] w-full max-w-4xl overflow-auto">
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <CardTitle>Select Product</CardTitle>
                   <Button type="button" variant="ghost" size="icon" onClick={closeProductModal}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
                 {selectedProductIds.size > 0 && (
-                  <div className="mt-3 flex items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
                     <span className="text-sm text-gray-600">{selectedProductIds.size} selected</span>
-                    <Button type="button" size="sm" className="ml-auto" onClick={handleAddSelectedProducts}>
+                    <Button type="button" size="sm" className="sm:ml-auto" onClick={handleAddSelectedProducts}>
                       Add Selected ({selectedProductIds.size})
                     </Button>
                   </div>
                 )}
-                <div className="flex gap-4">
-                  <div className="relative flex-1">
+                <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
+                  <div className="relative min-w-0 flex-1">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                     <Input
                       placeholder="Search by name, SKU, item code, HSN, category..."
@@ -1604,7 +1648,7 @@ export default function CreatePurchaseInvoicePage() {
                   <select
                     value={selectedCategory}
                     onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-auto sm:min-w-[10rem]"
                   >
                     <option value="">All Categories</option>
                     {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
@@ -1612,42 +1656,42 @@ export default function CreatePurchaseInvoicePage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="max-h-[60vh] overflow-auto">
-                  <table className="w-full text-sm">
+                <div className="table-scroll max-h-[60vh]">
+                  <table className="w-full min-w-[40rem] text-sm">
                     <thead>
                       <tr className="border-b text-left text-gray-500">
-                        <th className="pb-2 pr-2 w-10">
+                        <th className="w-10 min-w-10 whitespace-nowrap pb-2 pr-2">
                           <Checkbox
                             checked={filteredProducts.length > 0 && selectedProductIds.size === filteredProducts.length}
                             onCheckedChange={toggleSelectAllProducts}
                             aria-label="Select all products"
                           />
                         </th>
-                        <th className="pb-2 font-medium w-64">Item Name</th>
-                        <th className="pb-2 font-medium w-32">Item Code/SKU</th>
-                        <th className="pb-2 font-medium text-right w-24">Stock</th>
-                        <th className="pb-2 font-medium text-right w-28">Sale Price</th>
-                        <th className="pb-2 font-medium text-right w-28">Purchase Price</th>
-                        <th className="pb-2 font-medium text-right w-24">Qty</th>
-                        <th className="pb-2 font-medium w-20">Action</th>
+                        <th className="min-w-[12rem] whitespace-nowrap pb-2 pr-2 font-medium">Item Name</th>
+                        <th className="min-w-[8rem] whitespace-nowrap pb-2 px-1 font-medium">Item Code/SKU</th>
+                        <th className="min-w-[5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Stock</th>
+                        <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Sale Price</th>
+                        <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Purchase Price</th>
+                        <th className="min-w-[5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Qty</th>
+                        <th className="min-w-[5rem] whitespace-nowrap pb-2 pl-1 font-medium">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredProducts.map(product => (
                         <tr key={product.id} className="border-b hover:bg-gray-50">
-                          <td className="py-2 pr-2 w-10">
+                          <td className="py-2 pr-2">
                             <Checkbox
                               checked={selectedProductIds.has(product.id)}
                               onCheckedChange={() => toggleProductSelection(product.id)}
                               aria-label={`Select ${product.name}`}
                             />
                           </td>
-                          <td className="py-2 font-medium w-64">{product.name}</td>
-                          <td className="py-2 text-gray-600 w-32">{product.sku || product.item_code || '-'}</td>
-                          <td className="py-2 text-right w-24">{product.stock_qty} {product.unit}</td>
-                          <td className="py-2 text-right w-28">{formatCurrency(product.sale_price)}</td>
-                          <td className="py-2 text-right text-gray-500 w-28">{formatCurrency(product.purchase_price)}</td>
-                          <td className="py-2 text-right w-24">
+                          <td className="py-2 pr-2 font-medium">{product.name}</td>
+                          <td className="px-1 py-2 text-gray-600">{product.sku || product.item_code || '-'}</td>
+                          <td className="whitespace-nowrap px-1 py-2 text-right">{product.stock_qty} {product.unit}</td>
+                          <td className="whitespace-nowrap px-1 py-2 text-right tabular-nums">{formatCurrency(product.sale_price)}</td>
+                          <td className="whitespace-nowrap px-1 py-2 text-right tabular-nums text-gray-500">{formatCurrency(product.purchase_price)}</td>
+                          <td className="px-1 py-2 text-right">
                             <Input
                               type="number"
                               min="0.001"
@@ -1659,7 +1703,7 @@ export default function CreatePurchaseInvoicePage() {
                               aria-label={`Quantity for ${product.name}`}
                             />
                           </td>
-                          <td className="py-2 w-20">
+                          <td className="py-2 pl-1">
                             <Button
                               type="button"
                               size="sm"
@@ -1845,10 +1889,10 @@ export default function CreatePurchaseInvoicePage() {
 
         {/* Add Vendor Modal */}
         {showAddVendor && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <Card className="w-full max-w-3xl max-h-[90vh] overflow-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <Card className="max-h-[90vh] w-full max-w-3xl overflow-auto">
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <CardTitle>Create New Vendor</CardTitle>
                   <Button type="button" variant="ghost" size="icon" onClick={() => setShowAddVendor(false)}>
                     <X className="h-4 w-4" />
@@ -1857,7 +1901,7 @@ export default function CreatePurchaseInvoicePage() {
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <Label htmlFor="new_vendor_name">Name *</Label>
                       <Input 
@@ -1880,7 +1924,7 @@ export default function CreatePurchaseInvoicePage() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <Label htmlFor="new_vendor_email">Email</Label>
                       <Input 
@@ -1907,7 +1951,7 @@ export default function CreatePurchaseInvoicePage() {
                       onChange={e => setVendorFormData({ ...vendorFormData, address: e.target.value })} 
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <div>
                       <Label htmlFor="new_vendor_city">City</Label>
                       <Input 

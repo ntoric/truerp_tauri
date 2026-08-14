@@ -260,7 +260,7 @@ export default function CustomerPortalHomePage() {
               <CardHeader>
                 <CardTitle className="text-base">Your invoices</CardTitle>
               </CardHeader>
-              <CardContent className="overflow-x-auto">
+              <CardContent className="table-scroll">
                 {invoices.length === 0 ? (
                   <p className="py-6 text-center text-muted-foreground">No invoices yet</p>
                 ) : (
@@ -318,7 +318,7 @@ export default function CustomerPortalHomePage() {
               <CardHeader>
                 <CardTitle className="text-base">Payment history</CardTitle>
               </CardHeader>
-              <CardContent className="overflow-x-auto">
+              <CardContent className="table-scroll">
                 {payments.length === 0 ? (
                   <p className="py-6 text-center text-muted-foreground">No payments recorded</p>
                 ) : (
@@ -383,7 +383,7 @@ export default function CustomerPortalHomePage() {
               <CardHeader>
                 <CardTitle className="text-base">Account statements</CardTitle>
               </CardHeader>
-              <CardContent className="overflow-x-auto">
+              <CardContent className="table-scroll">
                 {statements.length === 0 ? (
                   <p className="py-6 text-center text-muted-foreground">
                     No statements available yet. Ask your supplier to generate one from TruERP.

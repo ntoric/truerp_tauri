@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import ImageCropModal from '@/components/ImageCropModal'
 import { 
   Building2, Save, Loader2, User, Settings as SettingsIcon, 
-  FileText, Printer, Bell, HelpCircle, Share2, LogOut, Scale 
+  FileText, Printer, Bell, HelpCircle, Share2, LogOut, Scale, Trash2 
 } from 'lucide-react'
 import WeighingScaleSettingsCard from '@/components/WeighingScaleSettingsCard'
 import PrintSettingsCard from '@/components/PrintSettingsCard'
@@ -350,6 +351,36 @@ export default function SettingsPage() {
     }
   }
 
+  const handleRemoveLogo = async () => {
+    if (!business.logo_url) return
+    const confirmed = await confirm({
+      title: 'Remove business logo?',
+      description: 'This will clear the logo from invoices and other documents. You can upload a new one anytime.',
+      confirmLabel: 'Remove logo',
+      variant: 'destructive',
+    })
+    if (!confirmed) return
+
+    setSaving(true)
+    setMessage('')
+    try {
+      const res = await apiFetch('/business/logo', { method: 'DELETE' })
+      if (res.ok) {
+        setBusiness(prev => ({ ...prev, logo_url: '' }))
+        const logoInput = document.getElementById('logo') as HTMLInputElement | null
+        if (logoInput) logoInput.value = ''
+        setMessage('Logo removed successfully!')
+      } else {
+        const errorData = await res.json().catch(() => ({}))
+        setMessage(errorData.error || 'Failed to remove logo')
+      }
+    } catch (err) {
+      setMessage('An error occurred')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleSignatureCropComplete = async (croppedBlob: Blob) => {
     setCroppedImage(croppedBlob)
     setShowSignatureCrop(false)
@@ -512,9 +543,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex h-96 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-        </div>
+        <FormPageSkeleton />
       </DashboardLayout>
     )
   }
@@ -522,8 +551,8 @@ export default function SettingsPage() {
   return (
     <DashboardLayout>
       <div className="w-full space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+        <div className="app-page-subheader">
+          <h1 className="app-page-title">Settings</h1>
           <Button variant="destructive" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
             Logout
@@ -605,6 +634,17 @@ export default function SettingsPage() {
                               alt="Business Logo" 
                               className="h-full w-full object-contain p-2"
                             />
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              className="absolute right-2 top-2 gap-1.5"
+                              onClick={handleRemoveLogo}
+                              disabled={saving}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Remove
+                            </Button>
                           </div>
                         )}
                         <Input 

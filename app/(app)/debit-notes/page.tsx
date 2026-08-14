@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +23,7 @@ import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
 interface Party {
   id: string
@@ -192,18 +194,18 @@ export default function DebitNotesPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-      </div>
+      <DashboardLayout>
+        <PageSkeleton />
+      </DashboardLayout>
     )
   }
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Debit Notes</h1>
-          <div className="flex items-center gap-2">
+      <div className="space-y-3">
+        <div className="app-page-subheader">
+          <h1 className="app-page-title">Debit Notes</h1>
+          <PageHeaderActions>
             <Button
               variant="outline"
               onClick={handleExport}
@@ -216,7 +218,7 @@ export default function DebitNotesPage() {
               <Plus className="mr-2 h-4 w-4" />
               New Debit Note
             </Button>
-          </div>
+          </PageHeaderActions>
         </div>
 
         <Card>

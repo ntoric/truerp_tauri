@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -133,9 +134,7 @@ export default function PurchaseOrderDetailPage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex min-h-screen items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
+        <PageSkeleton />
       </DashboardLayout>
     )
   }
@@ -143,7 +142,7 @@ export default function PurchaseOrderDetailPage() {
   if (!order) {
     return (
       <DashboardLayout>
-        <div className="flex min-h-screen items-center justify-center">
+        <div className="flex min-h-[40vh] items-center justify-center">
           <p className="text-gray-500">Purchase order not found</p>
         </div>
       </DashboardLayout>
@@ -159,8 +158,7 @@ export default function PurchaseOrderDetailPage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold">{order.order_number}</h1>
-              <p className="text-sm text-gray-500">Purchase Order</p>
+              <h1 className="app-page-title">{order.order_number}</h1>
             </div>
           </div>
           <div className="flex gap-2">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import PageHeader from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -25,7 +26,7 @@ import {
 } from '@/lib/partyValidation'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { Plus, Search, Phone, ArrowUp, ArrowDown, Trash2, Edit, MoreVertical, Download } from 'lucide-react'
+import { Plus, Search, Phone, ArrowUp, ArrowDown, Trash2, Edit, MoreVertical, Download, BarChart3, ChevronUp, ChevronDown } from 'lucide-react'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -70,6 +71,7 @@ export default function PartiesPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
   const [parties, setParties] = useState<Party[]>([])
   const [stats, setStats] = useState<PartyStats>({ total_parties: 0, to_collect: 0, to_pay: 0 })
+  const [showStats, setShowStats] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
@@ -349,14 +351,27 @@ export default function PartiesPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Parties</h1>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={handleExport} disabled={loading || filteredParties.length === 0}>
-              <Download className="mr-2 h-4 w-4" /> Export
-            </Button>
-            <Dialog open={isCreateModalOpen} onOpenChange={handleCreateModalChange}>
+      <div className="space-y-4">
+        <PageHeader
+          title="Parties"
+          actions={
+            <>
+              <Button
+                type="button"
+                variant={showStats ? 'secondary' : 'outline'}
+                className="gap-1.5"
+                onClick={() => setShowStats((prev) => !prev)}
+                aria-expanded={showStats}
+                aria-controls="parties-stats"
+              >
+                <BarChart3 className="h-4 w-4" />
+                Stats
+                {showStats ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </Button>
+              <Button variant="outline" onClick={handleExport} disabled={loading || filteredParties.length === 0}>
+                <Download className="mr-2 h-4 w-4" /> Export
+              </Button>
+              <Dialog open={isCreateModalOpen} onOpenChange={handleCreateModalChange}>
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 h-4 w-4" /> Create Party</Button>
             </DialogTrigger>
@@ -526,7 +541,9 @@ export default function PartiesPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          </div>
+            </>
+          }
+        />
 
           <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -632,34 +649,35 @@ export default function PartiesPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">All Parties</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total_parties}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">To Collect</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.to_collect)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">To Pay</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">{formatCurrency(stats.to_pay)}</div>
-            </CardContent>
-          </Card>
-        </div>
+        {showStats && (
+          <div id="parties-stats" className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-gray-600">All Parties</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.total_parties}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-gray-600">To Collect</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.to_collect)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-gray-600">To Pay</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">{formatCurrency(stats.to_pay)}</div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         <Card>
           <CardHeader className="pb-4">
@@ -719,7 +737,7 @@ export default function PartiesPage() {
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-gray-500">
