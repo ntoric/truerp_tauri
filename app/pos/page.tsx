@@ -27,7 +27,7 @@ import {
 } from '@/lib/weighingScaleBarcode'
 import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/components/ui/BarcodeScannerInput'
 import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
-import { formatQty, linePayableTotal, lineTaxAmount, productSaleUnitPrice, productTaxRate, isProductGstEnabled, parseMoney, limitDecimalInput } from '@/lib/numbers'
+import { formatQty, linePayableTotal, lineTaxAmount, productSaleUnitPrice, productTaxRate, isProductGstEnabled, parseMoney, limitDecimalInput, roundMoney } from '@/lib/numbers'
 import { fetchProductBatches, pickDefaultBatch } from '@/lib/productBatches'
 import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
 import KeyboardShortcutsTrigger from '@/components/keyboard-shortcuts/KeyboardShortcutsTrigger'
@@ -677,11 +677,14 @@ export default function POSPage() {
     return discount
   }
 
-  const getRoundedTotal = () => {
+  const getExactTotal = () => {
     const saleDiscount = getSaleDiscount()
-    const total = getCartTotal() - saleDiscount - getLoyaltyDiscount(saleDiscount)
-    return Math.max(0, Math.round(total))
+    return getCartTotal() - saleDiscount - getLoyaltyDiscount(saleDiscount)
   }
+
+  const getRoundedTotal = () => Math.max(0, Math.round(getExactTotal()))
+
+  const getRoundOff = () => roundMoney(getRoundedTotal() - getExactTotal())
 
   const syncReceivedToPayable = (prevPayable: number, nextPayable: number, delta = 0) => {
     setReceivedAmount((prev) => {
@@ -1644,8 +1647,17 @@ export default function POSPage() {
                   <span>−{formatCurrency(getSaleDiscount())}</span>
                 </div>
               )}
+              {getRoundOff() !== 0 && (
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>Round Off</span>
+                  <span className="font-medium">
+                    {getRoundOff() > 0 ? '+' : ''}
+                    {formatCurrency(getRoundOff())}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-xs text-gray-500">
-                <span>Rounded</span>
+                <span>Payable</span>
                 <span className="font-medium">{formatCurrency(getRoundedTotal())}</span>
               </div>
               {loyaltySettings?.is_enabled && activeTab.selectedParty && (
