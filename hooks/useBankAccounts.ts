@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '@/hooks/useAuth'
+import { offlineStorage } from '@/lib/offlineStorage'
 
 export interface BankAccountOption {
   id: string
@@ -22,10 +23,20 @@ export function useBankAccounts() {
       const res = await apiFetch('/cash-bank/accounts')
       if (res.ok) {
         const data = await res.json()
-        setAccounts(Array.isArray(data) ? data : [])
+        const list = Array.isArray(data) ? data : []
+        setAccounts(list)
+        await offlineStorage.setMeta('bank_accounts', list)
+        setLoading(false)
+        return
       }
     } catch (err) {
       console.error(err)
+    }
+    try {
+      const cached = await offlineStorage.getMeta<BankAccountOption[]>('bank_accounts')
+      if (Array.isArray(cached) && cached.length) setAccounts(cached)
+    } catch {
+      /* ignore */
     } finally {
       setLoading(false)
     }

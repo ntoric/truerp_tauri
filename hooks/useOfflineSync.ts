@@ -1,126 +1,107 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { offlineStorage } from '@/lib/offlineStorage'
+import { syncPendingPOSSales } from '@/lib/posSync'
+import { subscribePOSAuthExpired } from '@/lib/posAuthGate'
+import { useNetworkStatus } from './useNetworkStatus'
 import { apiFetch } from './useAuth'
 
 interface SyncStatus {
   pending: number
   failed: number
   isOnline: boolean
+  authExpired: boolean
 }
 
 export function useOfflineSync() {
+  const { isOnline } = useNetworkStatus()
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     pending: 0,
     failed: 0,
-    // Avoid touching navigator during SSR/prerender (Node has no navigator).
     isOnline: true,
+    authExpired: false,
   })
   const [isSyncing, setIsSyncing] = useState(false)
+  const syncingRef = useRef(false)
 
-  useEffect(() => {
-    // Initialize offline storage
-    offlineStorage.init()
-
-    // Set initial online status (client-only)
-    setSyncStatus(prev => ({ ...prev, isOnline: navigator.onLine }))
-
-    // Listen for online/offline events
-    const handleOnline = () => {
-      setSyncStatus(prev => ({ ...prev, isOnline: true }))
-      autoSync()
-    }
-
-    const handleOffline = () => {
-      setSyncStatus(prev => ({ ...prev, isOnline: false }))
-    }
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-
-    // Check sync status periodically
-    checkSyncStatus()
-    const interval = setInterval(checkSyncStatus, 30000) // Check every 30 seconds
-
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-      clearInterval(interval)
-    }
-  }, [])
-
-  const checkSyncStatus = useCallback(async () => {
-    try {
-      const res = await apiFetch('/sync/status')
-      if (res.ok) {
-        const data = await res.json()
-        setSyncStatus(prev => ({
-          ...prev,
-          pending: data.pending_count,
-          failed: data.failed_count
-        }))
-      }
-    } catch (err) {
-      // If offline, check local storage
-      const pending = await offlineStorage.getPendingSyncs()
-      setSyncStatus(prev => ({
-        ...prev,
-        pending: pending.length,
-        failed: 0
-      }))
-    }
+  const refreshLocalCounts = useCallback(async () => {
+    const unsynced = await offlineStorage.getUnsynced()
+    setSyncStatus((prev) => ({
+      ...prev,
+      pending: unsynced.length,
+      failed: unsynced.filter((item) => item.status === 'failed').length,
+    }))
+    return unsynced.length
   }, [])
 
   const autoSync = useCallback(async () => {
-    if (!syncStatus.isOnline || isSyncing) return
-
-    const pending = await offlineStorage.getPendingSyncs()
-    if (pending.length === 0) return
-
+    if (!isOnline || syncingRef.current) return
+    syncingRef.current = true
     setIsSyncing(true)
     try {
-      const operations = pending.map(item => ({
-        operation: item.operation,
-        entity_type: item.entityType,
-        entity_data: item.entityData
+      const result = await syncPendingPOSSales()
+      setSyncStatus((prev) => ({
+        ...prev,
+        pending: result.pending,
+        failed: result.failed,
+        isOnline: true,
       }))
-
-      const res = await apiFetch('/sync/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ operations })
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        const successfulIds = pending
-          .filter((_, i) => data.results[i]?.success)
-          .map(item => item.id)
-        
-        await offlineStorage.removeSyncedItems(successfulIds)
-        await checkSyncStatus()
+      if (result.synced > 0) {
+        try {
+          const res = await apiFetch('/products', { timeoutMs: 8000 })
+          if (res.ok) {
+            const data = await res.json()
+            await offlineStorage.cacheProducts(Array.isArray(data) ? data : [])
+          }
+        } catch {
+          /* keep local catalog */
+        }
       }
     } catch (err) {
       console.error('Auto-sync failed:', err)
+      await refreshLocalCounts()
     } finally {
+      syncingRef.current = false
       setIsSyncing(false)
     }
-  }, [syncStatus.isOnline, isSyncing, checkSyncStatus])
+  }, [isOnline, refreshLocalCounts])
+
+  useEffect(() => {
+    void offlineStorage.init()
+    void refreshLocalCounts()
+    return subscribePOSAuthExpired((expired) => {
+      setSyncStatus((prev) => ({ ...prev, authExpired: expired }))
+    })
+  }, [refreshLocalCounts])
+
+  useEffect(() => {
+    setSyncStatus((prev) => ({ ...prev, isOnline }))
+    if (isOnline) {
+      void autoSync()
+    }
+  }, [isOnline, autoSync])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void refreshLocalCounts()
+    }, 15000)
+    return () => clearInterval(interval)
+  }, [refreshLocalCounts])
 
   const manualSync = useCallback(async () => {
-    if (!syncStatus.isOnline) {
+    if (!isOnline) {
       throw new Error('Cannot sync while offline')
     }
+    await offlineStorage.requeueFailedSyncs()
     await autoSync()
-  }, [syncStatus.isOnline, autoSync])
+  }, [isOnline, autoSync])
 
-  const queueOfflineOperation = useCallback(async (
-    operation: string,
-    entityType: string,
-    entityData: any
-  ) => {
-    await offlineStorage.addToSyncQueue(operation, entityType, entityData)
-    await checkSyncStatus()
-  }, [checkSyncStatus])
+  const queueOfflineOperation = useCallback(
+    async (operation: string, entityType: string, entityData: unknown) => {
+      await offlineStorage.addToSyncQueue(operation, entityType, entityData)
+      await refreshLocalCounts()
+    },
+    [refreshLocalCounts]
+  )
 
   return {
     syncStatus,
@@ -128,6 +109,6 @@ export function useOfflineSync() {
     autoSync,
     manualSync,
     queueOfflineOperation,
-    checkSyncStatus
+    checkSyncStatus: refreshLocalCounts,
   }
 }

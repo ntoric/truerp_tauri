@@ -6,10 +6,10 @@ import { useOfflineSync } from '@/hooks/useOfflineSync'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { formatCurrency } from '@/lib/utils'
-import { offlineStorage } from '@/lib/offlineStorage'
+import { formatCurrency, asArray } from '@/lib/utils'
+import { offlineStorage, POS_META_KEYS, type POSSaleRecord } from '@/lib/offlineStorage'
 import Link from 'next/link'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, Percent } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, Percent, Wifi, WifiOff } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
@@ -26,11 +26,13 @@ import {
   normalizeScannedBarcode,
 } from '@/lib/weighingScaleBarcode'
 import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/components/ui/BarcodeScannerInput'
-import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
+import { printThermalContent } from '@/lib/printDocument'
 import { formatQty, linePayableTotal, lineTaxAmount, productSaleUnitPrice, productTaxRate, isProductGstEnabled, parseMoney, limitDecimalInput, roundMoney } from '@/lib/numbers'
 import { fetchProductBatches, pickDefaultBatch } from '@/lib/productBatches'
 import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
 import KeyboardShortcutsTrigger from '@/components/keyboard-shortcuts/KeyboardShortcutsTrigger'
+import { hydratePOSSnapshot, getCachedPrintSettings, getCachedBusiness } from '@/lib/posCatalog'
+import { buildPOSReceiptContent, receiptPaperWidthMm } from '@/lib/posReceipt'
 
 interface Product {
   id: string
@@ -54,6 +56,7 @@ interface Party {
   phone: string
   gstin: string
   loyalty_points?: number
+  local_only?: boolean
 }
 
 interface CartItem {
@@ -101,7 +104,7 @@ const findWalkInCustomer = (list: Party[]) =>
   list.find((p) => p.name?.trim().toLowerCase() === WALK_IN_CUSTOMER_NAME.toLowerCase()) || null
 
 export default function POSPage() {
-  const { syncStatus, isSyncing, manualSync, queueOfflineOperation } = useOfflineSync()
+  const { syncStatus, isSyncing, manualSync, checkSyncStatus } = useOfflineSync()
   const [products, setProducts] = useState<Product[]>([])
   const [parties, setParties] = useState<Party[]>([])
   const [walkInCustomer, setWalkInCustomer] = useState<Party | null>(null)
@@ -132,6 +135,7 @@ export default function POSPage() {
   const [editingQty, setEditingQty] = useState<{ productId: string; value: string } | null>(null)
   const qtyEditCancelledRef = useRef(false)
   const prevLoyaltyDiscountRef = useRef(0)
+  const checkoutInFlightRef = useRef(false)
   const { accounts: bankAccounts } = useBankAccounts()
   const { getDepositHint } = usePaymentMethodMappings()
   const [mounted, setMounted] = useState(false)
@@ -151,12 +155,17 @@ export default function POSPage() {
 
   useEffect(() => {
     setMounted(true)
-    // Load data
-    loadProducts()
-    loadParties()
-    loadSession()
-    loadDrafts()
-    loadLoyaltySettings()
+    void (async () => {
+      await offlineStorage.init()
+      await Promise.all([
+        loadProducts(),
+        loadParties(),
+        loadSession(),
+        loadDrafts(),
+        loadLoyaltySettings(),
+      ])
+      await hydratePOSSnapshot()
+    })()
   }, [])
 
   useEffect(() => {
@@ -166,27 +175,35 @@ export default function POSPage() {
 
   const loadLoyaltySettings = async () => {
     try {
-      const res = await apiFetch('/loyalty/settings')
-      if (res.ok) setLoyaltySettings(await res.json())
+      const res = await apiFetch('/loyalty/settings', { timeoutMs: 5000 })
+      if (res.ok) {
+        const data = await res.json()
+        setLoyaltySettings(data)
+        await offlineStorage.setMeta(POS_META_KEYS.LOYALTY, data)
+        return
+      }
     } catch {
-      /* offline — skip */
+      /* offline — use cache */
     }
+    const cached = await offlineStorage.getMeta<LoyaltySettings>(POS_META_KEYS.LOYALTY)
+    if (cached) setLoyaltySettings(cached)
   }
 
   const loadProducts = async () => {
     try {
-      const res = await apiFetch('/products')
+      const res = await apiFetch('/products', { timeoutMs: 8000 })
       if (res.ok) {
         const data = await res.json()
-        setProducts(data)
-        // Cache products for offline use
-        await offlineStorage.cacheProducts(data)
+        const list = asArray<Product>(data)
+        setProducts(list)
+        await offlineStorage.cacheProducts(list)
+        return
       }
     } catch (err) {
       console.error('Failed to load products, using cache')
-      const cached = await offlineStorage.getCachedProducts()
-      setProducts(cached)
     }
+    const cached = await offlineStorage.getCachedProducts()
+    setProducts(cached)
   }
 
   const applyDefaultCustomer = (party: Party | null) => {
@@ -230,6 +247,7 @@ export default function POSPage() {
       name: WALK_IN_CUSTOMER_NAME,
       phone: '',
       gstin: '',
+      local_only: true,
     }
     const next = [...list, offlineParty]
     await offlineStorage.cacheParties(next)
@@ -302,14 +320,21 @@ export default function POSPage() {
 
   const loadDrafts = async () => {
     try {
-      const res = await apiFetch('/pos/drafts')
+      const res = await apiFetch('/pos/drafts', { timeoutMs: 5000 })
       if (res.ok) {
         const data = await res.json()
-        setDrafts(data)
+        const list = Array.isArray(data) ? data : []
+        setDrafts(list)
+        for (const draft of list) {
+          await offlineStorage.saveLocalDraft(draft)
+        }
+        return
       }
     } catch (err) {
       console.error('Failed to load drafts')
     }
+    const cached = await offlineStorage.getLocalDrafts()
+    setDrafts(cached)
   }
 
   const openSession = async () => {
@@ -335,6 +360,7 @@ export default function POSPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ opening_cash: cash }),
+        timeoutMs: 5000,
       })
       if (res.ok) {
         const data = await res.json()
@@ -361,7 +387,16 @@ export default function POSPage() {
       }
       notifyError(`Failed to open session: ${errorData.error || 'Unknown error'}`)
     } catch {
-      notifyError('Failed to open session. Check your connection and try again.')
+      const newSession: POSSession = {
+        id: crypto.randomUUID(),
+        opening_cash: cash,
+        total_sales: 0,
+        status: 'open',
+        local_only: true,
+      }
+      await offlineStorage.savePOSSession(newSession)
+      setSession(newSession)
+      setShowSessionModal(false)
     }
   }
 
@@ -484,25 +519,29 @@ export default function POSPage() {
       return
     }
 
-    try {
-      const res = await apiFetch(`/inventory/stocks/search?item_code=${encodeURIComponent(code)}`)
-      if (res.ok) {
-        const data = await res.json()
-        const matches: Array<Record<string, unknown>> = data.data || []
-        if (matches.length > 0) {
-          const id = String(matches[0].product_id ?? '')
-          const product = products.find((p) => p.id === id)
-          if (product) {
-            void addToCartWithQuantity(product, 1)
-            notifySuccess(`Added: ${product.name}`)
-            barcodeInputRef.current?.clear()
-            barcodeInputRef.current?.focus()
-            return
+    if (syncStatus.isOnline) {
+      try {
+        const res = await apiFetch(`/inventory/stocks/search?item_code=${encodeURIComponent(code)}`, {
+          timeoutMs: 3000,
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const matches: Array<Record<string, unknown>> = data.data || []
+          if (matches.length > 0) {
+            const id = String(matches[0].product_id ?? '')
+            const product = products.find((p) => p.id === id)
+            if (product) {
+              void addToCartWithQuantity(product, 1)
+              notifySuccess(`Added: ${product.name}`)
+              barcodeInputRef.current?.clear()
+              barcodeInputRef.current?.focus()
+              return
+            }
           }
         }
+      } catch {
+        /* offline — fall through to local-only scale / not-found */
       }
-    } catch {
-      /* offline — fall through to local-only scale / not-found */
     }
 
     if (scaleSettings.barcode_scan_enabled) {
@@ -799,6 +838,7 @@ export default function POSPage() {
     }
 
     const draftData = {
+      id: crypto.randomUUID(),
       title: draftTitle,
       cart_data: JSON.stringify({
         items: activeTab.cart,
@@ -807,25 +847,33 @@ export default function POSPage() {
       }),
       party_id: activeTab.selectedParty?.id,
       notes: activeTab.notes,
-      session_id: session?.id
+      session_id: session?.id,
+      is_active: true,
     }
 
     try {
       const res = await apiFetch('/pos/drafts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draftData)
+        body: JSON.stringify(draftData),
+        timeoutMs: 5000,
       })
       if (res.ok) {
         await loadDrafts()
         setShowDraftModal(false)
         setDraftTitle('')
         notifySuccess('Draft saved successfully')
+        return
       }
     } catch (err) {
-      console.error('Failed to save draft')
-      notifyError('Failed to save draft')
+      console.error('Failed to save draft online, saving locally')
     }
+
+    await offlineStorage.saveLocalDraft(draftData)
+    setDrafts((prev) => [...prev, draftData])
+    setShowDraftModal(false)
+    setDraftTitle('')
+    notifySuccess('Draft saved on this device')
   }
 
   const loadDraft = async (draft: POSDraft) => {
@@ -927,17 +975,32 @@ export default function POSPage() {
       const res = await apiFetch('/parties', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCustomer)
+        body: JSON.stringify(newCustomer),
+        timeoutMs: 5000,
       })
       if (res.ok) {
         const createdParty = await res.json()
-        setParties([...parties, createdParty])
+        const next = [...parties, createdParty]
+        setParties(next)
+        await offlineStorage.cacheParties(next)
         selectCustomer(createdParty)
+        return
       }
     } catch (err) {
-      console.error('Failed to create customer')
-      notifyError('Failed to create customer')
+      console.error('Failed to create customer online, using local party')
     }
+
+    const localParty: Party = {
+      id: crypto.randomUUID(),
+      name: newCustomer.name,
+      phone: newCustomer.phone,
+      gstin: '',
+      local_only: true,
+    }
+    const next = [...parties, localParty]
+    setParties(next)
+    await offlineStorage.putParty(localParty)
+    selectCustomer(localParty)
   }
 
   const handleCheckout = async (shouldPrint: boolean) => {
@@ -946,36 +1009,71 @@ export default function POSPage() {
       notifyError('Please select a customer')
       return
     }
+    if (checkoutInFlightRef.current) return
+    checkoutInFlightRef.current = true
 
     const roundedTotal = getRoundedTotal()
     const amountPaid = Math.min(parseFloat(receivedAmount) || roundedTotal, roundedTotal)
     const saleDiscount = getSaleDiscount()
+    const cartSnapshot = [...activeTab.cart]
+    const partySnapshot = activeTab.selectedParty
+    const clientSaleId = crypto.randomUUID()
 
-    const buildInvoicePayload = (invoiceNumber: string) => ({
-      invoice_number: invoiceNumber,
-      party_id: activeTab.selectedParty!.id,
-      date: new Date().toISOString(),
-      status: 'paid',
-      payment_mode: paymentMethod,
-      amount_paid: amountPaid,
-      is_pos: true,
-      ...(session ? { pos_session_id: session.id } : {}),
-      ...(saleDiscount > 0 ? { invoice_discount: saleDiscount } : {}),
-      ...(loyaltyPointsToRedeem > 0 ? { loyalty_points_redeemed: loyaltyPointsToRedeem } : {}),
-      items: activeTab.cart.map(item => ({
-        product_id: item.product.id,
-        description: item.product.name,
-        quantity: item.quantity,
-        // Backend always treats unit_price as tax-exclusive and adds GST on top.
-        unit_price: productSaleUnitPrice(item.product),
-        tax_rate: productTaxRate(item.product),
-        unit: item.product.unit || 'pcs',
-        batch_no: item.batch_no || '',
-        exp_date: item.exp_date || null,
-      })),
-    })
+    try {
+      const invoiceNumber = await offlineStorage.allocateInvoiceNumber()
+      const sale: POSSaleRecord = {
+        id: clientSaleId,
+        client_sale_id: clientSaleId,
+        invoice_number: invoiceNumber,
+        party_id: partySnapshot.id,
+        party: {
+          id: partySnapshot.id,
+          name: partySnapshot.name,
+          phone: partySnapshot.phone,
+          gstin: partySnapshot.gstin,
+          local_only: partySnapshot.local_only,
+        },
+        date: new Date().toISOString(),
+        status: 'paid',
+        payment_mode: paymentMethod,
+        amount_paid: amountPaid,
+        is_pos: true,
+        pos_session_id: session?.id,
+        session_local_only: session?.local_only,
+        session_opening_cash: session?.opening_cash,
+        ...(saleDiscount > 0 ? { invoice_discount: saleDiscount } : {}),
+        ...(loyaltyPointsToRedeem > 0 ? { loyalty_points_redeemed: loyaltyPointsToRedeem } : {}),
+        items: cartSnapshot.map((item) => ({
+          product_id: item.product.id,
+          description: item.product.name,
+          quantity: item.quantity,
+          unit_price: productSaleUnitPrice(item.product),
+          tax_rate: productTaxRate(item.product),
+          unit: item.product.unit || 'pcs',
+          batch_no: item.batch_no || '',
+          exp_date: item.exp_date || null,
+          total: item.total,
+        })),
+        tax_total: getTaxTotal(),
+        round_off: getRoundOff(),
+        total: roundedTotal,
+        sync_status: 'pending_sync',
+      }
 
-    const completeSaleLocally = async () => {
+      await offlineStorage.savePendingPOSSale(sale)
+
+      const nextProducts = products.map((product) => {
+        const sold = cartSnapshot
+          .filter((item) => item.product.id === product.id)
+          .reduce((sum, item) => sum + item.quantity, 0)
+        if (!sold) return product
+        return { ...product, stock_qty: Math.max(0, Number(product.stock_qty || 0) - sold) }
+      })
+      setProducts(nextProducts)
+      for (const item of cartSnapshot) {
+        await offlineStorage.decrementLocalStock(item.product.id, item.quantity, item.batch_no)
+      }
+
       updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '' })
       setIsEditingCustomer(false)
       setEditingQty(null)
@@ -988,65 +1086,64 @@ export default function POSPage() {
         setSession(updatedSession)
         await offlineStorage.savePOSSession(updatedSession)
       }
-    }
 
-    const printInvoice = async (invoiceId: string) => {
-      try {
-        const printSettings = await fetchPrintSettings()
-        // POS checkout always prints a thermal receipt (A4 mode is PDF download elsewhere).
-        await printDocument({
-          documentType: 'invoice',
-          documentId: invoiceId,
-          mode: 'thermal',
-          printSize: printSettings.thermal_print_size,
-        })
-      } catch (printErr) {
-        console.warn('POS print failed:', printErr)
-        const detail =
-          printErr instanceof Error && printErr.message
-            ? printErr.message
-            : 'Check Print Settings (thermal printer / paper size).'
-        notifyError(`Sale saved, but print failed: ${detail}`)
-      }
-    }
+      notifySuccess('Sale completed')
 
-    try {
-      let invoiceNumber = `POS-${Date.now()}`
-      const numRes = await apiFetch('/invoices/next-number')
-      if (numRes.ok) {
-        const numData = await numRes.json()
-        if (numData.invoice_number) {
-          invoiceNumber = numData.invoice_number
+      if (shouldPrint) {
+        try {
+          const printSettings = await getCachedPrintSettings()
+          const business = await getCachedBusiness()
+          const printSize = printSettings?.thermal_print_size || '2inch'
+          const content = buildPOSReceiptContent(
+            business || {},
+            {
+              invoice_number: invoiceNumber,
+              date: sale.date,
+              party_name: partySnapshot.name,
+              party_phone: partySnapshot.phone,
+              payment_mode: paymentMethod,
+              amount_paid: amountPaid,
+              invoice_discount: saleDiscount,
+              tax_total: sale.tax_total,
+              round_off: sale.round_off,
+              total: roundedTotal,
+              items: sale.items.map((item) => ({
+                description: item.description,
+                quantity: item.quantity,
+                unit: item.unit,
+                unit_price: item.unit_price,
+                tax_rate: item.tax_rate,
+                total: item.total || 0,
+              })),
+            },
+            printSize
+          )
+          await printThermalContent({
+            content,
+            printerName: printSettings?.thermal_printer_name || '',
+            paperWidthMm: receiptPaperWidthMm(printSize),
+            title: invoiceNumber,
+            logoUrl: business?.logo_data_url,
+          })
+        } catch (printErr) {
+          console.warn('POS print failed:', printErr)
+          const detail =
+            printErr instanceof Error && printErr.message
+              ? printErr.message
+              : 'Check Print Settings (thermal printer / paper size).'
+          notifyError(`Sale saved, but print failed: ${detail}`)
         }
       }
 
-      const invoice = buildInvoicePayload(invoiceNumber)
-      const res = await apiFetch('/invoices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(invoice),
-      })
-
-      if (res.ok) {
-        const created = await res.json().catch(() => null)
-        await completeSaleLocally()
-        await loadProducts()
-        notifySuccess('Sale completed successfully')
-        const invoiceId = created?.id as string | undefined
-        if (shouldPrint && invoiceId) {
-          await printInvoice(invoiceId)
-        }
-        return
-      }
-
-      const errData = await res.json().catch(() => ({}))
-      notifyError(typeof errData.error === 'string' ? errData.error : 'Checkout failed')
+      void (async () => {
+        await checkSyncStatus()
+        await manualSync().catch(() => undefined)
+      })()
     } catch (err) {
-      const invoice = buildInvoicePayload(`POS-OFF-${Date.now()}`)
-      await offlineStorage.saveOfflineInvoice(invoice)
-      await queueOfflineOperation('create', 'invoice', invoice)
-      await completeSaleLocally()
-      notifySuccess('Invoice saved offline. Will sync when connection is restored.')
+      console.error('POS checkout failed', err)
+      notifyError('Could not save the sale on this device. Try again.')
+    } finally {
+      checkoutInFlightRef.current = false
     }
   }
 
@@ -1071,6 +1168,35 @@ export default function POSPage() {
       <div className="flex items-center justify-between px-4 py-2 bg-white border-b shadow-sm">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold text-gray-900">POS</h1>
+          <div
+            className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${
+              syncStatus.authExpired
+                ? 'bg-red-50 text-red-700'
+                : isSyncing
+                  ? 'bg-blue-50 text-blue-700'
+                  : syncStatus.isOnline
+                    ? 'bg-green-50 text-green-700'
+                    : 'bg-amber-50 text-amber-800'
+            }`}
+            title={syncStatus.authExpired ? 'Sign in again to sync pending sales' : undefined}
+          >
+            {syncStatus.isOnline && !syncStatus.authExpired ? (
+              <Wifi className="h-3.5 w-3.5" />
+            ) : (
+              <WifiOff className="h-3.5 w-3.5" />
+            )}
+            <span>
+              {syncStatus.authExpired
+                ? 'Sign-in required to sync'
+                : isSyncing
+                  ? `Syncing ${syncStatus.pending}`
+                  : syncStatus.isOnline
+                    ? syncStatus.pending > 0
+                      ? `Online · ${syncStatus.pending} pending`
+                      : 'Online'
+                    : 'Offline'}
+            </span>
+          </div>
           {session && (
             <div className="flex items-center gap-4 text-sm">
               <span className="text-gray-600">Sales: <span className="font-semibold text-gray-900">{formatCurrency(session.total_sales)}</span></span>
@@ -1083,8 +1209,8 @@ export default function POSPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={manualSync}
-              disabled={isSyncing || !syncStatus.isOnline}
+              onClick={() => { void manualSync().catch(() => undefined) }}
+              disabled={isSyncing || !syncStatus.isOnline || syncStatus.authExpired}
               className="h-8 px-2"
             >
               {isSyncing ? 'Syncing...' : `Sync ${syncStatus.pending}`}

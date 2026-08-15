@@ -4,6 +4,8 @@ import { useState, useEffect, createContext, useContext, ReactNode } from 'react
 import { API_BASE } from '@/lib/utils'
 import { clearAuthToken, getAuthToken, setAuthToken } from '@/lib/authToken'
 import { clearActiveStoreId, getActiveStoreId, setActiveStoreId } from '@/lib/storeSelection'
+import { offlineStorage } from '@/lib/offlineStorage'
+import { setPOSAuthExpired } from '@/lib/posAuthGate'
 
 interface User {
   id: string
@@ -199,22 +201,41 @@ export function useAuth() {
   return context
 }
 
-export async function apiFetch(path: string, options: RequestInit = {}) {
+function abortAfter(timeoutMs: number, existing?: AbortSignal | null): AbortSignal {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const onAbort = () => {
+    clearTimeout(timer)
+    if (!controller.signal.aborted) controller.abort()
+  }
+  existing?.addEventListener('abort', onAbort, { once: true })
+  controller.signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
+  return controller.signal
+}
+
+export async function apiFetch(path: string, options: RequestInit & { timeoutMs?: number } = {}) {
   const token = getAuthToken()
   const storeId = getActiveStoreId()
   const isFormData = options.body instanceof FormData
   const hasContentType = options.headers && 'Content-Type' in (options.headers as Record<string, string>)
+  const { timeoutMs = 8000, signal, ...rest } = options
   const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...rest,
+    signal: abortAfter(timeoutMs, signal),
     headers: {
-      ...(options.headers || {}),
+      ...(rest.headers || {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(storeId ? { 'X-Store-ID': storeId } : {}),
       ...(!isFormData && !hasContentType ? { 'Content-Type': 'application/json' } : {}),
     },
   })
   if (res.status === 401) {
-    clearAuthAndRedirect()
+    const onPos = typeof window !== 'undefined' && window.location.pathname === '/pos'
+    if (onPos && (await offlineStorage.hasPendingPOSSales())) {
+      setPOSAuthExpired(true)
+    } else {
+      clearAuthAndRedirect()
+    }
   }
   if (res.status === 403) {
     try {

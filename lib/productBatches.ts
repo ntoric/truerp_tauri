@@ -1,4 +1,5 @@
 import { apiFetch } from '@/hooks/useAuth'
+import { offlineStorage } from '@/lib/offlineStorage'
 
 export interface ProductBatchStock {
   id: string
@@ -13,15 +14,23 @@ export interface ProductBatchStock {
   average_cost: number
 }
 
-/** Batches with available qty for a product, ordered FEFO by the API. */
+/** Batches with available qty for a product, ordered FEFO. Prefers the POS cache so billing never waits on the network. */
 export async function fetchProductBatches(productId: string): Promise<ProductBatchStock[]> {
   if (!productId) return []
-  const res = await apiFetch(
-    `/inventory/stocks?product_id=${encodeURIComponent(productId)}&available_only=true`
-  )
-  if (!res.ok) return []
-  const data = await res.json()
-  return Array.isArray(data) ? data : []
+  const cached = await offlineStorage.getCachedBatchesForProduct(productId)
+  if (cached.length) return cached as ProductBatchStock[]
+
+  try {
+    const res = await apiFetch(
+      `/inventory/stocks?product_id=${encodeURIComponent(productId)}&available_only=true`,
+      { timeoutMs: 3000 }
+    )
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
 }
 
 export function formatBatchLabel(batch: ProductBatchStock): string {
