@@ -225,7 +225,7 @@ export default function CreateInvoicePage() {
       const [partiesRes, productsRes, numRes, loyaltyRes, templatesRes, fieldsRes, invoiceSettingsRes] = await Promise.all([
         apiFetch('/parties'),
         apiFetch('/products'),
-        apiFetch('/invoices/next-number'),
+        editId ? Promise.resolve(null) : apiFetch('/invoices/next-number'),
         apiFetch('/loyalty/settings'),
         apiFetch('/invoice-templates'),
         apiFetch('/settings/invoice-custom-fields'),
@@ -241,7 +241,7 @@ export default function CreateInvoicePage() {
         const cats = Array.from(new Set(productData.map((p: Product) => p.category).filter(Boolean))) as string[]
         setCategories(cats)
       }
-      if (numRes.ok) {
+      if (!editId && numRes && numRes.ok) {
         const numData = await numRes.json()
         setInvoiceNumber(numData.invoice_number)
       }
@@ -867,6 +867,11 @@ export default function CreateInvoicePage() {
   }
 
   const saveInvoice = async (shouldPrint = false) => {
+    if (!invoiceNumber.trim()) {
+      setError('invoice_number', 'Invoice number is required')
+      showErrorToast('Invoice number is required')
+      return
+    }
     if (!partyId) {
       setError('party_id', 'Please select a party')
       showErrorToast('Please select a party')
@@ -884,7 +889,7 @@ export default function CreateInvoicePage() {
       const res = await apiFetch(url, {
         method,
         body: JSON.stringify({
-          invoice_number: invoiceNumber,
+          invoice_number: invoiceNumber.trim(),
           party_id: partyId,
           customer_id: partyId,
           date: new Date(date).toISOString(),
@@ -926,7 +931,10 @@ export default function CreateInvoicePage() {
         }
         router.push('/invoices')
       } else {
-        await handleApiError(res)
+        const { message } = await handleApiError(res)
+        if (/invoice number/i.test(message || '')) {
+          setError('invoice_number', message)
+        }
       }
     } catch (err) {
       showErrorToast('An error occurred')
@@ -1050,7 +1058,16 @@ export default function CreateInvoicePage() {
             <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="space-y-2">
                 <Label>Invoice Number</Label>
-                <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} required />
+                <Input
+                  value={invoiceNumber}
+                  onChange={(e) => {
+                    clearFieldError('invoice_number')
+                    setInvoiceNumber(e.target.value)
+                  }}
+                  className={cn(fieldErrors.invoice_number && 'border-red-500')}
+                  required
+                />
+                <FieldError message={fieldErrors.invoice_number} />
               </div>
               <div className="space-y-2 md:col-span-2 xl:col-span-1">
                 <Label>Party *</Label>

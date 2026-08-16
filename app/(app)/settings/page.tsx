@@ -15,6 +15,8 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import ImageCropModal from '@/components/ImageCropModal'
+import LogoAspectRatioPicker from '@/components/LogoAspectRatioPicker'
+import { logoPreviewBoxClass, normalizeLogoAspectRatio, type LogoAspectRatio } from '@/lib/logoAspect'
 import { 
   Building2, Save, Loader2, User, Settings as SettingsIcon, 
   FileText, Printer, Bell, HelpCircle, Share2, LogOut, Scale, Trash2, Palette 
@@ -42,6 +44,7 @@ interface Business {
   ifsc_code: string
   upi_id: string
   logo_url: string
+  logo_aspect_ratio: LogoAspectRatio
   signature_url: string
   enable_ai_hsn_search: boolean
   enable_ai_bill_parsing: boolean
@@ -104,7 +107,7 @@ export default function SettingsPage() {
   const [business, setBusiness] = useState<Business>({
     name: '', gstin: '', address: '', city: '', state: '', pincode: '',
     phone: '', email: '', bank_name: '', account_number: '', ifsc_code: '', upi_id: '',
-    logo_url: '', signature_url: '',
+    logo_url: '', logo_aspect_ratio: 'square', signature_url: '',
     enable_ai_hsn_search: false, enable_ai_bill_parsing: false, gemini_api_key: ''
   })
   
@@ -192,7 +195,10 @@ export default function SettingsPage() {
       const res = await apiFetch('/business')
       if (res.ok) {
         const data = await res.json()
-        setBusiness(data)
+        setBusiness({
+          ...data,
+          logo_aspect_ratio: normalizeLogoAspectRatio(data.logo_aspect_ratio),
+        })
       }
     } catch (err) {
       console.error(err)
@@ -329,6 +335,7 @@ export default function SettingsPage() {
 
     const formData = new FormData()
     formData.append('logo', croppedBlob, 'logo.png')
+    formData.append('aspect_ratio', business.logo_aspect_ratio)
 
     setSaving(true)
     setMessage('')
@@ -339,7 +346,11 @@ export default function SettingsPage() {
       })
       if (res.ok) {
         const data = await res.json()
-        setBusiness(prev => ({ ...prev, logo_url: data.logo_url }))
+        setBusiness(prev => ({
+          ...prev,
+          logo_url: data.logo_url,
+          logo_aspect_ratio: normalizeLogoAspectRatio(data.logo_aspect_ratio ?? prev.logo_aspect_ratio),
+        }))
         setMessage('Logo uploaded successfully!')
       } else {
         const errorData = await res.json()
@@ -633,11 +644,11 @@ export default function SettingsPage() {
                       <Label htmlFor="logo">Business Logo</Label>
                       <div className="space-y-2">
                         {business.logo_url && (
-                          <div className="relative h-32 w-full rounded-lg border border-gray-200 bg-gray-50">
+                          <div className="relative flex h-32 w-full items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
                             <img 
                               src={business.logo_url} 
                               alt="Business Logo" 
-                              className="h-full w-full object-contain p-2"
+                              className={`object-contain p-2 ${logoPreviewBoxClass(business.logo_aspect_ratio)}`}
                             />
                             <Button
                               type="button"
@@ -652,6 +663,14 @@ export default function SettingsPage() {
                             </Button>
                           </div>
                         )}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-gray-700">Logo aspect ratio</p>
+                          <LogoAspectRatioPicker
+                            value={business.logo_aspect_ratio}
+                            onChange={(value) => handleChange('logo_aspect_ratio', value, setBusiness)}
+                            disabled={saving}
+                          />
+                        </div>
                         <Input 
                           id="logo" 
                           type="file" 
@@ -659,7 +678,7 @@ export default function SettingsPage() {
                           onChange={handleLogoUpload}
                           disabled={saving}
                         />
-                        <p className="text-xs text-gray-500">Upload your business logo (JPG, PNG, GIF, WebP)</p>
+                        <p className="text-xs text-gray-500">Upload your business logo (JPG, PNG, GIF, WebP). Square, landscape, or portrait is used when cropping and on invoices.</p>
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -1182,8 +1201,10 @@ export default function SettingsPage() {
           onClose={() => setShowLogoCrop(false)}
           imageSrc={selectedImage}
           onCropComplete={handleLogoCropComplete}
-          aspectRatio={1}
           circularCrop={false}
+          showAspectRatioPicker
+          aspectRatioKey={business.logo_aspect_ratio}
+          onAspectRatioKeyChange={(value) => handleChange('logo_aspect_ratio', value, setBusiness)}
         />
 
         <ImageCropModal

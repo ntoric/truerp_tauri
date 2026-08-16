@@ -142,6 +142,7 @@ export default function InvoiceTemplateSettingsEditor({ backHref = '/settings' }
           phone: b.phone,
           gstin: b.gstin,
           logo_url: b.logo_url,
+          logo_aspect_ratio: b.logo_aspect_ratio,
         })
       }
     } catch {

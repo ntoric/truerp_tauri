@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -20,7 +20,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { downloadInvoicePdf } from '@/lib/printDocument'
-import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2, Package, BarChart3, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2, Package, BarChart3, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -43,6 +43,54 @@ interface InvoiceStats {
   paid: number
   unpaid: number
   cancelled: number
+}
+
+type InvoiceSortKey = 'invoice_number' | 'date' | 'status'
+type SortDir = 'asc' | 'desc'
+
+function partyLabel(inv: Invoice) {
+  return inv.party?.name || inv.customer?.name || 'N/A'
+}
+
+function SortableHeader({
+  label,
+  column,
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  label: string
+  column: InvoiceSortKey
+  sortKey: InvoiceSortKey
+  sortDir: SortDir
+  onSort: (key: InvoiceSortKey) => void
+}) {
+  const active = sortKey === column
+  return (
+    <th
+      className="pb-3 font-medium"
+      aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className="inline-flex items-center gap-1 hover:text-gray-800"
+        title={`Sort by ${label} ${active && sortDir === 'desc' ? 'ascending' : 'descending'}`}
+        aria-label={`Sort by ${label} ${active && sortDir === 'desc' ? 'ascending' : 'descending'}`}
+      >
+        {label}
+        {active ? (
+          sortDir === 'asc' ? (
+            <ChevronUp className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5" />
+          )
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 opacity-40" />
+        )}
+      </button>
+    </th>
+  )
 }
 
 const INVOICE_IMPORT_HEADERS = [
@@ -79,6 +127,8 @@ export default function InvoicesPage() {
   const [filter, setFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [sortKey, setSortKey] = useState<InvoiceSortKey>('invoice_number')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [previewData, setPreviewData] = useState<any>(null)
@@ -126,6 +176,7 @@ export default function InvoicesPage() {
     try {
       let url = '/invoices/stats'
       const params = new URLSearchParams()
+      if (filter) params.append('status', filter)
       if (dateFrom) params.append('from', dateFrom)
       if (dateTo) params.append('to', dateTo)
       if (params.toString()) url += `?${params.toString()}`
@@ -136,12 +187,44 @@ export default function InvoicesPage() {
     }
   }
 
-  const partyLabel = (inv: Invoice) => inv.party?.name || inv.customer?.name || 'N/A'
+  const handleSort = (key: InvoiceSortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('desc')
+    }
+  }
 
-  const filteredInvoices = invoices.filter(inv =>
-    inv.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
-    partyLabel(inv).toLowerCase().includes(search.toLowerCase())
-  )
+  const filteredInvoices = useMemo(() => {
+    const query = search.toLowerCase()
+    const filtered = invoices.filter(
+      (inv) =>
+        inv.invoice_number.toLowerCase().includes(query) ||
+        partyLabel(inv).toLowerCase().includes(query)
+    )
+    const dir = sortDir === 'asc' ? 1 : -1
+    return [...filtered].sort((a, b) => {
+      let cmp = 0
+      if (sortKey === 'invoice_number') {
+        cmp = a.invoice_number.localeCompare(b.invoice_number, undefined, {
+          numeric: true,
+          sensitivity: 'base',
+        })
+      } else if (sortKey === 'date') {
+        cmp = (a.date || '').localeCompare(b.date || '')
+        if (cmp === 0) {
+          cmp = a.invoice_number.localeCompare(b.invoice_number, undefined, {
+            numeric: true,
+            sensitivity: 'base',
+          })
+        }
+      } else {
+        cmp = (a.status || '').localeCompare(b.status || '', undefined, { sensitivity: 'base' })
+      }
+      return cmp * dir
+    })
+  }, [invoices, search, sortKey, sortDir])
 
   const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(filteredInvoices)
 
@@ -149,6 +232,10 @@ export default function InvoicesPage() {
     resetPage()
     setSelectedInvoices(new Set())
   }, [search, filter, dateFrom, dateTo])
+
+  useEffect(() => {
+    resetPage()
+  }, [sortKey, sortDir])
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, string> = {
@@ -577,12 +664,12 @@ export default function InvoicesPage() {
                           onChange={toggleSelectAllInvoices}
                         />
                       </th>
-                      <th className="pb-3 font-medium">Date</th>
-                      <th className="pb-3 font-medium">Invoice #</th>
+                      <SortableHeader label="Date" column="date" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                      <SortableHeader label="Invoice #" column="invoice_number" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                       <th className="pb-3 font-medium">Party Name</th>
                       <th className="pb-3 font-medium">Due In</th>
                       <th className="pb-3 font-medium">Amount</th>
-                      <th className="pb-3 font-medium">Status</th>
+                      <SortableHeader label="Status" column="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                       <th className="pb-3 font-medium">Actions</th>
                     </tr>
                   </thead>

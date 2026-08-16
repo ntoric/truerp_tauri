@@ -1,6 +1,7 @@
 'use client'
 
 import type { InvoiceSettingsRecord, InvoiceTemplateCustomization } from '@/lib/invoiceTemplateSettings'
+import { invoiceLogoClass } from '@/lib/logoAspect'
 
 export interface GstPreviewBusiness {
   name?: string
@@ -11,6 +12,7 @@ export interface GstPreviewBusiness {
   phone?: string
   gstin?: string
   logo_url?: string
+  logo_aspect_ratio?: string
 }
 
 const SAMPLE_ITEMS = [
@@ -92,7 +94,7 @@ export default function GstInvoicePreviewSample({ settings, customization, busin
             {settings.show_logo ? (
               business?.logo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={business.logo_url} alt="" className="h-12 w-12 rounded object-contain" />
+                <img src={business.logo_url} alt="" className={invoiceLogoClass(business.logo_aspect_ratio)} />
               ) : (
                 <div
                   className="flex h-12 w-12 items-center justify-center rounded-full text-[9px] font-bold text-white"

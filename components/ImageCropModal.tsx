@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Cropper from 'react-easy-crop'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { getCroppedImageBlob } from '@/lib/cropImage'
+import { logoAspectRatioValue, type LogoAspectRatio } from '@/lib/logoAspect'
+import LogoAspectRatioPicker from '@/components/LogoAspectRatioPicker'
 import { Crop, RotateCw, ZoomIn, ZoomOut } from 'lucide-react'
 
 interface ImageCropModalProps {
@@ -16,6 +18,9 @@ interface ImageCropModalProps {
   aspectRatio?: number
   circularCrop?: boolean
   outputMaxSize?: number
+  showAspectRatioPicker?: boolean
+  aspectRatioKey?: LogoAspectRatio
+  onAspectRatioKeyChange?: (value: LogoAspectRatio) => void
 }
 
 export default function ImageCropModal({
@@ -26,11 +31,22 @@ export default function ImageCropModal({
   aspectRatio = 1,
   circularCrop = false,
   outputMaxSize = 500,
+  showAspectRatioPicker = false,
+  aspectRatioKey = 'square',
+  onAspectRatioKeyChange,
 }: ImageCropModalProps) {
   const [crop, setCrop] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
   const [rotation, setRotation] = useState(0)
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
+  const activeAspect = showAspectRatioPicker ? logoAspectRatioValue(aspectRatioKey) : aspectRatio
+
+  useEffect(() => {
+    if (!isOpen) return
+    setCrop({ x: 0, y: 0 })
+    setZoom(1)
+    setRotation(0)
+  }, [isOpen, activeAspect])
 
   const onCropChange = useCallback((crop: any) => {
     setCrop(crop)
@@ -84,13 +100,24 @@ export default function ImageCropModal({
           <DialogTitle>Crop Image</DialogTitle>
         </DialogHeader>
         
-        <div className="relative h-[400px] w-full bg-gray-100 rounded-lg overflow-hidden">
+        {showAspectRatioPicker && (
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium text-gray-700">Logo aspect ratio</p>
+            <LogoAspectRatioPicker
+              value={aspectRatioKey}
+              onChange={(next) => onAspectRatioKeyChange?.(next)}
+            />
+          </div>
+        )}
+
+        <div className={`relative w-full bg-gray-100 rounded-lg overflow-hidden ${showAspectRatioPicker ? 'h-[320px]' : 'h-[400px]'}`}>
           <Cropper
+            key={activeAspect}
             image={imageSrc}
             crop={crop}
             zoom={zoom}
             rotation={rotation}
-            aspect={aspectRatio}
+            aspect={activeAspect}
             onCropChange={onCropChange}
             onZoomChange={onZoomChange}
             onRotationChange={onRotationChange}
