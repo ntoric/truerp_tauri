@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -21,14 +21,17 @@ import {
   buildPeriodReportShareText,
   buildPeriodicReportQuery,
   dailyReportSections,
+  dailyReportSummaryHelp,
   downloadDailyReportJson,
   downloadDailyReportPdf,
   downloadPeriodReportJson,
   downloadPeriodReportPdf,
+  paymentMethodsForReport,
   PERIODIC_REPORT_OPTIONS,
   type DailyReport,
   type PeriodicReportPeriod,
   type PeriodReport,
+  type PaymentMethodTotal,
 } from '@/lib/dailyReport'
 import { downloadBlob } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -45,7 +48,15 @@ import {
   Package,
   CalendarRange,
   RefreshCw,
+  HelpCircle,
+  Banknote,
+  Smartphone,
+  CreditCard,
+  Landmark,
+  ScrollText,
+  type LucideIcon,
 } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +70,167 @@ function todayISO() {
 
 function monthStartISO(date = todayISO()) {
   return `${date.slice(0, 7)}-01`
+}
+
+function TermHelp({
+  label,
+  help,
+  hideLabel = false,
+}: {
+  label: string
+  help: string
+  hideLabel?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const openNow = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+    setOpen(true)
+  }
+
+  const closeSoon = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    closeTimer.current = setTimeout(() => setOpen(false), 120)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current)
+    }
+  }, [])
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {!hideLabel && <span>{label}</span>}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={`What ${label} means`}
+            className="inline-flex shrink-0 rounded-full text-gray-400 transition-colors hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            onMouseEnter={openNow}
+            onMouseLeave={closeSoon}
+            onFocus={openNow}
+            onBlur={closeSoon}
+          >
+            <HelpCircle className="h-3.5 w-3.5" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          side="top"
+          align="start"
+          collisionPadding={12}
+          className="w-72 p-3"
+          onMouseEnter={openNow}
+          onMouseLeave={closeSoon}
+        >
+          <p className="text-sm font-medium text-gray-900">{label}</p>
+          <p className="mt-1 text-xs leading-relaxed text-gray-600">{help}</p>
+        </PopoverContent>
+      </Popover>
+    </span>
+  )
+}
+
+function methodAppearance(method: string): { icon: LucideIcon; className: string } {
+  switch (method) {
+    case 'cash':
+      return { icon: Banknote, className: 'bg-emerald-100 text-emerald-800' }
+    case 'upi':
+      return { icon: Smartphone, className: 'bg-sky-100 text-sky-800' }
+    case 'card':
+      return { icon: CreditCard, className: 'bg-violet-100 text-violet-800' }
+    case 'bank_transfer':
+      return { icon: Landmark, className: 'bg-indigo-100 text-indigo-800' }
+    case 'cheque':
+      return { icon: ScrollText, className: 'bg-orange-100 text-orange-800' }
+    default:
+      return { icon: Wallet, className: 'bg-slate-100 text-slate-800' }
+  }
+}
+
+function PaymentsByMethodTable({ report }: { report: DailyReport }) {
+  const methods = paymentMethodsForReport(report)
+  if (methods.length === 0) return null
+
+  return (
+    <div className="mt-6 overflow-hidden rounded-lg border border-blue-200">
+      <div className="flex items-center gap-2 border-b border-blue-200 bg-blue-50 px-4 py-3">
+        <Wallet className="h-4 w-4 text-blue-700" />
+        <h3 className="text-sm font-semibold text-blue-900">Payments by method</h3>
+        <TermHelp
+          label="Payments by method"
+          hideLabel
+          help="Money received and paid for each payment method in this period. Cash, UPI, Card, Bank Transfer, and Cheque are always listed."
+        />
+      </div>
+      <div className="table-scroll">
+        <table className="w-full text-sm">
+          <thead className="bg-blue-50/60 text-left text-blue-900">
+            <tr>
+              <th className="px-4 py-3 font-medium">Method</th>
+              <th className="px-4 py-3 font-medium text-right">Received</th>
+              <th className="px-4 py-3 font-medium text-right">Paid</th>
+            </tr>
+          </thead>
+          <tbody>
+            {methods.map((row: PaymentMethodTotal) => {
+              const appearance = methodAppearance(row.method)
+              const Icon = appearance.icon
+              return (
+                <tr key={row.method} className="border-t border-blue-100">
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-2 font-medium text-gray-900">
+                      <span
+                        className={cn(
+                          'inline-flex h-7 w-7 items-center justify-center rounded-full',
+                          appearance.className
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
+                      {row.label}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <p className="font-semibold text-emerald-800">
+                      {formatCurrency(row.in.total_amount)}
+                    </p>
+                    <p className="text-xs text-gray-500">{row.in.count} txn</p>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <p className="font-semibold text-amber-800">
+                      {formatCurrency(row.out.total_amount)}
+                    </p>
+                    <p className="text-xs text-gray-500">{row.out.count} txn</p>
+                  </td>
+                </tr>
+              )
+            })}
+            <tr className="border-t border-blue-200 bg-blue-50">
+              <td className="px-4 py-3 font-semibold text-blue-900">Total</td>
+              <td className="px-4 py-3 text-right">
+                <p className="font-semibold text-emerald-900">
+                  {formatCurrency(report.payments_in.total_amount)}
+                </p>
+                <p className="text-xs text-blue-800">{report.payments_in.count} txn</p>
+              </td>
+              <td className="px-4 py-3 text-right">
+                <p className="font-semibold text-amber-900">
+                  {formatCurrency(report.payments_out.total_amount)}
+                </p>
+                <p className="text-xs text-blue-800">{report.payments_out.count} txn</p>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
 }
 
 function ReportSummaryBody({
@@ -193,11 +365,13 @@ function ReportSummaryBody({
             </tr>
           </thead>
           <tbody>
-            {dailyReportSections.map(({ key, label }) => {
+            {dailyReportSections.map(({ key, label, help }) => {
               const metric = report[key] as DailyReport['sales']
               return (
                 <tr key={key} className="border-t">
-                  <td className="px-4 py-3 font-medium text-gray-900">{label}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <TermHelp label={label} help={help} />
+                  </td>
                   <td className="px-4 py-3 text-right text-gray-600">{metric.count}</td>
                   <td className="px-4 py-3 text-right font-semibold text-gray-900">
                     {formatCurrency(metric.total_amount)}
@@ -207,7 +381,10 @@ function ReportSummaryBody({
             })}
             <tr className="border-t bg-gray-50">
               <td className="px-4 py-3 font-medium text-gray-900">
-                Accounts Payable (total outstanding)
+                <TermHelp
+                  label="Accounts Payable (total outstanding)"
+                  help={dailyReportSummaryHelp.accounts_payable_total}
+                />
               </td>
               <td className="px-4 py-3 text-right">—</td>
               <td className="px-4 py-3 text-right font-semibold">
@@ -215,14 +392,21 @@ function ReportSummaryBody({
               </td>
             </tr>
             <tr className="border-t bg-gray-50">
-              <td className="px-4 py-3 font-medium text-gray-900">GST collected (sales)</td>
+              <td className="px-4 py-3 font-medium text-gray-900">
+                <TermHelp label="GST collected (sales)" help={dailyReportSummaryHelp.gst_collected} />
+              </td>
               <td className="px-4 py-3 text-right">—</td>
               <td className="px-4 py-3 text-right font-semibold">
                 {formatCurrency(report.gst_collected)}
               </td>
             </tr>
             <tr className="border-t bg-gray-50">
-              <td className="px-4 py-3 font-medium text-gray-900">{profitLabel} (accrual)</td>
+              <td className="px-4 py-3 font-medium text-gray-900">
+                <TermHelp
+                  label={`${profitLabel} (accrual)`}
+                  help={dailyReportSummaryHelp.daily_profit}
+                />
+              </td>
               <td className="px-4 py-3 text-right">—</td>
               <td
                 className={cn(
@@ -234,7 +418,12 @@ function ReportSummaryBody({
               </td>
             </tr>
             <tr className="border-t bg-gray-50">
-              <td className="px-4 py-3 font-medium text-gray-900">Product profit (items sold)</td>
+              <td className="px-4 py-3 font-medium text-gray-900">
+                <TermHelp
+                  label="Product profit (items sold)"
+                  help={dailyReportSummaryHelp.product_profit}
+                />
+              </td>
               <td className="px-4 py-3 text-right">—</td>
               <td
                 className={cn(
@@ -246,7 +435,9 @@ function ReportSummaryBody({
               </td>
             </tr>
             <tr className="border-t bg-gray-50">
-              <td className="px-4 py-3 font-medium text-gray-900">Net cash flow</td>
+              <td className="px-4 py-3 font-medium text-gray-900">
+                <TermHelp label="Net cash flow" help={dailyReportSummaryHelp.net_cash_flow} />
+              </td>
               <td className="px-4 py-3 text-right">—</td>
               <td
                 className={cn(
@@ -261,11 +452,14 @@ function ReportSummaryBody({
         </table>
       </div>
 
+      <PaymentsByMethodTable report={report} />
+
       <p className="mt-4 text-xs text-gray-500">
         Period profit = sales − purchases − expenses ± returns/notes (accrual). Product profit =
         taxable sale value − product purchase cost on invoice lines, net of sales returns and credit
         notes. Purchase expense = full bill total; Payment out = amount paid; Accounts payable =
-        unpaid balance. Cancelled documents are excluded from counts.
+        unpaid balance. A separate Payments by method table lists Cash, UPI, Card, Bank Transfer,
+        and Cheque received vs paid. Cancelled documents are excluded from counts.
       </p>
     </>
   )

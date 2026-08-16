@@ -1,6 +1,11 @@
 export type ShortcutKey = string | string[]
 
-export type ShortcutSection = 'general' | 'navigate' | 'create'
+export type ShortcutSection = 'general' | 'navigate' | 'create' | 'pos'
+
+export const FORM_SAVE_KEYS: ShortcutKey = ['Alt', 'Enter']
+export const FORM_SAVE_NEW_KEYS: ShortcutKey = ['Shift', 'Enter']
+export const POS_CHECKOUT_KEYS = FORM_SAVE_KEYS
+export const POS_CHECKOUT_PRINT_KEYS = FORM_SAVE_NEW_KEYS
 
 export type ShortcutAction =
   | 'navigate'
@@ -30,14 +35,14 @@ export const KEYBOARD_SHORTCUTS: ShortcutDefinition[] = [
   {
     id: 'save',
     label: 'Save',
-    keys: ['Alt', 'Enter'],
+    keys: FORM_SAVE_KEYS,
     section: 'general',
     action: 'form-save',
   },
   {
     id: 'save-new',
     label: 'Save & New',
-    keys: ['Shift', 'Enter'],
+    keys: FORM_SAVE_NEW_KEYS,
     section: 'general',
     action: 'form-save-new',
   },
@@ -271,6 +276,22 @@ export const KEYBOARD_SHORTCUTS: ShortcutDefinition[] = [
     section: 'create',
     action: 'navigate',
     href: '/warehouses/create',
+  },
+
+  // POS
+  {
+    id: 'pos-checkout',
+    label: 'Checkout',
+    keys: POS_CHECKOUT_KEYS,
+    section: 'pos',
+    action: 'form-save',
+  },
+  {
+    id: 'pos-checkout-print',
+    label: 'Checkout & Print',
+    keys: POS_CHECKOUT_PRINT_KEYS,
+    section: 'pos',
+    action: 'form-save-new',
   },
 ]
 

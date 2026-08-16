@@ -127,6 +127,7 @@ export default function CreatePurchaseInvoicePage() {
   const [taxExempt, setTaxExempt] = useState(false)
   const [autoRoundOff, setAutoRoundOff] = useState(true)
   const [amountPaid, setAmountPaid] = useState(0)
+  const [amountPaidEdited, setAmountPaidEdited] = useState(false)
   const [paidFrom, setPaidFrom] = useState(CASH_IN_HAND_ACCOUNT)
   const [pendingBillAccountId, setPendingBillAccountId] = useState<string | null | undefined>(undefined)
   const { accounts: bankAccounts, primaryAccount } = useBankAccounts()
@@ -344,7 +345,10 @@ export default function CreatePurchaseInvoicePage() {
         setDueDate(bill.due_date?.split('T')[0] || '')
         setWarehouseId(bill.warehouse_id || '')
         setNotes(bill.notes || '')
-        setAmountPaid(bill.paid_amount || 0)
+        const loadedPaid = bill.paid_amount || 0
+        const loadedTotal = bill.total_amount || 0
+        setAmountPaid(loadedPaid)
+        setAmountPaidEdited(loadedPaid + 0.01 < loadedTotal)
         setPendingBillAccountId(bill.bank_account_id ?? null)
         setBillStatus(bill.status || '')
         setSavedBillId(bill.id || editId)
@@ -831,7 +835,8 @@ export default function CreatePurchaseInvoicePage() {
     totalBeforeRound = rounded
   }
   const totalAmount = totalBeforeRound
-  const balance = totalAmount - amountPaid
+  const effectiveAmountPaid = amountPaidEdited ? amountPaid : totalAmount
+  const balance = totalAmount - effectiveAmountPaid
 
   const itemNeedsBatch = (item: PurchaseBillItem, productList: Product[] = products) =>
     Boolean(item.enable_batching) ||
@@ -847,7 +852,7 @@ export default function CreatePurchaseInvoicePage() {
   const buildBillPayload = (asDraft: boolean, sourceItems: PurchaseBillItem[]) => {
     const status = asDraft
       ? 'draft'
-      : (amountPaid >= totalAmount ? 'paid' : (amountPaid > 0 ? 'partial' : 'unpaid'))
+      : (effectiveAmountPaid >= totalAmount ? 'paid' : (effectiveAmountPaid > 0 ? 'partial' : 'unpaid'))
     const resolvedBillNumber = billNumber || `PINV-${Date.now()}`
     return {
       resolvedBillNumber,
@@ -858,7 +863,7 @@ export default function CreatePurchaseInvoicePage() {
         due_date: dueDate ? new Date(dueDate).toISOString() : null,
         warehouse_id: warehouseId || null,
         total_amount: totalAmount,
-        paid_amount: amountPaid,
+        paid_amount: effectiveAmountPaid,
         balance_due: balance,
         payment_mode: paidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
         bank_account_id: bankAccountIdForApi(paidFrom),
@@ -933,7 +938,7 @@ export default function CreatePurchaseInvoicePage() {
           due_date: dueDate ? new Date(dueDate).toISOString() : null,
           warehouse_id: warehouseId || null,
           total_amount: totalAmount,
-          paid_amount: amountPaid,
+          paid_amount: effectiveAmountPaid,
           balance_due: balance,
           payment_mode: paidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
           bank_account_id: bankAccountIdForApi(paidFrom),
@@ -1018,6 +1023,7 @@ export default function CreatePurchaseInvoicePage() {
     notes,
     terms,
     amountPaid,
+    amountPaidEdited,
     paidFrom,
     invoiceDiscount,
     additionalCharges,
@@ -1440,8 +1446,17 @@ export default function CreatePurchaseInvoicePage() {
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Amount Received</Label>
-                  <Input type="number" min="0" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(Number(e.target.value))} />
+                  <Label>Amount Paid</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={effectiveAmountPaid}
+                    onChange={(e) => {
+                      setAmountPaidEdited(true)
+                      setAmountPaid(Number(e.target.value))
+                    }}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Paid From</Label>
@@ -1461,8 +1476,8 @@ export default function CreatePurchaseInvoicePage() {
                     ))}
                   </select>
                   <p className="text-xs text-muted-foreground">
-                    {amountPaid > 0
-                      ? `${formatCurrency(amountPaid)} will be deducted from ${
+                    {effectiveAmountPaid > 0
+                      ? `${formatCurrency(effectiveAmountPaid)} will be deducted from ${
                           paidFrom === CASH_IN_HAND_ACCOUNT
                             ? 'Cash in-hand'
                             : bankAccounts.find((a) => a.id === paidFrom)?.account_name || 'the selected account'
@@ -1478,11 +1493,14 @@ export default function CreatePurchaseInvoicePage() {
                   <Label>Mark as Fully Paid</Label>
                   <Button
                     type="button"
-                    variant={amountPaid >= totalAmount ? "default" : "outline"}
+                    variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
                     className="w-full"
-                    onClick={() => setAmountPaid(totalAmount)}
+                    onClick={() => {
+                      setAmountPaidEdited(false)
+                      setAmountPaid(totalAmount)
+                    }}
                   >
-                    {amountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
+                    {effectiveAmountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
                   </Button>
                 </div>
               </CardContent>

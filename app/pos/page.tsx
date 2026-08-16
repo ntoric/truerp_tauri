@@ -1,15 +1,16 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
 import { apiFetch } from '@/hooks/useAuth'
 import { useOfflineSync } from '@/hooks/useOfflineSync'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { formatCurrency, asArray } from '@/lib/utils'
 import { offlineStorage, POS_META_KEYS, type POSSaleRecord } from '@/lib/offlineStorage'
 import Link from 'next/link'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, Percent, Wifi, WifiOff } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, Percent, Wifi, WifiOff, Eye } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
@@ -29,8 +30,11 @@ import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/component
 import { printThermalContent } from '@/lib/printDocument'
 import { formatQty, linePayableTotal, lineTaxAmount, productSaleUnitPrice, productTaxRate, isProductGstEnabled, parseMoney, limitDecimalInput, roundMoney } from '@/lib/numbers'
 import { fetchProductBatches, pickDefaultBatch } from '@/lib/productBatches'
-import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
+import { KeyboardShortcutsProvider, useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useFormKeyboardShortcuts } from '@/hooks/useFormKeyboardShortcuts'
 import KeyboardShortcutsTrigger from '@/components/keyboard-shortcuts/KeyboardShortcutsTrigger'
+import { Kbd } from '@/components/keyboard-shortcuts/Kbd'
+import { POS_CHECKOUT_KEYS, POS_CHECKOUT_PRINT_KEYS } from '@/lib/keyboardShortcuts'
 import { hydratePOSSnapshot, getCachedPrintSettings, getCachedBusiness } from '@/lib/posCatalog'
 import { buildPOSReceiptContent, receiptPaperWidthMm } from '@/lib/posReceipt'
 
@@ -42,6 +46,7 @@ interface Product {
   plu?: string
   sale_price: number
   sale_price_with_tax?: boolean
+  purchase_price?: number
   stock_qty: number
   unit: string
   tax_rate: number
@@ -98,10 +103,231 @@ interface POSDraft {
   is_active: boolean
 }
 
+function POSCheckoutShortcuts({
+  enabled,
+  onCheckout,
+  onCheckoutAndPrint,
+}: {
+  enabled: boolean
+  onCheckout: () => void
+  onCheckoutAndPrint: () => void
+}) {
+  const { panelOpen } = useKeyboardShortcuts()
+  useFormKeyboardShortcuts({
+    onSave: () => {
+      if (!enabled || panelOpen) return
+      onCheckout()
+    },
+    onSaveAndNew: () => {
+      if (!enabled || panelOpen) return
+      onCheckoutAndPrint()
+    },
+  })
+  return null
+}
+
 const WALK_IN_CUSTOMER_NAME = 'Walk-in Customer'
 
 const findWalkInCustomer = (list: Party[]) =>
   list.find((p) => p.name?.trim().toLowerCase() === WALK_IN_CUSTOMER_NAME.toLowerCase()) || null
+
+function CartHoverPopover({
+  label,
+  details,
+  children,
+  className = 'block min-w-0 w-full',
+  side = 'left',
+  align = 'start',
+}: {
+  label: string
+  details: ReactNode
+  children: ReactNode
+  className?: string
+  side?: 'left' | 'right' | 'top' | 'bottom'
+  align?: 'start' | 'center' | 'end'
+}) {
+  const [open, setOpen] = useState(false)
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearTimers = () => {
+    if (openTimer.current) {
+      clearTimeout(openTimer.current)
+      openTimer.current = null
+    }
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+  }
+
+  const show = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+    if (open) return
+    if (openTimer.current) clearTimeout(openTimer.current)
+    openTimer.current = setTimeout(() => setOpen(true), 160)
+  }
+
+  const hide = () => {
+    if (openTimer.current) {
+      clearTimeout(openTimer.current)
+      openTimer.current = null
+    }
+    closeTimer.current = setTimeout(() => setOpen(false), 80)
+  }
+
+  useEffect(() => () => clearTimers(), [])
+
+  return (
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
+      <PopoverAnchor asChild>
+        <span
+          className={className}
+          onMouseEnter={show}
+          onMouseLeave={hide}
+        >
+          {children}
+        </span>
+      </PopoverAnchor>
+      <PopoverContent
+        side={side}
+        align={align}
+        collisionPadding={8}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        className="w-auto max-w-[260px] p-2.5 text-xs"
+      >
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+        <div className="space-y-0.5 break-words text-gray-900">{details}</div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function CartPurchasePriceHint({
+  purchasePrice,
+  quantity,
+  unit,
+  salePrice,
+}: {
+  purchasePrice?: number
+  quantity: number
+  unit?: string
+  salePrice: number
+}) {
+  const [open, setOpen] = useState(false)
+  const pinnedRef = useRef(false)
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearTimers = () => {
+    if (openTimer.current) {
+      clearTimeout(openTimer.current)
+      openTimer.current = null
+    }
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+  }
+
+  const show = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+    if (open || pinnedRef.current) return
+    if (openTimer.current) clearTimeout(openTimer.current)
+    openTimer.current = setTimeout(() => setOpen(true), 120)
+  }
+
+  const hide = () => {
+    if (pinnedRef.current) return
+    if (openTimer.current) {
+      clearTimeout(openTimer.current)
+      openTimer.current = null
+    }
+    closeTimer.current = setTimeout(() => setOpen(false), 80)
+  }
+
+  useEffect(() => () => clearTimers(), [])
+
+  const unitCost = Number(purchasePrice) || 0
+  const lineCost = roundMoney(unitCost * quantity)
+  const unitLabel = unit ? ` / ${unit}` : ''
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) pinnedRef.current = false
+      }}
+      modal={false}
+    >
+      <PopoverAnchor asChild>
+        <button
+          type="button"
+          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 ${
+            open ? 'bg-gray-200 text-gray-700' : ''
+          }`}
+          aria-label="View purchase price"
+          aria-expanded={open}
+          onMouseEnter={show}
+          onMouseLeave={hide}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            const nextPinned = !pinnedRef.current
+            pinnedRef.current = nextPinned
+            clearTimers()
+            setOpen(nextPinned)
+          }}
+        >
+          <Eye className="h-3 w-3" />
+        </button>
+      </PopoverAnchor>
+      <PopoverContent
+        side="left"
+        align="start"
+        collisionPadding={8}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        className="w-auto max-w-[240px] p-2.5 text-xs"
+      >
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Purchase price
+        </p>
+        {unitCost > 0 ? (
+          <div className="space-y-0.5 text-gray-900">
+            <p className="font-medium tabular-nums">
+              {formatCurrency(unitCost)}{unitLabel}
+            </p>
+            <p className="text-gray-600 tabular-nums">
+              Cost for qty: {formatCurrency(lineCost)}
+            </p>
+            {salePrice > 0 && (
+              <p className="text-gray-600 tabular-nums">
+                Margin: {formatCurrency(roundMoney((salePrice - unitCost) * quantity))}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-gray-500">Not set</p>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 export default function POSPage() {
   const { syncStatus, isSyncing, manualSync, checkSyncStatus } = useOfflineSync()
@@ -130,6 +356,7 @@ export default function POSPage() {
   const [isEditingCustomer, setIsEditingCustomer] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('upi')
   const [receivedAmount, setReceivedAmount] = useState('')
+  const [receivedEdited, setReceivedEdited] = useState(false)
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0)
   const [editingQty, setEditingQty] = useState<{ productId: string; value: string } | null>(null)
@@ -139,6 +366,7 @@ export default function POSPage() {
   const { accounts: bankAccounts } = useBankAccounts()
   const { getDepositHint } = usePaymentMethodMappings()
   const [mounted, setMounted] = useState(false)
+  const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
   const {
     settings: scaleSettings,
     connectionStatus: scaleConnectionStatus,
@@ -172,6 +400,11 @@ export default function POSPage() {
     setLoyaltyPointsToRedeem(0)
     prevLoyaltyDiscountRef.current = 0
   }, [activeTab.selectedParty?.id])
+
+  useEffect(() => {
+    setReceivedEdited(false)
+    setReceivedAmount('')
+  }, [activeTabId])
 
   const loadLoyaltySettings = async () => {
     try {
@@ -410,6 +643,7 @@ export default function POSPage() {
       setIsEditingCustomer(false)
       setPaymentMethod('upi')
       setReceivedAmount('')
+      setReceivedEdited(false)
       window.location.href = '/dashboard'
     }
 
@@ -725,15 +959,11 @@ export default function POSPage() {
 
   const getRoundOff = () => roundMoney(getRoundedTotal() - getExactTotal())
 
-  const syncReceivedToPayable = (prevPayable: number, nextPayable: number, delta = 0) => {
+  const syncReceivedToPayable = (_prevPayable: number, nextPayable: number, delta = 0) => {
+    if (!receivedEdited) return
     setReceivedAmount((prev) => {
       const n = parseFloat(prev)
-      if (!prev || Number.isNaN(n)) {
-        return nextPayable > 0 ? nextPayable.toString() : ''
-      }
-      if (n + 0.01 >= prevPayable) {
-        return nextPayable.toString()
-      }
+      if (!prev || Number.isNaN(n)) return prev
       return Math.max(0, Math.min(n - delta, nextPayable)).toString()
     })
   }
@@ -783,14 +1013,22 @@ export default function POSPage() {
     )
   }
 
-  const getBalance = () => {
-    const received = parseFloat(receivedAmount) || 0
-    return getRoundedTotal() - received
+  const getReceivedNumeric = () => {
+    if (!receivedEdited) return getRoundedTotal()
+    const received = parseFloat(receivedAmount)
+    return Number.isNaN(received) ? 0 : received
   }
 
+  const getBalance = () => getRoundedTotal() - getReceivedNumeric()
+
   const setFullyPaid = () => {
+    setReceivedEdited(false)
     setReceivedAmount(getRoundedTotal().toString())
   }
+
+  const receivedInputValue = receivedEdited
+    ? receivedAmount
+    : (getRoundedTotal() > 0 ? String(getRoundedTotal()) : '')
 
   const updateTab = (tabId: string, updates: Partial<POSTab>) => {
     setTabs(tabs.map(tab => 
@@ -1013,7 +1251,8 @@ export default function POSPage() {
     checkoutInFlightRef.current = true
 
     const roundedTotal = getRoundedTotal()
-    const amountPaid = Math.min(parseFloat(receivedAmount) || roundedTotal, roundedTotal)
+    const amountPaid = Math.min(Math.max(0, getReceivedNumeric()), roundedTotal)
+    const saleStatus = amountPaid + 0.01 >= roundedTotal ? 'paid' : (amountPaid > 0 ? 'partial' : 'sent')
     const saleDiscount = getSaleDiscount()
     const cartSnapshot = [...activeTab.cart]
     const partySnapshot = activeTab.selectedParty
@@ -1034,7 +1273,7 @@ export default function POSPage() {
           local_only: partySnapshot.local_only,
         },
         date: new Date().toISOString(),
-        status: 'paid',
+        status: saleStatus,
         payment_mode: paymentMethod,
         amount_paid: amountPaid,
         is_pos: true,
@@ -1079,7 +1318,9 @@ export default function POSPage() {
       setEditingQty(null)
       setPaymentMethod('upi')
       setReceivedAmount('')
+      setReceivedEdited(false)
       setLoyaltyPointsToRedeem(0)
+      setCartDrawerOpen(false)
       clearScaleReading()
       if (session) {
         const updatedSession = { ...session, total_sales: session.total_sales + roundedTotal }
@@ -1163,9 +1404,14 @@ export default function POSPage() {
 
   return (
     <KeyboardShortcutsProvider>
+    <POSCheckoutShortcuts
+      enabled={!showSessionModal && !showDraftModal && activeTab.cart.length > 0 && !!activeTab.selectedParty}
+      onCheckout={() => { void handleCheckout(false) }}
+      onCheckoutAndPrint={() => { void handleCheckout(true) }}
+    />
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
       {/* Compact Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-white border-b shadow-sm">
+      <div className="flex items-center justify-between gap-2 overflow-x-auto px-2 py-2 sm:px-4 bg-white border-b shadow-sm">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold text-gray-900">POS</h1>
           <div
@@ -1185,7 +1431,7 @@ export default function POSPage() {
             ) : (
               <WifiOff className="h-3.5 w-3.5" />
             )}
-            <span>
+            <span className="hidden sm:inline">
               {syncStatus.authExpired
                 ? 'Sign-in required to sync'
                 : isSyncing
@@ -1198,13 +1444,25 @@ export default function POSPage() {
             </span>
           </div>
           {session && (
-            <div className="flex items-center gap-4 text-sm">
+            <div className="hidden items-center gap-4 text-sm md:flex">
               <span className="text-gray-600">Sales: <span className="font-semibold text-gray-900">{formatCurrency(session.total_sales)}</span></span>
               <span className="text-gray-600">Opening: <span className="font-semibold">{formatCurrency(session.opening_cash)}</span></span>
             </div>
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCartDrawerOpen(true)}
+            className="relative h-8 lg:hidden"
+            aria-label={`Open cart (${activeTab.cart.length} items)`}
+          >
+            <ShoppingCart className="h-4 w-4" />
+            {activeTab.cart.length > 0 && (
+              <span className="ml-1 text-xs font-semibold">{activeTab.cart.length}</span>
+            )}
+          </Button>
           {mounted && syncStatus.pending > 0 && (
             <Button
               variant="ghost"
@@ -1224,8 +1482,8 @@ export default function POSPage() {
             disabled={activeTab.cart.length === 0}
             className="h-8"
           >
-            <Save className="h-4 w-4 mr-1" />
-            Save Draft
+            <Save className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">Save Draft</span>
           </Button>
           {drafts.length > 0 && (
             <select
@@ -1249,8 +1507,8 @@ export default function POSPage() {
           )}
           <Button variant="ghost" size="sm" asChild className="h-8">
             <Link href="/pos/sessions">
-              <History className="h-4 w-4 mr-1" />
-              History
+              <History className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">History</span>
             </Link>
           </Button>
           {session && (
@@ -1260,7 +1518,8 @@ export default function POSPage() {
               onClick={closeSession}
               className="h-8 text-red-600 hover:bg-red-50 hover:text-red-700"
             >
-              Close Session
+              <span className="hidden sm:inline">Close Session</span>
+              <span className="sm:hidden">Close</span>
             </Button>
           )}
         </div>
@@ -1340,7 +1599,7 @@ export default function POSPage() {
             <Plus className="h-3.5 w-3.5 mr-1" />
             New
           </Button>
-          <div className="relative w-80 sm:w-96">
+          <div className="relative w-36 min-w-0 sm:w-64 md:w-80 lg:w-96">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
             <Input
               placeholder="Search products..."
@@ -1394,9 +1653,9 @@ export default function POSPage() {
       )}
 
       {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex flex-1 overflow-hidden">
         {/* Products Section */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {/* Barcode scanner */}
           <div className="p-3 bg-white border-b">
             <BarcodeScannerInput
@@ -1413,7 +1672,7 @@ export default function POSPage() {
           
           {/* Products Grid */}
           <div className="flex-1 overflow-y-auto p-3">
-            <div className="grid grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-5">
               {filteredProducts.map((product) => (
                 <button
                   key={product.id}
@@ -1446,23 +1705,51 @@ export default function POSPage() {
           </div>
         </div>
 
-        {/* Cart Sidebar */}
-        <div className="w-80 flex flex-col bg-white border-l">
+        {cartDrawerOpen && (
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            onClick={() => setCartDrawerOpen(false)}
+            aria-label="Close cart"
+          />
+        )}
+
+        {/* Cart Sidebar — 500px is 25% wider than the previous 400px */}
+        <div
+          className={`flex h-full shrink-0 flex-col border-l bg-white max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-50 max-lg:w-[min(100%,500px)] max-lg:shadow-2xl max-lg:transition-transform max-lg:duration-200 lg:relative lg:w-[500px] ${
+            cartDrawerOpen ? 'max-lg:translate-x-0' : 'max-lg:pointer-events-none max-lg:translate-x-full'
+          }`}
+        >
           {/* Cart Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-gray-600" />
               <span className="font-semibold text-sm text-gray-900">Cart ({activeTab.cart.length})</span>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => updateTab(activeTabId, { cart: [] })}
-              disabled={activeTab.cart.length === 0}
-              className="h-7 px-2 text-xs"
-            >
-              Clear
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  updateTab(activeTabId, { cart: [] })
+                  setReceivedEdited(false)
+                  setReceivedAmount('')
+                }}
+                disabled={activeTab.cart.length === 0}
+                className="h-7 px-2 text-xs"
+              >
+                Clear
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCartDrawerOpen(false)}
+                className="h-7 w-7 p-0 lg:hidden"
+                aria-label="Close cart"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Customer Selection - Compact */}
@@ -1470,8 +1757,8 @@ export default function POSPage() {
             {activeTab.selectedParty && !isEditingCustomer ? (
               <div className="flex items-center justify-between gap-2 p-2 bg-blue-50 rounded border border-blue-200">
                 <div className="min-w-0">
-                  <p className="font-medium text-gray-900 text-xs truncate">{activeTab.selectedParty.name}</p>
-                  <p className="text-xs text-gray-500 truncate">
+                  <p className="font-medium text-gray-900 text-xs break-words">{activeTab.selectedParty.name}</p>
+                  <p className="text-xs text-gray-500 break-words">
                     {activeTab.selectedParty.phone || 'No phone'}
                   </p>
                 </div>
@@ -1597,20 +1884,98 @@ export default function POSPage() {
           {/* Cart Items - Scrollable */}
           <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
             {activeTab.cart.map((item) => (
-              <div key={cartLineKey(item.product.id, item.batch_no)} className="flex items-center gap-2 p-2 bg-gray-50 rounded border">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900 text-xs truncate">{item.product.name}</p>
-                  <p className="text-xs text-gray-500">{formatCurrency(item.product.sale_price)}</p>
-                  {item.product.enable_batching && (
-                    <p className="text-[10px] text-amber-700 truncate">
-                      Batch: {item.batch_no || '—'}
-                      {item.exp_date
-                        ? ` · Exp ${new Date(item.exp_date).toLocaleDateString('en-IN')}`
-                        : ''}
-                    </p>
-                  )}
+              <div key={cartLineKey(item.product.id, item.batch_no)} className="space-y-1.5 rounded border bg-gray-50 p-2">
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <CartHoverPopover
+                      label="Item"
+                      className="block min-w-0 w-full cursor-help"
+                      details={
+                        <>
+                          <p className="font-medium">{item.product.name}</p>
+                          {item.product.sku && (
+                            <p className="text-gray-600">SKU: {item.product.sku}</p>
+                          )}
+                          {item.product.item_code && (
+                            <p className="text-gray-600">Code: {item.product.item_code}</p>
+                          )}
+                          {item.product.plu?.trim() && (
+                            <p className="text-gray-600">PLU: {item.product.plu.trim()}</p>
+                          )}
+                          {item.product.category && (
+                            <p className="text-gray-600">Category: {item.product.category}</p>
+                          )}
+                        </>
+                      }
+                    >
+                      <p className="text-xs font-medium leading-snug text-gray-900 break-words">{item.product.name}</p>
+                    </CartHoverPopover>
+                    <CartHoverPopover
+                      label="Price"
+                      className="block min-w-0 w-full cursor-help"
+                      details={
+                        <>
+                          <p>
+                            Unit: {formatCurrency(item.product.sale_price)}
+                            {item.product.unit ? ` / ${item.product.unit}` : ''}
+                          </p>
+                          <p>Qty: {formatCartQuantity(item)}{item.product.unit ? ` ${item.product.unit}` : ''}</p>
+                          <p className="font-medium">Line total: {formatCurrency(item.total)}</p>
+                          {isProductGstEnabled(item.product) && (
+                            <p className="text-gray-600">Tax: {productTaxRate(item.product)}%</p>
+                          )}
+                        </>
+                      }
+                    >
+                      <p className="text-xs text-gray-500">
+                        {formatCurrency(item.product.sale_price)}
+                        {item.product.unit ? ` / ${item.product.unit}` : ''}
+                      </p>
+                    </CartHoverPopover>
+                    {item.product.enable_batching && (
+                      <p className="text-[10px] leading-snug text-amber-700 break-words">
+                        Batch: {item.batch_no || '—'}
+                        {item.exp_date
+                          ? ` · Exp ${new Date(item.exp_date).toLocaleDateString('en-IN')}`
+                          : ''}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <CartHoverPopover
+                      label="Price"
+                      className="shrink-0 cursor-help"
+                      details={
+                        <>
+                          <p className="font-medium">Line total: {formatCurrency(item.total)}</p>
+                          <p className="text-gray-600">
+                            {formatCurrency(item.product.sale_price)} × {formatCartQuantity(item)}
+                            {item.product.unit ? ` ${item.product.unit}` : ''}
+                          </p>
+                        </>
+                      }
+                    >
+                      <p className="px-0.5 text-xs font-semibold tabular-nums text-gray-900">
+                        {formatCurrency(item.total)}
+                      </p>
+                    </CartHoverPopover>
+                    <CartPurchasePriceHint
+                      purchasePrice={item.product.purchase_price}
+                      quantity={item.quantity}
+                      unit={item.product.unit}
+                      salePrice={item.product.sale_price}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeFromCart(item.product.id, item.batch_no)}
+                      className="h-6 w-6 shrink-0 p-0"
+                    >
+                      <Trash2 className="h-3 w-3 text-red-500" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center justify-end gap-1">
                   <Button
                     size="sm"
                     variant="outline"
@@ -1622,56 +1987,74 @@ export default function POSPage() {
                   >
                     <Minus className="h-3 w-3" />
                   </Button>
-                  <Input
-                    type="number"
-                    inputMode={isWeightBasedUnit(item.product.unit) ? 'decimal' : 'numeric'}
-                    min={isWeightBasedUnit(item.product.unit) ? 0.001 : 1}
-                    step={isWeightBasedUnit(item.product.unit) ? Math.pow(10, -scaleSettings.decimal_places) : 1}
-                    value={
-                      editingQty?.productId === cartLineKey(item.product.id, item.batch_no)
-                        ? editingQty.value
-                        : formatCartQuantity(item)
+                  <CartHoverPopover
+                    label="Quantity"
+                    className="inline-flex shrink-0"
+                    side="top"
+                    details={
+                      <>
+                        <p className="font-medium">
+                          {formatCartQuantity(item)}
+                          {item.product.unit ? ` ${item.product.unit}` : ''}
+                        </p>
+                        {isWeightBasedUnit(item.product.unit) && (
+                          <p className="text-gray-600">Weight-based item</p>
+                        )}
+                        <p className="text-gray-600">Line total: {formatCurrency(item.total)}</p>
+                      </>
                     }
-                    onFocus={(e) => {
-                      setEditingQty({
-                        productId: cartLineKey(item.product.id, item.batch_no),
-                        value: formatCartQuantity(item),
-                      })
-                      e.target.select()
-                    }}
-                    onChange={(e) => {
-                      setEditingQty({
-                        productId: cartLineKey(item.product.id, item.batch_no),
-                        value: e.target.value,
-                      })
-                    }}
-                    onBlur={() => {
-                      if (qtyEditCancelledRef.current) {
-                        qtyEditCancelledRef.current = false
-                        setEditingQty(null)
-                        return
+                  >
+                    <Input
+                      type="number"
+                      inputMode={isWeightBasedUnit(item.product.unit) ? 'decimal' : 'numeric'}
+                      min={isWeightBasedUnit(item.product.unit) ? 0.001 : 1}
+                      step={isWeightBasedUnit(item.product.unit) ? Math.pow(10, -scaleSettings.decimal_places) : 1}
+                      value={
+                        editingQty?.productId === cartLineKey(item.product.id, item.batch_no)
+                          ? editingQty.value
+                          : formatCartQuantity(item)
                       }
-                      if (editingQty?.productId === cartLineKey(item.product.id, item.batch_no)) {
-                        commitQuantityEdit(
-                          item.product.id,
-                          editingQty.value,
-                          item.product.unit,
-                          item.batch_no
-                        )
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.currentTarget.blur()
-                      } else if (e.key === 'Escape') {
-                        qtyEditCancelledRef.current = true
-                        setEditingQty(null)
-                        e.currentTarget.blur()
-                      }
-                    }}
-                    className="h-6 w-14 px-1 text-center text-xs font-medium tabular-nums"
-                    aria-label={`Quantity for ${item.product.name}`}
-                  />
+                      onFocus={(e) => {
+                        setEditingQty({
+                          productId: cartLineKey(item.product.id, item.batch_no),
+                          value: formatCartQuantity(item),
+                        })
+                        e.target.select()
+                      }}
+                      onChange={(e) => {
+                        setEditingQty({
+                          productId: cartLineKey(item.product.id, item.batch_no),
+                          value: e.target.value,
+                        })
+                      }}
+                      onBlur={() => {
+                        if (qtyEditCancelledRef.current) {
+                          qtyEditCancelledRef.current = false
+                          setEditingQty(null)
+                          return
+                        }
+                        if (editingQty?.productId === cartLineKey(item.product.id, item.batch_no)) {
+                          commitQuantityEdit(
+                            item.product.id,
+                            editingQty.value,
+                            item.product.unit,
+                            item.batch_no
+                          )
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.currentTarget.blur()
+                        } else if (e.key === 'Escape') {
+                          qtyEditCancelledRef.current = true
+                          setEditingQty(null)
+                          e.currentTarget.blur()
+                        }
+                      }}
+                      className="h-6 w-16 px-1 text-center text-xs font-medium tabular-nums"
+                      aria-label={`Quantity for ${item.product.name}`}
+                    />
+                  </CartHoverPopover>
                   {isWeightBasedUnit(item.product.unit) && scaleSettings.enabled && (
                     <Button
                       size="sm"
@@ -1697,14 +2080,6 @@ export default function POSPage() {
                     <Plus className="h-3 w-3" />
                   </Button>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => removeFromCart(item.product.id, item.batch_no)}
-                  className="h-6 w-6 p-0"
-                >
-                  <Trash2 className="h-3 w-3 text-red-500" />
-                </Button>
               </div>
             ))}
             {activeTab.cart.length === 0 && (
@@ -1836,13 +2211,18 @@ export default function POSPage() {
               <div className="flex gap-1">
                 <Input
                   type="number"
+                  min="0"
+                  step="0.01"
                   placeholder="Received"
-                  value={receivedAmount}
-                  onChange={(e) => setReceivedAmount(e.target.value)}
+                  value={receivedInputValue}
+                  onChange={(e) => {
+                    setReceivedEdited(true)
+                    setReceivedAmount(e.target.value)
+                  }}
                   className="flex-1 h-8 text-xs"
                 />
                 <Button
-                  variant="outline"
+                  variant={getBalance() <= 0.01 ? 'default' : 'outline'}
                   size="sm"
                   onClick={setFullyPaid}
                   className="h-8 px-2 text-xs"
@@ -1850,42 +2230,70 @@ export default function POSPage() {
                   Full
                 </Button>
               </div>
-              {receivedAmount && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">Balance</span>
-                  <span className={`font-medium ${getBalance() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(Math.abs(getBalance()))} {getBalance() >= 0 ? 'due' : 'change'}
-                  </span>
-                </div>
-              )}
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Balance</span>
+                <span className={`font-medium ${getBalance() > 0.01 ? 'text-orange-600' : getBalance() < -0.01 ? 'text-red-600' : 'text-green-600'}`}>
+                  {Math.abs(getBalance()) <= 0.01
+                    ? 'Fully paid'
+                    : `${formatCurrency(Math.abs(getBalance()))} ${getBalance() > 0 ? 'due' : 'change'}`}
+                </span>
+              </div>
             </div>
           )}
+
+          <div className="flex shrink-0 gap-2 border-t bg-white px-2 py-2">
+            <CartHoverPopover
+              label="Checkout"
+              details={<Kbd keys={POS_CHECKOUT_KEYS} size="sm" />}
+              className="min-w-0 flex-1"
+              side="top"
+              align="center"
+            >
+              <Button
+                variant="outline"
+                className="h-11 w-full min-w-0 gap-1.5 text-xs sm:h-10 sm:text-sm"
+                onClick={() => handleCheckout(false)}
+                disabled={activeTab.cart.length === 0 || !activeTab.selectedParty}
+                aria-keyshortcuts="Alt+Enter"
+              >
+                <CheckCircle className="h-4 w-4 shrink-0" />
+                <span className="truncate">Checkout</span>
+              </Button>
+            </CartHoverPopover>
+            <CartHoverPopover
+              label="Checkout & Print"
+              details={<Kbd keys={POS_CHECKOUT_PRINT_KEYS} size="sm" />}
+              className="min-w-0 flex-1"
+              side="top"
+              align="center"
+            >
+              <Button
+                className="h-11 w-full min-w-0 gap-1.5 text-xs sm:h-10 sm:text-sm"
+                onClick={() => handleCheckout(true)}
+                disabled={activeTab.cart.length === 0 || !activeTab.selectedParty}
+                aria-keyshortcuts="Shift+Enter"
+              >
+                <Printer className="h-4 w-4 shrink-0" />
+                <span className="truncate">Checkout & Print</span>
+              </Button>
+            </CartHoverPopover>
+          </div>
         </div>
       </div>
 
-      {/* Sticky bottom menubar — full width, cart-aligned actions on the right */}
-      <div className="z-40 flex shrink-0 border-t bg-white">
-        <div className="min-w-0 flex-1" />
-        <div className="flex w-80 shrink-0 items-center justify-end gap-2 px-2 py-2">
-          <Button
-            variant="outline"
-            className="h-10 flex-1 text-sm"
-            onClick={() => handleCheckout(false)}
-            disabled={activeTab.cart.length === 0 || !activeTab.selectedParty}
-          >
-            <CheckCircle className="mr-1.5 h-4 w-4" />
-            Checkout
-          </Button>
-          <Button
-            className="h-10 flex-1 text-sm"
-            onClick={() => handleCheckout(true)}
-            disabled={activeTab.cart.length === 0 || !activeTab.selectedParty}
-          >
-            <Printer className="mr-1.5 h-4 w-4" />
-            Checkout & Print
-          </Button>
-        </div>
-      </div>
+      <button
+        type="button"
+        onClick={() => setCartDrawerOpen(true)}
+        className="z-30 flex shrink-0 items-center justify-between gap-3 border-t bg-white px-4 py-2.5 lg:hidden"
+      >
+        <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
+          <ShoppingCart className="h-4 w-4" />
+          Cart ({activeTab.cart.length})
+        </span>
+        <span className="text-sm font-semibold tabular-nums text-blue-600">
+          {formatCurrency(activeTab.cart.length > 0 ? getRoundedTotal() : 0)}
+        </span>
+      </button>
 
       {/* Draft Save Modal - Compact */}
       {showDraftModal && (

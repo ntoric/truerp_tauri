@@ -46,6 +46,7 @@ export default function KeyboardShortcutsPanel({
   shortcuts,
 }: KeyboardShortcutsPanelProps) {
   const general = shortcuts.filter((s) => s.section === 'general')
+  const pos = shortcuts.filter((s) => s.section === 'pos')
   const navigate = shortcuts.filter((s) => s.section === 'navigate')
   const create = shortcuts.filter((s) => s.section === 'create')
 
@@ -87,6 +88,7 @@ export default function KeyboardShortcutsPanel({
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <ShortcutSection items={general} />
+          <ShortcutSection title="POS" items={pos} />
           <ShortcutSection title="Go to" items={navigate} />
           <ShortcutSection title="Create" items={create} />
         </div>

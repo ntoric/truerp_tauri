@@ -7,6 +7,13 @@ export interface DailyReportMetric {
   count: number
 }
 
+export interface PaymentMethodTotal {
+  method: string
+  label: string
+  in: DailyReportMetric
+  out: DailyReportMetric
+}
+
 export interface DailyReport {
   date: string
   business_name: string
@@ -19,6 +26,7 @@ export interface DailyReport {
   payments_out: DailyReportMetric
   sales_returns: DailyReportMetric
   purchase_returns: DailyReportMetric
+  payments_by_method?: PaymentMethodTotal[]
   accounts_payable: DailyReportMetric
   accounts_payable_total: number
   gst_collected: number
@@ -44,18 +52,70 @@ export const PERIODIC_REPORT_OPTIONS: { value: PeriodicReportPeriod; label: stri
   { value: 'custom', label: 'Custom range' },
 ]
 
-const metricRows: { key: keyof DailyReport; label: string }[] = [
-  { key: 'sales', label: 'Sales (Invoices)' },
-  { key: 'purchases', label: 'Purchase Expense' },
-  { key: 'payments_out', label: 'Payment Out' },
-  { key: 'accounts_payable', label: 'Accounts Payable (period)' },
-  { key: 'credit_notes', label: 'Credit Notes' },
-  { key: 'debit_notes', label: 'Debit Notes' },
-  { key: 'expenses', label: 'Expenses' },
-  { key: 'payments_in', label: 'Payments Received' },
-  { key: 'sales_returns', label: 'Sales Returns' },
-  { key: 'purchase_returns', label: 'Purchase Returns' },
+const metricRows: { key: keyof DailyReport; label: string; help: string }[] = [
+  {
+    key: 'sales',
+    label: 'Sales (Invoices)',
+    help: 'Total of all non-cancelled sales invoices dated in this period, including unpaid amounts.',
+  },
+  {
+    key: 'purchases',
+    label: 'Purchase Expense',
+    help: 'Full purchase bill totals dated in this period, whether paid or still outstanding.',
+  },
+  {
+    key: 'payments_out',
+    label: 'Payment Out',
+    help: 'Cash actually paid to vendors in this period. This is money leaving the business, not the full bill amount.',
+  },
+  {
+    key: 'accounts_payable',
+    label: 'Accounts Payable (period)',
+    help: 'Unpaid balance on purchase bills dated in this period (bill total minus amount already paid).',
+  },
+  {
+    key: 'credit_notes',
+    label: 'Credit Notes',
+    help: 'Credit notes issued to customers in this period. These reduce net sales.',
+  },
+  {
+    key: 'debit_notes',
+    label: 'Debit Notes',
+    help: 'Debit notes issued to vendors in this period. These reduce net purchases.',
+  },
+  {
+    key: 'expenses',
+    label: 'Expenses',
+    help: 'Operating expenses recorded in this period, such as rent or utilities. Purchase bills are counted separately.',
+  },
+  {
+    key: 'payments_in',
+    label: 'Payments Received',
+    help: 'Cash actually received from customers in this period, including invoice and POS payments.',
+  },
+  {
+    key: 'sales_returns',
+    label: 'Sales Returns',
+    help: 'Goods returned by customers in this period. These reduce net sales.',
+  },
+  {
+    key: 'purchase_returns',
+    label: 'Purchase Returns',
+    help: 'Goods returned to vendors in this period. These reduce net purchases.',
+  },
 ]
+
+export const dailyReportSummaryHelp: Record<string, string> = {
+  accounts_payable_total:
+    'Unpaid vendor balance across all open purchase bills, not only bills from this period.',
+  gst_collected: 'GST collected on sales invoices in this period.',
+  daily_profit:
+    'Accrual profit for this period: sales − purchases − expenses ± returns and notes. This is not cash in hand.',
+  product_profit:
+    'Gross margin on items sold: taxable sale value minus product purchase cost, net of sales returns and credit notes.',
+  net_cash_flow:
+    'Cash movement for this period: payments received − payment out − expenses.',
+}
 
 function isMetric(value: unknown): value is DailyReportMetric {
   return (
@@ -64,6 +124,30 @@ function isMetric(value: unknown): value is DailyReportMetric {
     'total_amount' in value &&
     'count' in value
   )
+}
+
+function methodHasActivity(row: PaymentMethodTotal) {
+  return (
+    row.in.count > 0 ||
+    row.out.count > 0 ||
+    row.in.total_amount !== 0 ||
+    row.out.total_amount !== 0
+  )
+}
+
+export function paymentMethodsForReport(report: DailyReport): PaymentMethodTotal[] {
+  return report.payments_by_method ?? []
+}
+
+function appendPaymentMethodSection(lines: string[], report: DailyReport) {
+  const methods = paymentMethodsForReport(report).filter(methodHasActivity)
+  if (methods.length === 0) return
+  lines.push('', 'Payments by method', '-------------------')
+  for (const row of methods) {
+    lines.push(
+      `${row.label}: received ${row.in.count} txn · ${formatCurrency(row.in.total_amount)} · paid ${row.out.count} txn · ${formatCurrency(row.out.total_amount)}`
+    )
+  }
 }
 
 export function buildDailyReportShareText(report: DailyReport, heading = 'Daily Business Report'): string {
@@ -87,6 +171,8 @@ export function buildDailyReportShareText(report: DailyReport, heading = 'Daily 
       )
     }
   }
+
+  appendPaymentMethodSection(lines, report)
 
   lines.push(
     '',
@@ -126,6 +212,8 @@ export function buildPeriodReportShareText(report: PeriodReport): string {
       )
     }
   }
+
+  appendPaymentMethodSection(lines, report)
 
   lines.push(
     '',

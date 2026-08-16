@@ -128,6 +128,7 @@ export default function CreateInvoicePage() {
   const [additionalCharges, setAdditionalCharges] = useState(0)
   const [autoRoundOff, setAutoRoundOff] = useState(true)
   const [amountPaid, setAmountPaid] = useState(0)
+  const [amountPaidEdited, setAmountPaidEdited] = useState(false)
   const [paymentMode, setPaymentMode] = useState('cash')
   const { accounts: bankAccounts } = useBankAccounts()
   const { getDepositHint } = usePaymentMethodMappings()
@@ -736,7 +737,8 @@ export default function CreateInvoicePage() {
     totalBeforeRound = rounded
   }
   const totalAmount = totalBeforeRound
-  const balance = totalAmount - amountPaid
+  const effectiveAmountPaid = amountPaidEdited ? amountPaid : totalAmount
+  const balance = totalAmount - effectiveAmountPaid
 
   const applyLoyaltyRedemptionChange = (nextPoints: number) => {
     const { discount: nextDiscount } = computeLoyaltyDiscount(
@@ -757,10 +759,7 @@ export default function CreateInvoicePage() {
     }
 
     setAmountPaid((prev) => {
-      const wasFullPay = prev + 0.01 >= preLoyaltyTotal - prevDiscount
-      if (wasFullPay) {
-        return Math.max(0, payableAfter)
-      }
+      if (!amountPaidEdited) return prev
       return Math.max(0, Math.min(prev, payableAfter))
     })
   }
@@ -816,7 +815,10 @@ export default function CreateInvoicePage() {
         setTerms(invoice.terms || '')
         setInvoiceDiscount(invoice.invoice_discount || 0)
         setAdditionalCharges(invoice.additional_charges || 0)
-        setAmountPaid(invoice.amount_paid || 0)
+        const loadedPaid = invoice.amount_paid || 0
+        const loadedTotal = invoice.total_amount || 0
+        setAmountPaid(loadedPaid)
+        setAmountPaidEdited(loadedPaid + 0.01 < loadedTotal)
         setPaymentMode(invoice.payment_mode || 'cash')
         setSignature(invoice.signature || '')
         setPdfTemplate(invoice.pdf_template || pdfTemplate)
@@ -888,10 +890,10 @@ export default function CreateInvoicePage() {
           date: new Date(date).toISOString(),
           due_date: dueDate ? new Date(dueDate).toISOString() : null,
           payment_terms: Number(paymentTerms) || 0,
-          status: amountPaid >= totalAmount ? 'paid' : 'sent',
+          status: effectiveAmountPaid >= totalAmount ? 'paid' : 'sent',
           is_inter_state: isInterState,
           payment_mode: paymentMode,
-          amount_paid: parseMoney(Math.min(amountPaid, totalAmount)),
+          amount_paid: parseMoney(Math.min(Math.max(0, effectiveAmountPaid), totalAmount)),
           notes,
           terms,
           invoice_discount: parseMoney(invoiceDiscount),
@@ -961,7 +963,7 @@ export default function CreateInvoicePage() {
       const formData = {
         invoiceNumber, partyId, date, paymentTerms, dueDate, isInterState,
         notes, terms, invoiceDiscount, additionalCharges, autoRoundOff,
-        amountPaid, paymentMode, signature, items
+        amountPaid: effectiveAmountPaid, amountPaidEdited, paymentMode, signature, items
       }
       const res = await apiFetch('/drafts', {
         method: 'POST',
@@ -996,6 +998,11 @@ export default function CreateInvoicePage() {
         setAdditionalCharges(draftData.additionalCharges || 0)
         setAutoRoundOff(draftData.autoRoundOff !== undefined ? draftData.autoRoundOff : true)
         setAmountPaid(draftData.amountPaid || 0)
+        setAmountPaidEdited(
+          typeof draftData.amountPaidEdited === 'boolean'
+            ? draftData.amountPaidEdited
+            : (draftData.amountPaid || 0) > 0
+        )
         setPaymentMode(draftData.paymentMode || 'cash')
         setSignature(draftData.signature || '')
         setItems(draftData.items || [])
@@ -1392,7 +1399,16 @@ export default function CreateInvoicePage() {
               <CardContent className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Amount Received</Label>
-                  <Input type="number" min="0" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(Number(e.target.value))} />
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={effectiveAmountPaid}
+                    onChange={(e) => {
+                      setAmountPaidEdited(true)
+                      setAmountPaid(Number(e.target.value))
+                    }}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Payment Method</Label>
@@ -1420,11 +1436,14 @@ export default function CreateInvoicePage() {
                   <Label>Mark as Fully Paid</Label>
                   <Button
                     type="button"
-                    variant={amountPaid >= totalAmount ? "default" : "outline"}
+                    variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
                     className="w-full"
-                    onClick={() => setAmountPaid(totalAmount)}
+                    onClick={() => {
+                      setAmountPaidEdited(false)
+                      setAmountPaid(totalAmount)
+                    }}
                   >
-                    {amountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
+                    {effectiveAmountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
                   </Button>
                 </div>
               </CardContent>

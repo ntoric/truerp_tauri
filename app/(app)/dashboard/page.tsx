@@ -27,10 +27,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-type DashboardPeriod = 'today' | 'week' | 'month' | 'year' | 'all'
+type DashboardPeriod = 'today' | 'yesterday' | 'week' | 'month' | 'year' | 'all'
 
 const PERIOD_OPTIONS: { value: DashboardPeriod; label: string }[] = [
   { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
   { value: 'week', label: 'This Week' },
   { value: 'month', label: 'This Month' },
   { value: 'year', label: 'This Year' },
@@ -39,6 +40,7 @@ const PERIOD_OPTIONS: { value: DashboardPeriod; label: string }[] = [
 
 const PERIOD_LABELS: Record<DashboardPeriod, string> = {
   today: 'Today',
+  yesterday: 'Yesterday',
   week: 'This Week',
   month: 'This Month',
   year: 'This Year',
@@ -70,7 +72,7 @@ interface Invoice {
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth()
-  const [period, setPeriod] = useState<DashboardPeriod>('month')
+  const [period, setPeriod] = useState<DashboardPeriod>('today')
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [recentInvoices, setRecentInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
