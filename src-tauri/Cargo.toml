@@ -27,6 +27,7 @@ dirs = "6"
 base64 = "0.22"
 log = "0.4"
 env_logger = "0.11"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-updater = "2"

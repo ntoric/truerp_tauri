@@ -1,3 +1,13 @@
+import {
+  desktopPosQueueListUnsynced,
+  desktopPosQueueRequeueFailed,
+  desktopPosQueueUpdateStatus,
+  desktopPosQueueUpsert,
+  hasDesktopPosQueue,
+  parseDesktopPosSalePayload,
+  shouldRetryDesktopPosQueue,
+} from '@/lib/desktopPosQueue'
+
 export const POS_META_KEYS = {
   INVOICE_CURSOR: 'invoice_cursor',
   PRINT_SETTINGS: 'print_settings',
@@ -70,24 +80,67 @@ const STORES = {
   DRAFTS: 'posDrafts',
 }
 
+function sqliteStatus(status?: string): 'pending' | 'failed' | 'synced' {
+  if (status === 'failed') return 'failed'
+  if (status === 'synced') return 'synced'
+  return 'pending'
+}
+
+function parseQueuedSale(item: { entityData?: unknown; id?: string }): POSSaleRecord | null {
+  try {
+    const data = typeof item.entityData === 'string' ? JSON.parse(item.entityData) : item.entityData
+    if (!data || typeof data !== 'object') return null
+    const sale = data as POSSaleRecord
+    const id = sale.client_sale_id || sale.id || item.id
+    if (!id) return null
+    return { ...sale, id, client_sale_id: id }
+  } catch {
+    return null
+  }
+}
+
 class OfflineStorage {
   private db: IDBDatabase | null = null
   private opening: Promise<void> | null = null
+  private hydratedDesktopQueue = false
 
   async init(): Promise<void> {
-    if (this.db) return
-    if (this.opening) return this.opening
+    if (this.opening) {
+      await this.opening
+      return
+    }
+    if (this.db) {
+      if (!this.hydratedDesktopQueue) {
+        this.opening = this.hydrateFromDesktopQueue()
+        try {
+          await this.opening
+        } finally {
+          this.opening = null
+        }
+      }
+      return
+    }
 
-    this.opening = new Promise((resolve, reject) => {
+    this.opening = (async () => {
+      await this.openIndexedDb()
+      await this.hydrateFromDesktopQueue()
+    })()
+    try {
+      await this.opening
+    } finally {
+      this.opening = null
+    }
+  }
+
+  private openIndexedDb(): Promise<void> {
+    return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION)
 
       request.onerror = () => {
-        this.opening = null
         reject(request.error)
       }
       request.onsuccess = () => {
         this.db = request.result
-        this.opening = null
         resolve()
       }
 
@@ -125,8 +178,57 @@ class OfflineStorage {
         }
       }
     })
+  }
 
-    return this.opening
+  private async hydrateFromDesktopQueue(): Promise<void> {
+    if (this.hydratedDesktopQueue) return
+    if (!hasDesktopPosQueue()) {
+      if (!shouldRetryDesktopPosQueue()) {
+        this.hydratedDesktopQueue = true
+      }
+      return
+    }
+
+    try {
+      const localUnsynced = await this.getUnsynced()
+      for (const item of localUnsynced) {
+        if (item.entityType !== 'pos_sale' && item.entityType !== 'invoice') continue
+        const sale = parseQueuedSale(item)
+        if (sale) {
+          await desktopPosQueueUpsert(sale, sqliteStatus(item.status), item.errorMessage)
+        }
+      }
+
+      const rows = await desktopPosQueueListUnsynced()
+      for (const row of rows) {
+        const parsed = parseDesktopPosSalePayload(row.payload)
+        if (!parsed) continue
+        const id = parsed.client_sale_id || parsed.id || row.clientSaleId
+        if (!id) continue
+        const sale = {
+          ...parsed,
+          id,
+          client_sale_id: id,
+          sync_status: row.status === 'failed' ? 'failed' : 'pending_sync',
+          error_message: row.errorMessage || parsed.error_message,
+        } as POSSaleRecord
+        await this.put(STORES.INVOICES, sale)
+        await this.put(STORES.SYNC_QUEUE, {
+          id,
+          operation: 'create',
+          entityType: 'pos_sale',
+          entityData: JSON.stringify(sale),
+          status: row.status === 'failed' ? 'failed' : 'pending',
+          createdAt: new Date().toISOString(),
+          retryCount: 0,
+          errorMessage: row.errorMessage || undefined,
+        })
+      }
+    } catch (err) {
+      console.warn('Desktop POS queue hydrate failed:', err)
+    } finally {
+      this.hydratedDesktopQueue = true
+    }
   }
 
   private async getStore(storeName: string, mode: IDBTransactionMode = 'readonly'): Promise<IDBObjectStore> {
@@ -238,6 +340,14 @@ class OfflineStorage {
       if (status === 'failed') item.retryCount = (item.retryCount || 0) + 1
       await this.put(STORES.SYNC_QUEUE, item)
     }
+    const sale = ((await this.get(STORES.INVOICES, id)) as POSSaleRecord | undefined) || parseQueuedSale(item || {})
+    if (sale) {
+      sale.sync_status = status === 'failed' ? 'failed' : status === 'synced' ? 'synced' : 'pending_sync'
+      if (errorMessage) sale.error_message = errorMessage
+      await desktopPosQueueUpsert(sale, sqliteStatus(status), errorMessage)
+    } else {
+      await desktopPosQueueUpdateStatus(id, sqliteStatus(status), errorMessage)
+    }
   }
 
   async removeSyncedItems(ids: string[]): Promise<void> {
@@ -263,6 +373,7 @@ class OfflineStorage {
         await this.put(STORES.SYNC_QUEUE, item)
       }
     }
+    await desktopPosQueueRequeueFailed()
   }
 
   async cacheProducts(products: any[]): Promise<void> {
@@ -338,6 +449,7 @@ class OfflineStorage {
   async savePendingPOSSale(sale: POSSaleRecord): Promise<void> {
     await this.put(STORES.INVOICES, sale)
     await this.addToSyncQueue('create', 'pos_sale', sale, sale.client_sale_id)
+    await desktopPosQueueUpsert(sale, 'pending')
   }
 
   async markPOSSaleSynced(clientSaleId: string, serverInvoice: { id?: string; invoice_number?: string }): Promise<void> {
@@ -347,6 +459,9 @@ class OfflineStorage {
       sale.server_id = serverInvoice.id
       sale.server_invoice_number = serverInvoice.invoice_number
       await this.put(STORES.INVOICES, sale)
+      await desktopPosQueueUpsert(sale, 'synced')
+    } else {
+      await desktopPosQueueUpdateStatus(clientSaleId, 'synced')
     }
     await this.delete(STORES.SYNC_QUEUE, clientSaleId)
   }
@@ -357,6 +472,7 @@ class OfflineStorage {
       sale.sync_status = 'failed'
       sale.error_message = errorMessage
       await this.put(STORES.INVOICES, sale)
+      await desktopPosQueueUpsert(sale, 'failed', errorMessage)
     }
     await this.updateSyncStatus(clientSaleId, 'failed', errorMessage)
   }
@@ -402,6 +518,9 @@ class OfflineStorage {
         invoice.pos_session_id = toId
         invoice.session_local_only = false
         await this.put(STORES.INVOICES, invoice)
+        if (invoice.sync_status !== 'synced') {
+          await desktopPosQueueUpsert(invoice, sqliteStatus(invoice.sync_status))
+        }
       }
     }
 
@@ -414,6 +533,8 @@ class OfflineStorage {
           data.session_local_only = false
           item.entityData = JSON.stringify(data)
           await this.put(STORES.SYNC_QUEUE, item)
+          const sale = parseQueuedSale(item)
+          if (sale) await desktopPosQueueUpsert(sale, sqliteStatus(item.status), item.errorMessage)
         }
       } catch {
         /* ignore malformed queue rows */

@@ -67,3 +67,14 @@ commands.allow = ["check_for_updates"]
 identifier = "allow-download-and-install-update"
 description = "Allow downloading and installing TruERP desktop updates"
 commands.allow = ["download_and_install_update"]
+
+[[permission]]
+identifier = "allow-pos-queue"
+description = "Allow reading and writing the durable desktop POS sales queue"
+commands.allow = [
+  "pos_queue_upsert",
+  "pos_queue_list_unsynced",
+  "pos_queue_update_status",
+  "pos_queue_pending_count",
+  "pos_queue_requeue_failed"
+]

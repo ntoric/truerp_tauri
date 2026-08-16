@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+'use client'
+
+import { createContext, createElement, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { offlineStorage } from '@/lib/offlineStorage'
 import { syncPendingPOSSales } from '@/lib/posSync'
 import { subscribePOSAuthExpired } from '@/lib/posAuthGate'
+import { subscribeDesktopPosQueueSync } from '@/lib/desktopBridge'
 import { useNetworkStatus } from './useNetworkStatus'
 import { apiFetch } from './useAuth'
+import { getAuthToken } from '@/lib/authToken'
 
 interface SyncStatus {
   pending: number
@@ -12,7 +16,18 @@ interface SyncStatus {
   authExpired: boolean
 }
 
-export function useOfflineSync() {
+interface OfflineSyncValue {
+  syncStatus: SyncStatus
+  isSyncing: boolean
+  autoSync: () => Promise<void>
+  manualSync: () => Promise<void>
+  queueOfflineOperation: (operation: string, entityType: string, entityData: unknown) => Promise<void>
+  checkSyncStatus: () => Promise<number>
+}
+
+const OfflineSyncContext = createContext<OfflineSyncValue | null>(null)
+
+function useOfflineSyncState(): OfflineSyncValue {
   const { isOnline } = useNetworkStatus()
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     pending: 0,
@@ -22,6 +37,8 @@ export function useOfflineSync() {
   })
   const [isSyncing, setIsSyncing] = useState(false)
   const syncingRef = useRef(false)
+  const onlineRef = useRef(isOnline)
+  onlineRef.current = isOnline
 
   const refreshLocalCounts = useCallback(async () => {
     const unsynced = await offlineStorage.getUnsynced()
@@ -34,7 +51,11 @@ export function useOfflineSync() {
   }, [])
 
   const autoSync = useCallback(async () => {
-    if (!isOnline || syncingRef.current) return
+    if (!onlineRef.current || syncingRef.current) return
+    if (!getAuthToken()) {
+      await refreshLocalCounts()
+      return
+    }
     syncingRef.current = true
     setIsSyncing(true)
     try {
@@ -63,11 +84,10 @@ export function useOfflineSync() {
       syncingRef.current = false
       setIsSyncing(false)
     }
-  }, [isOnline, refreshLocalCounts])
+  }, [refreshLocalCounts])
 
   useEffect(() => {
-    void offlineStorage.init()
-    void refreshLocalCounts()
+    void offlineStorage.init().then(() => refreshLocalCounts())
     return subscribePOSAuthExpired((expired) => {
       setSyncStatus((prev) => ({ ...prev, authExpired: expired }))
     })
@@ -82,18 +102,41 @@ export function useOfflineSync() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      void refreshLocalCounts()
+      void (async () => {
+        const pending = await refreshLocalCounts()
+        if (onlineRef.current && pending > 0) {
+          void autoSync()
+        }
+      })()
     }, 15000)
     return () => clearInterval(interval)
-  }, [refreshLocalCounts])
+  }, [autoSync, refreshLocalCounts])
+
+  useEffect(() => {
+    let active = true
+    let unsub = () => {}
+    void subscribeDesktopPosQueueSync(() => {
+      void autoSync()
+    }).then((fn) => {
+      if (!active) {
+        fn()
+        return
+      }
+      unsub = fn
+    })
+    return () => {
+      active = false
+      unsub()
+    }
+  }, [autoSync])
 
   const manualSync = useCallback(async () => {
-    if (!isOnline) {
+    if (!onlineRef.current) {
       throw new Error('Cannot sync while offline')
     }
     await offlineStorage.requeueFailedSyncs()
     await autoSync()
-  }, [isOnline, autoSync])
+  }, [autoSync])
 
   const queueOfflineOperation = useCallback(
     async (operation: string, entityType: string, entityData: unknown) => {
@@ -111,4 +154,17 @@ export function useOfflineSync() {
     queueOfflineOperation,
     checkSyncStatus: refreshLocalCounts,
   }
+}
+
+export function OfflineSyncProvider({ children }: { children: ReactNode }) {
+  const value = useOfflineSyncState()
+  return createElement(OfflineSyncContext.Provider, { value }, children)
+}
+
+export function useOfflineSync(): OfflineSyncValue {
+  const ctx = useContext(OfflineSyncContext)
+  if (!ctx) {
+    throw new Error('useOfflineSync must be used within OfflineSyncProvider')
+  }
+  return ctx
 }

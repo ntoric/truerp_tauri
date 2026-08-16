@@ -31,6 +31,7 @@
     "allow-print-raw-base64",
     "allow-app-version",
     "allow-check-for-updates",
-    "allow-download-and-install-update"
+    "allow-download-and-install-update",
+    "allow-pos-queue"
   ]
 }

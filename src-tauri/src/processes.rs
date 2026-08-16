@@ -114,8 +114,8 @@ impl Drop for RuntimeProcesses {
     }
 }
 
-/// Local data dir for runtime logs (and any future desktop-only caches).
-/// The billing API and database live in the cloud — nothing is stored here for the API.
+/// Local data dir for runtime logs and the durable POS offline queue.
+/// The billing API still lives in the cloud.
 pub fn configure_data_dirs() -> Result<PathBuf, String> {
     let config_dir =
         dirs::config_dir().ok_or_else(|| "cannot resolve user config dir".to_string())?;

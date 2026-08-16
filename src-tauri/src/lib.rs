@@ -1,4 +1,5 @@
 mod paths;
+mod pos_queue;
 mod print;
 mod processes;
 mod proxy;
@@ -7,12 +8,17 @@ mod thermal;
 mod updater;
 
 use processes::{RuntimeProcesses, PROXY_ADDR};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::Manager;
+use std::time::Duration;
+use tauri::{Emitter, Manager};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+const POS_QUEUE_SYNC_EVENT: &str = "pos-queue-sync-requested";
 
 struct AppState {
     runtime: Arc<RuntimeProcesses>,
+    close_confirm_open: AtomicBool,
 }
 
 #[tauri::command]
@@ -130,6 +136,11 @@ pub fn run() {
             updater::check_for_updates,
             #[cfg(desktop)]
             updater::download_and_install_update,
+            pos_queue::pos_queue_upsert,
+            pos_queue::pos_queue_list_unsynced,
+            pos_queue::pos_queue_update_status,
+            pos_queue::pos_queue_pending_count,
+            pos_queue::pos_queue_requeue_failed,
         ])
         // Re-inject after splash → http://127.0.0.1:17888 navigation and any full reload.
         .on_page_load(|webview, payload| {
@@ -146,6 +157,17 @@ pub fn run() {
                 log::warn!("configure data dirs: {e}");
                 std::env::temp_dir().join("TruERP")
             });
+            let queue_path = data_root.join("pos-queue.sqlite");
+            let pos_queue = match pos_queue::PosQueue::open(&queue_path) {
+                Ok(queue) => {
+                    log::info!("POS queue: {}", queue_path.display());
+                    queue
+                }
+                Err(err) => {
+                    log::error!("POS queue unavailable ({err}); falling back to IndexedDB only");
+                    pos_queue::PosQueue::disabled()
+                }
+            };
             let runtime = Arc::new(RuntimeProcesses::new(data_root));
 
             let proxy_flag = Arc::clone(&runtime.frontend_ready);
@@ -165,6 +187,27 @@ pub fn run() {
 
             app.manage(AppState {
                 runtime: Arc::clone(&runtime),
+                close_confirm_open: AtomicBool::new(false),
+            });
+            app.manage(pos_queue);
+
+            let sync_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(15));
+                interval.tick().await;
+                loop {
+                    interval.tick().await;
+                    let Some(queue) = sync_handle.try_state::<pos_queue::PosQueue>() else {
+                        continue;
+                    };
+                    match queue.unsynced_count() {
+                        Ok(count) if count > 0 => {
+                            let _ = sync_handle.emit(POS_QUEUE_SYNC_EVENT, count);
+                        }
+                        Ok(_) => {}
+                        Err(err) => log::warn!("POS queue count: {err}"),
+                    }
+                }
             });
 
             // Keep the Wails-compatible bridge alive for the whole session (not just ~90s).
@@ -186,10 +229,53 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                if let Some(state) = window.try_state::<AppState>() {
-                    state.runtime.stop();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    let Some(queue) = window.try_state::<pos_queue::PosQueue>() else {
+                        return;
+                    };
+                    let pending = queue.unsynced_count().unwrap_or(0);
+                    if pending <= 0 {
+                        return;
+                    }
+                    if let Some(state) = window.try_state::<AppState>() {
+                        if state
+                            .close_confirm_open
+                            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                            .is_err()
+                        {
+                            api.prevent_close();
+                            return;
+                        }
+                    }
+                    api.prevent_close();
+                    let noun = if pending == 1 { "sale has" } else { "sales have" };
+                    let message = format!(
+                        "{pending} POS {noun} not been uploaded to the cloud yet.\n\nThey stay on this computer and will sync the next time you open TruERP. Quit anyway?"
+                    );
+                    let window = window.clone();
+                    window
+                        .app_handle()
+                        .dialog()
+                        .message(message)
+                        .title("Unsynced POS sales")
+                        .kind(MessageDialogKind::Warning)
+                        .buttons(MessageDialogButtons::OkCancelCustom("Quit".into(), "Stay".into()))
+                        .show(move |should_quit| {
+                            if let Some(state) = window.try_state::<AppState>() {
+                                state.close_confirm_open.store(false, Ordering::SeqCst);
+                            }
+                            if should_quit {
+                                let _ = window.destroy();
+                            }
+                        });
                 }
+                tauri::WindowEvent::Destroyed => {
+                    if let Some(state) = window.try_state::<AppState>() {
+                        state.runtime.stop();
+                    }
+                }
+                _ => {}
             }
         })
         .build(tauri::generate_context!())

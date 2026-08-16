@@ -21,11 +21,12 @@ export interface DesktopUpdateProgress {
 }
 
 const UPDATE_PROGRESS_EVENT = 'desktop-update-progress'
+export const POS_QUEUE_SYNC_EVENT = 'pos-queue-sync-requested'
 
 type TauriEventApi = {
-  listen?: (
+  listen?: <T>(
     event: string,
-    handler: (event: { payload: DesktopUpdateProgress }) => void
+    handler: (event: { payload: T }) => void
   ) => Promise<() => void>
 }
 
@@ -73,6 +74,24 @@ function getTauri(): { core?: TauriCore; event?: TauriEventApi } | null {
 
 function getTauriCore(): TauriCore | null {
   return getTauri()?.core ?? null
+}
+
+export function hasDesktopIpc(): boolean {
+  return typeof getTauriCore()?.invoke === 'function'
+}
+
+export function isTauriShell(): boolean {
+  if (typeof window === 'undefined') return false
+  const w = window as unknown as { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown }
+  return !!w.__TAURI__ || !!w.__TAURI_INTERNALS__
+}
+
+export async function desktopInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const invoke = getTauriCore()?.invoke
+  if (!invoke) {
+    throw new Error('Desktop IPC unavailable')
+  }
+  return (await invoke(cmd, args)) as T
 }
 
 function invokeErrorMessage(err: unknown): string {
@@ -293,6 +312,19 @@ export async function downloadAndInstallDesktopUpdate(): Promise<boolean> {
   return true
 }
 
+/** Native shell asks the UI to retry pending POS uploads while the app is open. */
+export async function subscribeDesktopPosQueueSync(onSync: () => void): Promise<() => void> {
+  const listen = getTauri()?.event?.listen
+  if (!listen) return () => {}
+  try {
+    return await listen<number>(POS_QUEUE_SYNC_EVENT, () => {
+      onSync()
+    })
+  } catch {
+    return () => {}
+  }
+}
+
 /** Subscribe to native updater download/install progress. Returns an unsubscribe fn. */
 export async function subscribeDesktopUpdateProgress(
   onProgress: (progress: DesktopUpdateProgress) => void
@@ -300,7 +332,7 @@ export async function subscribeDesktopUpdateProgress(
   const listen = getTauri()?.event?.listen
   if (!listen) return () => {}
   try {
-    return await listen(UPDATE_PROGRESS_EVENT, (event) => {
+    return await listen<DesktopUpdateProgress>(UPDATE_PROGRESS_EVENT, (event) => {
       const payload = event?.payload
       if (!payload || typeof payload !== 'object') return
       onProgress({
