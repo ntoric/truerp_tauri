@@ -10,8 +10,19 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83% 53%;
+    --primary: 221 83% 53%;
     --primary-foreground: 210 40% 98%;
+    --theme-50: 214 100% 97%;
+    --theme-100: 214 95% 93%;
+    --theme-200: 213 97% 87%;
+    --theme-300: 212 96% 78%;
+    --theme-400: 213 94% 68%;
+    --theme-500: 217 91% 60%;
+    --theme-600: 221 83% 53%;
+    --theme-700: 224 76% 48%;
+    --theme-800: 226 71% 40%;
+    --theme-900: 224 64% 33%;
+    --theme-950: 226 57% 21%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
@@ -22,7 +33,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83% 53%;
+    --ring: 221 83% 53%;
     --radius: 0.375rem;
     /* Compact app chrome — comfortable on ~21" / 1080p displays */
     --app-header-h: 3rem;
@@ -113,7 +124,7 @@ select:focus-visible,
 
 /* Keyboard users still get a visible focus cue after Tab */
 body[data-keyboard-nav="true"] *:focus-visible {
-  outline: 2px solid hsl(221.2 83% 53% / 0.45) !important;
+  outline: 2px solid hsl(var(--primary) / 0.45) !important;
   outline-offset: 2px;
 }
 

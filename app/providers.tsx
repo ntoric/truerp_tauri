@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect } from 'react'
 import { AuthProvider } from '@/hooks/useAuth'
+import { ColorThemeProvider } from '@/hooks/useColorTheme'
 import { StoreProvider } from '@/hooks/useStore'
 import { PageFeaturesProvider } from '@/hooks/usePageFeatures'
 import { Toaster } from '@/components/ui/toaster'
@@ -38,13 +39,15 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <AuthProvider>
-      <StoreProvider>
-        <PageFeaturesProvider>
-          {children}
-          <Toaster />
-          <ExportProgressOverlay />
-        </PageFeaturesProvider>
-      </StoreProvider>
+      <ColorThemeProvider>
+        <StoreProvider>
+          <PageFeaturesProvider>
+            {children}
+            <Toaster />
+            <ExportProgressOverlay />
+          </PageFeaturesProvider>
+        </StoreProvider>
+      </ColorThemeProvider>
     </AuthProvider>
   )
 }

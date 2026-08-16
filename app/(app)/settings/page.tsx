@@ -17,11 +17,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import ImageCropModal from '@/components/ImageCropModal'
 import { 
   Building2, Save, Loader2, User, Settings as SettingsIcon, 
-  FileText, Printer, Bell, HelpCircle, Share2, LogOut, Scale, Trash2 
+  FileText, Printer, Bell, HelpCircle, Share2, LogOut, Scale, Trash2, Palette 
 } from 'lucide-react'
 import WeighingScaleSettingsCard from '@/components/WeighingScaleSettingsCard'
 import PrintSettingsCard from '@/components/PrintSettingsCard'
 import DesktopUpdatesCard from '@/components/DesktopUpdatesCard'
+import AppearanceSettingsCard from '@/components/AppearanceSettingsCard'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
@@ -569,10 +570,10 @@ export default function SettingsPage() {
           <TabsList
             className={`grid w-full grid-cols-4 ${
               remindersEnabled && caShareEnabled
-                ? 'lg:grid-cols-8'
+                ? 'lg:grid-cols-9'
                 : remindersEnabled || caShareEnabled
-                  ? 'lg:grid-cols-7'
-                  : 'lg:grid-cols-6'
+                  ? 'lg:grid-cols-8'
+                  : 'lg:grid-cols-7'
             }`}
           >
             <TabsTrigger value="business" className="flex items-center gap-2">
@@ -582,6 +583,10 @@ export default function SettingsPage() {
             <TabsTrigger value="account" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               <span className="hidden lg:inline">Account</span>
+            </TabsTrigger>
+            <TabsTrigger value="appearance" className="flex items-center gap-2">
+              <Palette className="h-4 w-4" />
+              <span className="hidden lg:inline">Appearance</span>
             </TabsTrigger>
             <TabsTrigger value="invoice" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
@@ -770,6 +775,10 @@ export default function SettingsPage() {
                 </form>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="appearance">
+            <AppearanceSettingsCard />
           </TabsContent>
 
           {/* Invoice Settings Tab */}
