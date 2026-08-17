@@ -1,5 +1,6 @@
 import { thermalWidthMM, type ThermalPrintSize } from '@/lib/printSizes'
 import { formatQty } from '@/lib/numbers'
+import { formatPaymentSplitsLabel, type PaymentSplit } from '@/lib/paymentSplits'
 
 export interface POSReceiptBusiness {
   name?: string
@@ -27,6 +28,7 @@ export interface POSReceiptSale {
   party_name?: string
   party_phone?: string
   payment_mode?: string
+  payment_splits?: PaymentSplit[]
   amount_paid?: number
   invoice_discount?: number
   tax_total?: number
@@ -152,8 +154,9 @@ export function buildPOSReceiptContent(
     lines.push(labelValue('Round Off', money(sale.round_off), cols))
   }
   lines.push(labelValue('TOTAL', money(sale.total), cols))
-  if (sale.payment_mode) {
-    lines.push(labelValue('Payment', sale.payment_mode.toUpperCase(), cols))
+  const paymentLabel = formatPaymentSplitsLabel(sale.payment_splits, sale.payment_mode)
+  if (paymentLabel) {
+    lines.push(labelValue('Payment', paymentLabel, cols))
   }
   if (typeof sale.amount_paid === 'number') {
     lines.push(labelValue('Paid', money(sale.amount_paid), cols))

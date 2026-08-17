@@ -37,6 +37,7 @@ export interface POSSaleRecord {
   date: string
   status: string
   payment_mode: string
+  payment_splits?: Array<{ mode: string; amount: number }>
   amount_paid: number
   is_pos: true
   pos_session_id?: string
@@ -293,6 +294,26 @@ class OfflineStorage {
     })
   }
 
+  /** Replace a store in one IndexedDB transaction (avoids thousands of main-thread hops). */
+  private async replaceStore(storeName: string, rows: unknown[]): Promise<void> {
+    if (!this.db) await this.init()
+    const db = this.db
+    if (!db) return
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readwrite')
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+      tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'))
+      const store = tx.objectStore(storeName)
+      store.clear()
+      for (const row of rows) {
+        if (row && typeof row === 'object' && 'id' in row && (row as { id?: unknown }).id) {
+          store.put(row)
+        }
+      }
+    })
+  }
+
   async setMeta(key: string, value: unknown): Promise<void> {
     await this.put(STORES.META, { key, value } satisfies MetaRow)
   }
@@ -377,10 +398,7 @@ class OfflineStorage {
   }
 
   async cacheProducts(products: any[]): Promise<void> {
-    await this.clear(STORES.PRODUCTS)
-    for (const product of products) {
-      if (product?.id) await this.put(STORES.PRODUCTS, product)
-    }
+    await this.replaceStore(STORES.PRODUCTS, Array.isArray(products) ? products : [])
   }
 
   async getCachedProducts(): Promise<any[]> {
@@ -392,10 +410,7 @@ class OfflineStorage {
   }
 
   async cacheParties(parties: any[]): Promise<void> {
-    await this.clear(STORES.PARTIES)
-    for (const party of parties) {
-      if (party?.id) await this.put(STORES.PARTIES, party)
-    }
+    await this.replaceStore(STORES.PARTIES, Array.isArray(parties) ? parties : [])
   }
 
   async getCachedParties(): Promise<any[]> {
@@ -407,10 +422,7 @@ class OfflineStorage {
   }
 
   async cacheBatches(batches: any[]): Promise<void> {
-    await this.clear(STORES.BATCHES)
-    for (const batch of batches) {
-      if (batch?.id) await this.put(STORES.BATCHES, batch)
-    }
+    await this.replaceStore(STORES.BATCHES, Array.isArray(batches) ? batches : [])
   }
 
   async getCachedBatches(): Promise<any[]> {

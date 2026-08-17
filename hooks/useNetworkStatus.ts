@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { API_BASE } from '@/lib/utils'
 
 function healthURL(): string {
@@ -26,23 +26,26 @@ async function pingHealth(timeoutMs = 2000): Promise<boolean> {
 export function useNetworkStatus(intervalMs = 10000) {
   const [isOnline, setIsOnline] = useState(true)
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null)
+  const onlineRef = useRef(true)
 
-  const refresh = useCallback(async () => {
-    const reachable = await pingHealth()
+  const applyReachable = useCallback((reachable: boolean) => {
+    if (onlineRef.current === reachable) return reachable
+    onlineRef.current = reachable
     setIsOnline(reachable)
     setLastCheckedAt(Date.now())
     return reachable
   }, [])
+
+  const refresh = useCallback(async () => {
+    return applyReachable(await pingHealth())
+  }, [applyReachable])
 
   useEffect(() => {
     let cancelled = false
 
     const run = async () => {
       const reachable = await pingHealth()
-      if (!cancelled) {
-        setIsOnline(reachable)
-        setLastCheckedAt(Date.now())
-      }
+      if (!cancelled) applyReachable(reachable)
     }
 
     void run()
@@ -51,8 +54,7 @@ export function useNetworkStatus(intervalMs = 10000) {
       void run()
     }
     const handleOffline = () => {
-      setIsOnline(false)
-      setLastCheckedAt(Date.now())
+      if (!cancelled) applyReachable(false)
     }
 
     window.addEventListener('online', handleOnline)
@@ -65,7 +67,7 @@ export function useNetworkStatus(intervalMs = 10000) {
       window.removeEventListener('offline', handleOffline)
       window.clearInterval(interval)
     }
-  }, [intervalMs])
+  }, [applyReachable, intervalMs])
 
   return { isOnline, lastCheckedAt, refresh }
 }

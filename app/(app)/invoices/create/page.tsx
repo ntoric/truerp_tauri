@@ -38,6 +38,13 @@ import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
 import { looksLikeScaleBarcode, productsMatchingScanCode, resolveScaleBarcodeForPos, normalizeScannedBarcode } from '@/lib/weighingScaleBarcode'
 import { fetchProductBatches, formatBatchLabel, type ProductBatchStock } from '@/lib/productBatches'
+import {
+  PAYMENT_METHODS,
+  appendPaymentSplit,
+  formatPaymentMethod,
+  splitsFromInvoice,
+  sumPaymentSplits,
+} from '@/lib/paymentSplits'
 
 interface Party {
   id: string
@@ -127,9 +134,10 @@ export default function CreateInvoicePage() {
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
   const [additionalCharges, setAdditionalCharges] = useState(0)
   const [autoRoundOff, setAutoRoundOff] = useState(true)
-  const [amountPaid, setAmountPaid] = useState(0)
   const [amountPaidEdited, setAmountPaidEdited] = useState(false)
-  const [paymentMode, setPaymentMode] = useState('cash')
+  const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: number }[]>([
+    { mode: 'cash', amount: 0 },
+  ])
   const { accounts: bankAccounts } = useBankAccounts()
   const { getDepositHint } = usePaymentMethodMappings()
   const [signature, setSignature] = useState('')
@@ -737,8 +745,60 @@ export default function CreateInvoicePage() {
     totalBeforeRound = rounded
   }
   const totalAmount = totalBeforeRound
-  const effectiveAmountPaid = amountPaidEdited ? amountPaid : totalAmount
+  const paymentMode = paymentSplits[0]?.mode || 'cash'
+  const effectiveAmountPaid = !amountPaidEdited && paymentSplits.length === 1
+    ? totalAmount
+    : sumPaymentSplits(paymentSplits)
   const balance = totalAmount - effectiveAmountPaid
+
+  const splitAmountValue = (index: number) => {
+    if (paymentSplits.length === 1 && !amountPaidEdited) return totalAmount
+    return paymentSplits[index]?.amount || 0
+  }
+
+  const updateSplit = (index: number, patch: Partial<{ mode: string; amount: number }>) => {
+    setAmountPaidEdited(true)
+    setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  const addPaymentSplit = () => {
+    setAmountPaidEdited(true)
+    setPaymentSplits((prev) => {
+      const normalized = prev.map((row, i) => (
+        prev.length === 1 && !amountPaidEdited && i === 0
+          ? { ...row, amount: totalAmount }
+          : row
+      ))
+      return appendPaymentSplit(normalized, totalAmount, (mode, amount) => ({ mode, amount }))
+    })
+  }
+
+  const removePaymentSplit = (index: number) => {
+    setPaymentSplits((prev) => {
+      if (prev.length <= 1) return prev
+      const next = prev.filter((_, i) => i !== index)
+      if (next.length === 1 && Math.abs((next[0].amount || 0) - totalAmount) <= 0.01) {
+        setAmountPaidEdited(false)
+      } else {
+        setAmountPaidEdited(true)
+      }
+      return next
+    })
+  }
+
+  const markFullyPaid = () => {
+    if (paymentSplits.length <= 1) {
+      setAmountPaidEdited(false)
+      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'cash', amount: totalAmount }])
+      return
+    }
+    setAmountPaidEdited(true)
+    setPaymentSplits((prev) => {
+      const others = prev.slice(0, -1)
+      const last = Math.max(0, parseMoney(totalAmount - sumPaymentSplits(others)))
+      return [...others, { ...prev[prev.length - 1], amount: last }]
+    })
+  }
 
   const applyLoyaltyRedemptionChange = (nextPoints: number) => {
     const { discount: nextDiscount } = computeLoyaltyDiscount(
@@ -758,9 +818,17 @@ export default function CreateInvoicePage() {
       payableAfter = Math.round(payableAfter)
     }
 
-    setAmountPaid((prev) => {
-      if (!amountPaidEdited) return prev
-      return Math.max(0, Math.min(prev, payableAfter))
+    if (!amountPaidEdited || paymentSplits.length <= 1) return
+    setPaymentSplits((prev) => {
+      const sum = sumPaymentSplits(prev)
+      if (sum <= payableAfter) return prev
+      let remaining = payableAfter
+      return prev.map((row) => {
+        if (remaining <= 0) return { ...row, amount: 0 }
+        const nextAmount = Math.min(row.amount || 0, remaining)
+        remaining = Math.max(0, remaining - nextAmount)
+        return { ...row, amount: nextAmount }
+      })
     })
   }
 
@@ -817,9 +885,9 @@ export default function CreateInvoicePage() {
         setAdditionalCharges(invoice.additional_charges || 0)
         const loadedPaid = invoice.amount_paid || 0
         const loadedTotal = invoice.total_amount || 0
-        setAmountPaid(loadedPaid)
-        setAmountPaidEdited(loadedPaid + 0.01 < loadedTotal)
-        setPaymentMode(invoice.payment_mode || 'cash')
+        const loadedSplits = splitsFromInvoice(invoice)
+        setPaymentSplits(loadedSplits.length ? loadedSplits : [{ mode: invoice.payment_mode || 'cash', amount: loadedPaid }])
+        setAmountPaidEdited(loadedPaid + 0.01 < loadedTotal || loadedSplits.length > 1)
         setSignature(invoice.signature || '')
         setPdfTemplate(invoice.pdf_template || pdfTemplate)
         setCustomFieldValues(parseCustomFieldsFromInvoice(invoice.custom_fields))
@@ -899,6 +967,16 @@ export default function CreateInvoicePage() {
           is_inter_state: isInterState,
           payment_mode: paymentMode,
           amount_paid: parseMoney(Math.min(Math.max(0, effectiveAmountPaid), totalAmount)),
+          payment_splits: paymentSplits
+            .map((split, index) => ({
+              mode: split.mode,
+              amount: parseMoney(
+                paymentSplits.length === 1 && !amountPaidEdited && index === 0
+                  ? Math.min(Math.max(0, totalAmount), totalAmount)
+                  : split.amount
+              ),
+            }))
+            .filter((split) => split.amount > 0),
           notes,
           terms,
           invoice_discount: parseMoney(invoiceDiscount),
@@ -971,7 +1049,7 @@ export default function CreateInvoicePage() {
       const formData = {
         invoiceNumber, partyId, date, paymentTerms, dueDate, isInterState,
         notes, terms, invoiceDiscount, additionalCharges, autoRoundOff,
-        amountPaid: effectiveAmountPaid, amountPaidEdited, paymentMode, signature, items
+        amountPaid: effectiveAmountPaid, amountPaidEdited, paymentMode, paymentSplits, signature, items
       }
       const res = await apiFetch('/drafts', {
         method: 'POST',
@@ -1005,13 +1083,15 @@ export default function CreateInvoicePage() {
         setInvoiceDiscount(draftData.invoiceDiscount || 0)
         setAdditionalCharges(draftData.additionalCharges || 0)
         setAutoRoundOff(draftData.autoRoundOff !== undefined ? draftData.autoRoundOff : true)
-        setAmountPaid(draftData.amountPaid || 0)
+        const draftSplits = Array.isArray(draftData.paymentSplits) && draftData.paymentSplits.length
+          ? draftData.paymentSplits
+          : [{ mode: draftData.paymentMode || 'cash', amount: draftData.amountPaid || 0 }]
+        setPaymentSplits(draftSplits)
         setAmountPaidEdited(
           typeof draftData.amountPaidEdited === 'boolean'
             ? draftData.amountPaidEdited
-            : (draftData.amountPaid || 0) > 0
+            : draftSplits.length > 1 || (draftData.amountPaid || 0) > 0
         )
-        setPaymentMode(draftData.paymentMode || 'cash')
         setSignature(draftData.signature || '')
         setItems(draftData.items || [])
         setShowDraftsModal(false)
@@ -1413,55 +1493,79 @@ export default function CreateInvoicePage() {
               <CardHeader>
                 <CardTitle>Payment Details</CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Amount Received</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={effectiveAmountPaid}
-                    onChange={(e) => {
-                      setAmountPaidEdited(true)
-                      setAmountPaid(Number(e.target.value))
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Payment Method</Label>
-                  <select
-                    value={paymentMode}
-                    onChange={(e) => setPaymentMode(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="cash">Cash</option>
-                    <option value="upi">UPI</option>
-                    <option value="card">Card</option>
-                    <option value="bank_transfer">Bank Transfer</option>
-                    <option value="cheque">Cheque</option>
-                  </select>
-                  <p className="text-xs text-muted-foreground">
-                    Amount received is credited to: {getDepositHint(paymentMode, bankAccounts)}
-                    {' '}(configure under Cash &amp; Bank → Payment method accounts)
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Balance</Label>
-                  <Input value={formatCurrency(balance)} readOnly className="bg-gray-50" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Mark as Fully Paid</Label>
-                  <Button
-                    type="button"
-                    variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
-                    className="w-full"
-                    onClick={() => {
-                      setAmountPaidEdited(false)
-                      setAmountPaid(totalAmount)
-                    }}
-                  >
-                    {effectiveAmountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
+              <CardContent className="space-y-4">
+                {paymentSplits.map((split, index) => {
+                  const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
+                  return (
+                    <div key={`${split.mode}-${index}`} className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                      <div className="space-y-2">
+                        <Label>{index === 0 ? 'Payment Method' : `Method ${index + 1}`}</Label>
+                        <select
+                          value={split.mode}
+                          onChange={(e) => updateSplit(index, { mode: e.target.value })}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
+                            <option key={method.value} value={method.value}>
+                              {method.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{index === 0 ? 'Amount Received' : 'Amount'}</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={splitAmountValue(index)}
+                          onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
+                        />
+                      </div>
+                      {paymentSplits.length > 1 ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-10 w-10"
+                          onClick={() => removePaymentSplit(index)}
+                          aria-label="Remove payment method"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <div className="h-10 w-10" />
+                      )}
+                    </div>
+                  )
+                })}
+                <p className="text-xs text-muted-foreground">
+                  {paymentSplits.length === 1
+                    ? `Amount received is credited to: ${getDepositHint(paymentMode, bankAccounts)} (configure under Cash & Bank → Payment method accounts)`
+                    : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${getDepositHint(split.mode, bankAccounts)}`).join(' · ')}
+                </p>
+                {PAYMENT_METHODS.length > paymentSplits.length && (
+                  <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
+                    <Plus className="h-4 w-4" />
+                    Add payment method
                   </Button>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Balance</Label>
+                    <Input value={formatCurrency(balance)} readOnly className="bg-gray-50" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Mark as Fully Paid</Label>
+                    <Button
+                      type="button"
+                      variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
+                      className="w-full"
+                      onClick={markFullyPaid}
+                    >
+                      {effectiveAmountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
 

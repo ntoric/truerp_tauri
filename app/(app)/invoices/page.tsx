@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatPaymentMethod, formatPaymentSplitsLabel } from '@/lib/paymentSplits'
 import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { downloadInvoicePdf } from '@/lib/printDocument'
@@ -832,8 +833,10 @@ export default function InvoicesPage() {
                     {previewData.is_inter_state && (
                       <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">Inter-State</span>
                     )}
-                    {previewData.payment_mode && (
-                      <span className="text-sm text-gray-500">Mode: {previewData.payment_mode}</span>
+                    {(previewData.payment_splits?.length || previewData.payment_mode) && (
+                      <span className="text-sm text-gray-500">
+                        Mode: {formatPaymentSplitsLabel(previewData.payment_splits, previewData.payment_mode)}
+                      </span>
                     )}
                   </div>
 
@@ -930,6 +933,15 @@ export default function InvoicesPage() {
                         <span className="text-gray-600">Amount Paid</span>
                         <span className="font-medium text-green-600">{formatCurrency(previewData.amount_paid)}</span>
                       </div>
+                      {(previewData.payment_splits || []).filter((split: { amount?: number }) => Number(split.amount) > 0.009).length > 1 &&
+                        previewData.payment_splits.map((split: { mode: string; amount: number }, idx: number) => (
+                          Number(split.amount) > 0.009 ? (
+                            <div key={`${split.mode}-${idx}`} className="flex justify-between pl-3 text-xs text-gray-500">
+                              <span>{formatPaymentMethod(split.mode)}</span>
+                              <span>{formatCurrency(split.amount)}</span>
+                            </div>
+                          ) : null
+                        ))}
                       <div className="flex justify-between">
                         <span className="text-gray-600">Balance</span>
                         <span className="font-medium text-orange-600">{formatCurrency(previewData.total_amount - previewData.amount_paid)}</span>

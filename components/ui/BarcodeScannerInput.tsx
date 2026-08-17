@@ -1,6 +1,6 @@
 'use client'
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Barcode } from 'lucide-react'
@@ -21,6 +21,23 @@ interface BarcodeScannerInputProps {
   className?: string
   inputClassName?: string
   autoFocusWhenEnabled?: boolean
+  /**
+   * Capture USB/Bluetooth scanner keystrokes even when a button or the page
+   * body is focused. Skips other text fields so search/qty typing still works.
+   */
+  captureGlobal?: boolean
+}
+
+function isOtherEditableTarget(target: EventTarget | null, input: HTMLInputElement | null) {
+  if (!(target instanceof HTMLElement)) return false
+  if (input && (target === input || input.contains(target))) return false
+  const tag = target.tagName
+  return (
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    target.isContentEditable
+  )
 }
 
 /**
@@ -39,36 +56,97 @@ const BarcodeScannerInput = forwardRef<BarcodeScannerInputHandle, BarcodeScanner
       className,
       inputClassName,
       autoFocusWhenEnabled = true,
+      captureGlobal = false,
     },
     ref
   ) {
     const [value, setValue] = useState('')
     const inputRef = useRef<HTMLInputElement>(null)
+    const onScanRef = useRef(onScan)
+    onScanRef.current = onScan
 
-    useImperativeHandle(ref, () => ({
-      focus: () => inputRef.current?.focus(),
-      clear: () => setValue(''),
-    }))
+    const focusInput = useCallback(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus({ preventScroll: true })
+    }, [])
+
+    const clearInput = useCallback(() => {
+      setValue('')
+      if (inputRef.current) inputRef.current.value = ''
+    }, [])
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        focus: focusInput,
+        clear: clearInput,
+      }),
+      [clearInput, focusInput]
+    )
 
     useEffect(() => {
       if (enabled && autoFocusWhenEnabled) {
-        const timer = window.setTimeout(() => inputRef.current?.focus(), 50)
+        const timer = window.setTimeout(focusInput, 50)
         return () => window.clearTimeout(timer)
       }
-    }, [enabled, autoFocusWhenEnabled])
+    }, [enabled, autoFocusWhenEnabled, focusInput])
 
-    const submit = (raw?: string) => {
-      // Hardware scanners fire Enter before React state flushes the last digits.
-      // Always read the DOM value so generated 13-digit codes are not truncated.
-      const code = (raw ?? inputRef.current?.value ?? value).trim()
-      if (!code) return
-      onScan(code)
-      setValue('')
-      if (inputRef.current) inputRef.current.value = ''
-      if (enabled) {
-        inputRef.current?.focus()
+    const submit = useCallback(
+      (raw?: string) => {
+        // Hardware scanners fire Enter before React state flushes the last digits.
+        // Always read the DOM value so generated 13-digit codes are not truncated.
+        const code = (raw ?? inputRef.current?.value ?? value).trim()
+        if (!code) return
+        onScanRef.current(code)
+        clearInput()
+        if (enabled) focusInput()
+      },
+      [clearInput, enabled, focusInput, value]
+    )
+
+    const submitRef = useRef(submit)
+    submitRef.current = submit
+
+    useEffect(() => {
+      if (!enabled || !captureGlobal) return
+
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.ctrlKey || event.metaKey || event.altKey) return
+        if (event.isComposing) return
+        if (isOtherEditableTarget(event.target, inputRef.current)) return
+        if (event.target === inputRef.current) return
+
+        if (event.key === 'Enter' || event.key === 'Tab') {
+          const code = (inputRef.current?.value ?? '').trim()
+          if (!code) return
+          event.preventDefault()
+          event.stopPropagation()
+          submitRef.current(code)
+          return
+        }
+
+        if (event.key === 'Backspace') {
+          event.preventDefault()
+          const next = (inputRef.current?.value ?? '').slice(0, -1)
+          setValue(next)
+          if (inputRef.current) inputRef.current.value = next
+          focusInput()
+          return
+        }
+
+        if (event.key.length === 1) {
+          event.preventDefault()
+          const next = `${inputRef.current?.value ?? ''}${event.key}`
+          setValue(next)
+          if (inputRef.current) inputRef.current.value = next
+          focusInput()
+        }
       }
-    }
+
+      window.addEventListener('keydown', onKeyDown, true)
+      return () => window.removeEventListener('keydown', onKeyDown, true)
+    }, [captureGlobal, enabled, focusInput])
 
     return (
       <div className={cn('flex items-center gap-2', className)}>
@@ -85,12 +163,16 @@ const BarcodeScannerInput = forwardRef<BarcodeScannerInputHandle, BarcodeScanner
           </Button>
         )}
         {enabled && (
-          <div className="relative min-w-0 flex-1 basis-[12rem] sm:min-w-[220px]">
-            <Barcode className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <label className="relative min-w-0 flex-1 cursor-text basis-[12rem] sm:min-w-[220px]">
+            <Barcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <Input
               ref={inputRef}
               value={value}
               onChange={(e) => setValue(e.target.value)}
+              onMouseDown={() => {
+                // Nested overflow:hidden ancestors (POS) cancel native focus in WKWebView.
+                requestAnimationFrame(focusInput)
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === 'Tab') {
                   e.preventDefault()
@@ -100,9 +182,12 @@ const BarcodeScannerInput = forwardRef<BarcodeScannerInputHandle, BarcodeScanner
               placeholder={placeholder}
               className={cn('h-9 pl-9 font-mono text-sm', inputClassName)}
               autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="text"
               data-barcode-scanner="true"
             />
-          </div>
+          </label>
         )}
         {enabled && showToggle && (
           <span className="flex items-center gap-1 text-sm font-medium text-green-600 whitespace-nowrap">

@@ -37,6 +37,15 @@ import { Kbd } from '@/components/keyboard-shortcuts/Kbd'
 import { POS_CHECKOUT_KEYS, POS_CHECKOUT_PRINT_KEYS } from '@/lib/keyboardShortcuts'
 import { hydratePOSSnapshot, getCachedPrintSettings, getCachedBusiness } from '@/lib/posCatalog'
 import { buildPOSReceiptContent, receiptPaperWidthMm } from '@/lib/posReceipt'
+import {
+  PAYMENT_METHODS,
+  appendPaymentSplit,
+  formatPaymentMethod,
+  materializePaymentSplits,
+  clampPaymentSplitsToTotal,
+  numericSplitAmount,
+  sumPaymentSplits,
+} from '@/lib/paymentSplits'
 
 interface Product {
   id: string
@@ -330,7 +339,7 @@ function CartPurchasePriceHint({
 }
 
 export default function POSPage() {
-  const { syncStatus, isSyncing, manualSync, checkSyncStatus } = useOfflineSync()
+  const { syncStatus, isSyncing, manualSync, checkSyncStatus, setPOSBillingActive } = useOfflineSync()
   const [products, setProducts] = useState<Product[]>([])
   const [parties, setParties] = useState<Party[]>([])
   const [walkInCustomer, setWalkInCustomer] = useState<Party | null>(null)
@@ -354,8 +363,9 @@ export default function POSPage() {
   const [customerSuggestions, setCustomerSuggestions] = useState<Party[]>([])
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
   const [isEditingCustomer, setIsEditingCustomer] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState('upi')
-  const [receivedAmount, setReceivedAmount] = useState('')
+  const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: string }[]>([
+    { mode: 'upi', amount: '' },
+  ])
   const [receivedEdited, setReceivedEdited] = useState(false)
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0)
@@ -383,6 +393,7 @@ export default function POSPage() {
 
   useEffect(() => {
     setMounted(true)
+    setPOSBillingActive(true)
     void (async () => {
       await offlineStorage.init()
       await Promise.all([
@@ -394,7 +405,8 @@ export default function POSPage() {
       ])
       await hydratePOSSnapshot()
     })()
-  }, [])
+    return () => setPOSBillingActive(false)
+  }, [setPOSBillingActive])
 
   useEffect(() => {
     setLoyaltyPointsToRedeem(0)
@@ -403,8 +415,13 @@ export default function POSPage() {
 
   useEffect(() => {
     setReceivedEdited(false)
-    setReceivedAmount('')
+    setPaymentSplits([{ mode: 'upi', amount: '' }])
   }, [activeTabId])
+
+  const resetPayment = () => {
+    setPaymentSplits([{ mode: 'upi', amount: '' }])
+    setReceivedEdited(false)
+  }
 
   const loadLoyaltySettings = async () => {
     try {
@@ -641,9 +658,7 @@ export default function POSPage() {
       setSession(null)
       updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '' })
       setIsEditingCustomer(false)
-      setPaymentMethod('upi')
-      setReceivedAmount('')
-      setReceivedEdited(false)
+      resetPayment()
       window.location.href = '/dashboard'
     }
 
@@ -737,6 +752,7 @@ export default function POSPage() {
       }
     }
     void addToCartWithQuantity(product, quantity)
+    requestAnimationFrame(() => barcodeInputRef.current?.focus())
   }
 
   const handlePosItemCodeScan = async (raw: string) => {
@@ -802,8 +818,10 @@ export default function POSPage() {
   }
 
   useEffect(() => {
-    barcodeInputRef.current?.focus()
-  }, [activeTabId])
+    if (showSessionModal || showDraftModal) return
+    const timer = window.setTimeout(() => barcodeInputRef.current?.focus(), 50)
+    return () => window.clearTimeout(timer)
+  }, [activeTabId, showSessionModal, showDraftModal])
 
   const updateTabScrollState = () => {
     const container = tabListRef.current
@@ -961,10 +979,16 @@ export default function POSPage() {
 
   const syncReceivedToPayable = (_prevPayable: number, nextPayable: number, delta = 0) => {
     if (!receivedEdited) return
-    setReceivedAmount((prev) => {
-      const n = parseFloat(prev)
-      if (!prev || Number.isNaN(n)) return prev
-      return Math.max(0, Math.min(n - delta, nextPayable)).toString()
+    setPaymentSplits((prev) => {
+      if (prev.length <= 1) {
+        const n = numericSplitAmount(prev[0]?.amount)
+        if (!prev[0]?.amount || Number.isNaN(n)) return prev
+        return [{ ...prev[0], amount: String(Math.max(0, Math.min(n - delta, nextPayable))) }]
+      }
+      const others = prev.slice(0, -1)
+      const last = prev[prev.length - 1]
+      const lastAmount = Math.max(0, nextPayable - sumPaymentSplits(others))
+      return [...others, { ...last, amount: String(lastAmount) }]
     })
   }
 
@@ -1014,21 +1038,72 @@ export default function POSPage() {
   }
 
   const getReceivedNumeric = () => {
-    if (!receivedEdited) return getRoundedTotal()
-    const received = parseFloat(receivedAmount)
-    return Number.isNaN(received) ? 0 : received
+    if (paymentSplits.length === 1 && !receivedEdited) return getRoundedTotal()
+    return sumPaymentSplits(paymentSplits)
   }
 
   const getBalance = () => getRoundedTotal() - getReceivedNumeric()
 
-  const setFullyPaid = () => {
-    setReceivedEdited(false)
-    setReceivedAmount(getRoundedTotal().toString())
+  const splitAmountValue = (index: number) => {
+    if (paymentSplits.length === 1 && !receivedEdited) {
+      const total = getRoundedTotal()
+      return total > 0 ? String(total) : ''
+    }
+    return paymentSplits[index]?.amount ?? ''
   }
 
-  const receivedInputValue = receivedEdited
-    ? receivedAmount
-    : (getRoundedTotal() > 0 ? String(getRoundedTotal()) : '')
+  const updatePaymentSplit = (index: number, patch: Partial<{ mode: string; amount: string }>) => {
+    setReceivedEdited(true)
+    setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  const addPaymentSplit = () => {
+    setReceivedEdited(true)
+    const total = getRoundedTotal()
+    setPaymentSplits((prev) => {
+      const normalized = prev.map((row, i) => (
+        prev.length === 1 && !receivedEdited && i === 0
+          ? { ...row, amount: total > 0 ? String(total) : row.amount }
+          : row
+      ))
+      const numbered = normalized.map((row) => ({ mode: row.mode, amount: numericSplitAmount(row.amount) }))
+      return appendPaymentSplit(numbered, total, (mode, amount) => ({ mode, amount })).map((row) => ({
+        mode: row.mode,
+        amount: row.amount ? String(row.amount) : '',
+      }))
+    })
+  }
+
+  const removePaymentSplit = (index: number) => {
+    setPaymentSplits((prev) => {
+      if (prev.length <= 1) return prev
+      const next = prev.filter((_, i) => i !== index)
+      if (next.length === 1) {
+        const amount = numericSplitAmount(next[0].amount)
+        if (!next[0].amount || Math.abs(amount - getRoundedTotal()) <= 0.01) {
+          setReceivedEdited(false)
+        }
+      } else {
+        setReceivedEdited(true)
+      }
+      return next
+    })
+  }
+
+  const setFullyPaid = () => {
+    if (paymentSplits.length <= 1) {
+      setReceivedEdited(false)
+      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'upi', amount: '' }])
+      return
+    }
+    setReceivedEdited(true)
+    const total = getRoundedTotal()
+    setPaymentSplits((prev) => {
+      const others = prev.slice(0, -1)
+      const last = Math.max(0, parseMoney(total - sumPaymentSplits(others)))
+      return [...others, { ...prev[prev.length - 1], amount: String(last) }]
+    })
+  }
 
   const updateTab = (tabId: string, updates: Partial<POSTab>) => {
     setTabs(tabs.map(tab => 
@@ -1251,7 +1326,15 @@ export default function POSPage() {
     checkoutInFlightRef.current = true
 
     const roundedTotal = getRoundedTotal()
-    const amountPaid = Math.min(Math.max(0, getReceivedNumeric()), roundedTotal)
+    const checkoutSplits = clampPaymentSplitsToTotal(
+      materializePaymentSplits(paymentSplits, {
+        implicitFullAmount: roundedTotal,
+        edited: receivedEdited,
+      }),
+      roundedTotal
+    )
+    const amountPaid = Math.min(Math.max(0, sumPaymentSplits(checkoutSplits)), roundedTotal)
+    const paymentMode = checkoutSplits[0]?.mode || paymentSplits[0]?.mode || 'upi'
     const saleStatus = amountPaid + 0.01 >= roundedTotal ? 'paid' : (amountPaid > 0 ? 'partial' : 'sent')
     const saleDiscount = getSaleDiscount()
     const cartSnapshot = [...activeTab.cart]
@@ -1274,7 +1357,8 @@ export default function POSPage() {
         },
         date: new Date().toISOString(),
         status: saleStatus,
-        payment_mode: paymentMethod,
+        payment_mode: paymentMode,
+        payment_splits: checkoutSplits,
         amount_paid: amountPaid,
         is_pos: true,
         pos_session_id: session?.id,
@@ -1316,8 +1400,7 @@ export default function POSPage() {
       updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '' })
       setIsEditingCustomer(false)
       setEditingQty(null)
-      setPaymentMethod('upi')
-      setReceivedAmount('')
+      setPaymentSplits([{ mode: 'upi', amount: '' }])
       setReceivedEdited(false)
       setLoyaltyPointsToRedeem(0)
       setCartDrawerOpen(false)
@@ -1342,7 +1425,8 @@ export default function POSPage() {
               date: sale.date,
               party_name: partySnapshot.name,
               party_phone: partySnapshot.phone,
-              payment_mode: paymentMethod,
+              payment_mode: paymentMode,
+              payment_splits: checkoutSplits,
               amount_paid: amountPaid,
               invoice_discount: saleDiscount,
               tax_total: sale.tax_total,
@@ -1385,6 +1469,7 @@ export default function POSPage() {
       notifyError('Could not save the sale on this device. Try again.')
     } finally {
       checkoutInFlightRef.current = false
+      requestAnimationFrame(() => barcodeInputRef.current?.focus())
     }
   }
 
@@ -1611,6 +1696,21 @@ export default function POSPage() {
         </div>
       </div>
 
+      {/* Keep scanner outside nested overflow-hidden so WKWebView can focus it */}
+      <div className="relative z-10 shrink-0 border-b bg-white p-3">
+        <BarcodeScannerInput
+          ref={barcodeInputRef}
+          captureGlobal={!showSessionModal && !showDraftModal}
+          onScan={handlePosItemCodeScan}
+          placeholder={
+            scaleSettings.barcode_scan_enabled
+              ? 'Scan scale or product barcode…'
+              : 'Scan product barcode…'
+          }
+          className="w-full"
+        />
+      </div>
+
       {/* Session Modal - Compact */}
       {showSessionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -1656,26 +1756,14 @@ export default function POSPage() {
       <div className="relative flex flex-1 overflow-hidden">
         {/* Products Section */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {/* Barcode scanner */}
-          <div className="p-3 bg-white border-b">
-            <BarcodeScannerInput
-              ref={barcodeInputRef}
-              onScan={handlePosItemCodeScan}
-              placeholder={
-                scaleSettings.barcode_scan_enabled
-                  ? 'Scan scale or product barcode…'
-                  : 'Scan product barcode…'
-              }
-              className="w-full"
-            />
-          </div>
-          
           {/* Products Grid */}
           <div className="flex-1 overflow-y-auto p-3">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-5">
               {filteredProducts.map((product) => (
                 <button
                   key={product.id}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => addToCart(product)}
                   className="p-2 bg-white border rounded hover:border-blue-400 hover:shadow-sm transition-all text-left"
                 >
@@ -1733,7 +1821,7 @@ export default function POSPage() {
                 onClick={() => {
                   updateTab(activeTabId, { cart: [] })
                   setReceivedEdited(false)
-                  setReceivedAmount('')
+                  setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'upi', amount: '' }])
                 }}
                 disabled={activeTab.cart.length === 0}
                 className="h-7 px-2 text-xs"
@@ -2194,41 +2282,78 @@ export default function POSPage() {
           {/* Payment - Compact */}
           {activeTab.cart.length > 0 && (
             <div className="p-2 border-t space-y-2">
-              <select
-                className="w-full h-8 text-xs rounded border border-gray-300 bg-white px-2"
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-              >
-                <option value="upi">UPI</option>
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="cheque">Cheque</option>
-              </select>
+              {paymentSplits.map((split, index) => {
+                const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
+                return (
+                  <div key={`${split.mode}-${index}`} className="flex gap-1 items-center">
+                    <select
+                      className="h-8 min-w-0 flex-1 text-xs rounded border border-gray-300 bg-white px-2"
+                      value={split.mode}
+                      onChange={(e) => updatePaymentSplit(index, { mode: e.target.value })}
+                    >
+                      {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
+                        <option key={method.value} value={method.value}>
+                          {method.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Received"
+                      value={splitAmountValue(index)}
+                      onChange={(e) => updatePaymentSplit(index, { amount: e.target.value })}
+                      className="h-8 w-[5.5rem] text-xs"
+                    />
+                    {paymentSplits.length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => removePaymentSplit(index)}
+                        aria-label="Remove payment method"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : (
+                      <Button
+                        variant={getBalance() <= 0.01 ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={setFullyPaid}
+                        className="h-8 px-2 text-xs"
+                      >
+                        Full
+                      </Button>
+                    )}
+                  </div>
+                )
+              })}
               <p className="text-[10px] text-gray-500 leading-tight">
-                Credited to: {getDepositHint(paymentMethod, bankAccounts)}
+                {paymentSplits.length === 1
+                  ? `Credited to: ${getDepositHint(paymentSplits[0]?.mode || 'upi', bankAccounts)}`
+                  : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${getDepositHint(split.mode, bankAccounts)}`).join(' · ')}
               </p>
-              <div className="flex gap-1">
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Received"
-                  value={receivedInputValue}
-                  onChange={(e) => {
-                    setReceivedEdited(true)
-                    setReceivedAmount(e.target.value)
-                  }}
-                  className="flex-1 h-8 text-xs"
-                />
-                <Button
-                  variant={getBalance() <= 0.01 ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={setFullyPaid}
-                  className="h-8 px-2 text-xs"
-                >
-                  Full
-                </Button>
+              <div className="flex items-center justify-between gap-2">
+                {PAYMENT_METHODS.length > paymentSplits.length ? (
+                  <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={addPaymentSplit}>
+                    <Plus className="h-3 w-3 mr-1" />
+                    Split
+                  </Button>
+                ) : (
+                  <span />
+                )}
+                {paymentSplits.length > 1 && (
+                  <Button
+                    variant={getBalance() <= 0.01 ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={setFullyPaid}
+                    className="h-7 px-2 text-[11px]"
+                  >
+                    Full
+                  </Button>
+                )}
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-gray-600">Balance</span>

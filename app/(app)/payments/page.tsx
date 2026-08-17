@@ -15,11 +15,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, CreditCard, MoreVertical, Trash2, Search } from 'lucide-react'
+import { cn, formatCurrency, formatDate } from '@/lib/utils'
+import { Plus, MoreVertical, Trash2, Search } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import { FieldError } from '@/components/ui/field-error'
+import { useFormErrors } from '@/hooks/useFormErrors'
 
 interface Payment {
   id: string
@@ -51,21 +53,34 @@ interface Party {
   party_type: string
 }
 
+const emptyForm = () => ({
+  party_id: '',
+  amount_received: '',
+  payment_in_discount: '0',
+  payment_in_number: '',
+  mode: '',
+  date: new Date().toISOString().split('T')[0],
+  notes: '',
+})
+
 export default function PaymentsPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
+  const {
+    fieldErrors,
+    clearErrors,
+    clearFieldError,
+    setError,
+    validateRequired,
+    handleApiError,
+    showErrorToast,
+    showSuccessToast,
+  } = useFormErrors()
   const [payments, setPayments] = useState<Payment[]>([])
   const [parties, setParties] = useState<Party[]>([])
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [formData, setFormData] = useState({
-    party_id: '',
-    amount_received: '',
-    payment_in_discount: '0',
-    payment_in_number: '',
-    mode: '',
-    date: new Date().toISOString().split('T')[0],
-    notes: ''
-  })
+  const [formData, setFormData] = useState(emptyForm)
   const [selectedPayments, setSelectedPayments] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [partyFilter, setPartyFilter] = useState('all')
@@ -128,11 +143,40 @@ export default function PaymentsPage() {
 
   const fetchParties = async () => {
     try {
-      const res = await apiFetch('/parties')
+      const res = await apiFetch('/parties?party_type=customer')
       if (res.ok) {
         const data = await res.json()
-        setParties(data.filter((p: Party) => p.party_type === 'customer'))
+        setParties(Array.isArray(data) ? data : [])
       }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const resetForm = () => {
+    setFormData(emptyForm())
+    clearErrors()
+  }
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open)
+    if (!open) {
+      resetForm()
+      return
+    }
+    void fetchNextPaymentNumber()
+  }
+
+  const fetchNextPaymentNumber = async () => {
+    try {
+      const res = await apiFetch('/payments/next-number')
+      if (!res.ok) return
+      const data = await res.json()
+      const nextNumber = typeof data?.payment_in_number === 'string' ? data.payment_in_number : ''
+      if (!nextNumber) return
+      setFormData((prev) =>
+        prev.payment_in_number.trim() ? prev : { ...prev, payment_in_number: nextNumber }
+      )
     } catch (err) {
       console.error(err)
     }
@@ -140,34 +184,56 @@ export default function PaymentsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (
+      !validateRequired(formData, {
+        party_id: 'Party',
+        amount_received: 'Amount received',
+        mode: 'Payment mode',
+        date: 'Payment date',
+      })
+    ) {
+      return
+    }
+
+    const amountReceived = parseFloat(formData.amount_received)
+    const discount = parseFloat(formData.payment_in_discount || '0')
+    if (Number.isNaN(amountReceived) || amountReceived <= 0) {
+      setError('amount_received', 'Amount received must be greater than 0')
+      showErrorToast('Amount received must be greater than 0', 'Invalid amount')
+      return
+    }
+    if (Number.isNaN(discount) || discount < 0) {
+      setError('payment_in_discount', 'Discount cannot be negative')
+      showErrorToast('Discount cannot be negative', 'Invalid discount')
+      return
+    }
+
+    setSubmitting(true)
     try {
       const res = await apiFetch('/payments', {
         method: 'POST',
         body: JSON.stringify({
-          party_id: formData.party_id || null,
-          amount_received: parseFloat(formData.amount_received),
-          payment_in_discount: parseFloat(formData.payment_in_discount),
+          party_id: formData.party_id,
+          amount_received: amountReceived,
+          payment_in_discount: discount,
           payment_in_number: formData.payment_in_number,
           mode: formData.mode,
-          date: formData.date,
-          notes: formData.notes
-        })
+          date: new Date(formData.date).toISOString(),
+          notes: formData.notes,
+        }),
       })
       if (res.ok) {
-        setDialogOpen(false)
-        setFormData({
-          party_id: '',
-          amount_received: '',
-          payment_in_discount: '0',
-          payment_in_number: '',
-          mode: '',
-          date: new Date().toISOString().split('T')[0],
-          notes: ''
-        })
+        showSuccessToast('Payment created successfully')
+        handleDialogOpenChange(false)
         fetchPayments()
+      } else {
+        await handleApiError(res)
       }
     } catch (err) {
       console.error(err)
+      showErrorToast('Failed to create payment. Please try again.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -254,7 +320,7 @@ export default function PaymentsPage() {
       <div className="space-y-3">
         <div className="app-page-subheader">
           <h1 className="app-page-title">Payments In</h1>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
             <DialogTrigger asChild>
               <Button className="flex items-center gap-2">
                 <Plus className="h-4 w-4" />
@@ -266,55 +332,87 @@ export default function PaymentsPage() {
                 <DialogTitle>Create Payment In</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Label htmlFor="party">Party Name</Label>
-                  <Select value={formData.party_id} onValueChange={(value) => setFormData({ ...formData, party_id: value })}>
-                    <SelectTrigger>
+                <div className="space-y-1.5">
+                  <Label htmlFor="party">Party Name *</Label>
+                  <Select
+                    value={formData.party_id || undefined}
+                    onValueChange={(value) => {
+                      clearFieldError('party_id')
+                      setFormData({ ...formData, party_id: value })
+                    }}
+                  >
+                    <SelectTrigger className={cn(fieldErrors.party_id && 'border-red-500')}>
                       <SelectValue placeholder="Select party" />
                     </SelectTrigger>
                     <SelectContent>
-                      {parties.map((party) => (
-                        <SelectItem key={party.id} value={party.id}>
-                          {party.name}
-                        </SelectItem>
-                      ))}
+                      {parties.length === 0 ? (
+                        <div className="px-2 py-3 text-sm text-gray-500">No customers found</div>
+                      ) : (
+                        parties.map((party) => (
+                          <SelectItem key={party.id} value={party.id}>
+                            {party.name}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
+                  <FieldError message={fieldErrors.party_id || fieldErrors.PartyID} />
                 </div>
-                <div>
-                  <Label htmlFor="amount_received">Amount Received</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="amount_received">Amount Received *</Label>
                   <Input
                     id="amount_received"
                     type="number"
                     step="0.01"
                     value={formData.amount_received}
-                    onChange={(e) => setFormData({ ...formData, amount_received: e.target.value })}
-                    required
+                    onChange={(e) => {
+                      clearFieldError('amount_received')
+                      setFormData({ ...formData, amount_received: e.target.value })
+                    }}
+                    className={cn(fieldErrors.amount_received && 'border-red-500')}
                   />
+                  <FieldError message={fieldErrors.amount_received} />
                 </div>
-                <div>
+                <div className="space-y-1.5">
                   <Label htmlFor="payment_in_discount">Payment In Discount</Label>
                   <Input
                     id="payment_in_discount"
                     type="number"
                     step="0.01"
                     value={formData.payment_in_discount}
-                    onChange={(e) => setFormData({ ...formData, payment_in_discount: e.target.value })}
-                    required
+                    onChange={(e) => {
+                      clearFieldError('payment_in_discount')
+                      setFormData({ ...formData, payment_in_discount: e.target.value })
+                    }}
+                    className={cn(fieldErrors.payment_in_discount && 'border-red-500')}
                   />
+                  <FieldError message={fieldErrors.payment_in_discount} />
                 </div>
-                <div>
+                <div className="space-y-1.5">
                   <Label htmlFor="payment_in_number">Payment In Number</Label>
                   <Input
                     id="payment_in_number"
                     value={formData.payment_in_number}
-                    onChange={(e) => setFormData({ ...formData, payment_in_number: e.target.value })}
+                    onChange={(e) => {
+                      clearFieldError('payment_in_number')
+                      setFormData({ ...formData, payment_in_number: e.target.value })
+                    }}
+                    placeholder="Auto-generated"
+                    className={cn(fieldErrors.payment_in_number && 'border-red-500')}
                   />
+                  <p className="text-xs text-muted-foreground">Auto-generated. You can edit if needed.</p>
+                  <FieldError message={fieldErrors.payment_in_number} />
                 </div>
-                <div>
-                  <Label htmlFor="mode">Payment Mode</Label>
-                  <Select value={formData.mode} onValueChange={(value) => setFormData({ ...formData, mode: value })}>
-                    <SelectTrigger>
+                <div className="space-y-1.5">
+                  <Label htmlFor="mode">Payment Mode *</Label>
+                  <Select
+                    value={formData.mode || undefined}
+                    onValueChange={(value) => {
+                      clearFieldError('mode')
+                      setFormData({ ...formData, mode: value })
+                    }}
+                  >
+                    <SelectTrigger className={cn(fieldErrors.mode && 'border-red-500')}>
                       <SelectValue placeholder="Select mode" />
                     </SelectTrigger>
                     <SelectContent>
@@ -325,18 +423,23 @@ export default function PaymentsPage() {
                       <SelectItem value="card">Card</SelectItem>
                     </SelectContent>
                   </Select>
+                  <FieldError message={fieldErrors.mode} />
                 </div>
-                <div>
-                  <Label htmlFor="date">Payment Date</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="date">Payment Date *</Label>
                   <Input
                     id="date"
                     type="date"
                     value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    required
+                    onChange={(e) => {
+                      clearFieldError('date')
+                      setFormData({ ...formData, date: e.target.value })
+                    }}
+                    className={cn(fieldErrors.date && 'border-red-500')}
                   />
+                  <FieldError message={fieldErrors.date} />
                 </div>
-                <div>
+                <div className="space-y-1.5">
                   <Label htmlFor="notes">Notes</Label>
                   <Input
                     id="notes"
@@ -345,10 +448,17 @@ export default function PaymentsPage() {
                   />
                 </div>
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleDialogOpenChange(false)}
+                    disabled={submitting}
+                  >
                     Cancel
                   </Button>
-                  <Button type="submit">Create Payment</Button>
+                  <Button type="submit" disabled={submitting}>
+                    {submitting ? 'Creating...' : 'Create Payment'}
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>

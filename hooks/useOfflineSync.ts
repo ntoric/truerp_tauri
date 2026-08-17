@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, createElement, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { offlineStorage } from '@/lib/offlineStorage'
 import { syncPendingPOSSales } from '@/lib/posSync'
 import { subscribePOSAuthExpired } from '@/lib/posAuthGate'
@@ -21,6 +21,7 @@ interface OfflineSyncValue {
   isSyncing: boolean
   autoSync: () => Promise<void>
   manualSync: () => Promise<void>
+  setPOSBillingActive: (active: boolean) => void
   queueOfflineOperation: (operation: string, entityType: string, entityData: unknown) => Promise<void>
   checkSyncStatus: () => Promise<number>
 }
@@ -38,16 +39,19 @@ function useOfflineSyncState(): OfflineSyncValue {
   const [isSyncing, setIsSyncing] = useState(false)
   const syncingRef = useRef(false)
   const onlineRef = useRef(isOnline)
+  const posBillingActiveRef = useRef(false)
+  const autoSyncRef = useRef<() => Promise<void>>(async () => {})
   onlineRef.current = isOnline
 
   const refreshLocalCounts = useCallback(async () => {
     const unsynced = await offlineStorage.getUnsynced()
-    setSyncStatus((prev) => ({
-      ...prev,
-      pending: unsynced.length,
-      failed: unsynced.filter((item) => item.status === 'failed').length,
-    }))
-    return unsynced.length
+    const pending = unsynced.length
+    const failed = unsynced.filter((item) => item.status === 'failed').length
+    setSyncStatus((prev) => {
+      if (prev.pending === pending && prev.failed === failed) return prev
+      return { ...prev, pending, failed }
+    })
+    return pending
   }, [])
 
   const autoSync = useCallback(async () => {
@@ -56,17 +60,28 @@ function useOfflineSyncState(): OfflineSyncValue {
       await refreshLocalCounts()
       return
     }
+    const billing = posBillingActiveRef.current
     syncingRef.current = true
-    setIsSyncing(true)
+    if (!billing) setIsSyncing(true)
     try {
       const result = await syncPendingPOSSales()
-      setSyncStatus((prev) => ({
-        ...prev,
-        pending: result.pending,
-        failed: result.failed,
-        isOnline: true,
-      }))
-      if (result.synced > 0) {
+      setSyncStatus((prev) => {
+        if (
+          prev.pending === result.pending &&
+          prev.failed === result.failed &&
+          prev.isOnline
+        ) {
+          return prev
+        }
+        return {
+          ...prev,
+          pending: result.pending,
+          failed: result.failed,
+          isOnline: true,
+        }
+      })
+      // Rewriting the full product cache blocks barcode keystrokes. Never do it on POS.
+      if (result.synced > 0 && !posBillingActiveRef.current) {
         try {
           const res = await apiFetch('/products', { timeoutMs: 8000 })
           if (res.ok) {
@@ -82,19 +97,31 @@ function useOfflineSyncState(): OfflineSyncValue {
       await refreshLocalCounts()
     } finally {
       syncingRef.current = false
-      setIsSyncing(false)
+      if (!billing) setIsSyncing(false)
     }
   }, [refreshLocalCounts])
+  autoSyncRef.current = autoSync
+
+  const setPOSBillingActive = useCallback((active: boolean) => {
+    const wasActive = posBillingActiveRef.current
+    posBillingActiveRef.current = active
+    if (wasActive && !active) {
+      // Defer so React Strict Mode remount does not sync/rewrite the catalog on POS open.
+      window.setTimeout(() => {
+        if (!posBillingActiveRef.current) void autoSyncRef.current()
+      }, 0)
+    }
+  }, [])
 
   useEffect(() => {
     void offlineStorage.init().then(() => refreshLocalCounts())
     return subscribePOSAuthExpired((expired) => {
-      setSyncStatus((prev) => ({ ...prev, authExpired: expired }))
+      setSyncStatus((prev) => (prev.authExpired === expired ? prev : { ...prev, authExpired: expired }))
     })
   }, [refreshLocalCounts])
 
   useEffect(() => {
-    setSyncStatus((prev) => ({ ...prev, isOnline }))
+    setSyncStatus((prev) => (prev.isOnline === isOnline ? prev : { ...prev, isOnline }))
     if (isOnline) {
       void autoSync()
     }
@@ -104,6 +131,7 @@ function useOfflineSyncState(): OfflineSyncValue {
     const interval = setInterval(() => {
       void (async () => {
         const pending = await refreshLocalCounts()
+        if (posBillingActiveRef.current) return
         if (onlineRef.current && pending > 0) {
           void autoSync()
         }
@@ -116,6 +144,7 @@ function useOfflineSyncState(): OfflineSyncValue {
     let active = true
     let unsub = () => {}
     void subscribeDesktopPosQueueSync(() => {
+      if (posBillingActiveRef.current) return
       void autoSync()
     }).then((fn) => {
       if (!active) {
@@ -146,14 +175,26 @@ function useOfflineSyncState(): OfflineSyncValue {
     [refreshLocalCounts]
   )
 
-  return {
-    syncStatus,
-    isSyncing,
-    autoSync,
-    manualSync,
-    queueOfflineOperation,
-    checkSyncStatus: refreshLocalCounts,
-  }
+  return useMemo(
+    () => ({
+      syncStatus,
+      isSyncing,
+      autoSync,
+      manualSync,
+      setPOSBillingActive,
+      queueOfflineOperation,
+      checkSyncStatus: refreshLocalCounts,
+    }),
+    [
+      syncStatus,
+      isSyncing,
+      autoSync,
+      manualSync,
+      setPOSBillingActive,
+      queueOfflineOperation,
+      refreshLocalCounts,
+    ]
+  )
 }
 
 export function OfflineSyncProvider({ children }: { children: ReactNode }) {

@@ -89,6 +89,7 @@ export async function syncPendingPOSSales(): Promise<{ synced: number; failed: n
       date: sale.date,
       status: sale.status || 'paid',
       payment_mode: sale.payment_mode,
+      payment_splits: sale.payment_splits,
       amount_paid: sale.amount_paid,
       is_pos: true,
       pos_session_id: sessionId,
