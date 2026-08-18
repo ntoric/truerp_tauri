@@ -2,13 +2,14 @@
 
 import { useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { getAuthToken } from '@/lib/authToken'
 
 export default function Home() {
   const { user, loading } = useAuth()
 
   useEffect(() => {
     if (!loading) {
-      if (user) {
+      if (user || getAuthToken()) {
         window.location.href = '/dashboard'
       } else {
         window.location.href = '/login'

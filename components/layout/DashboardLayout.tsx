@@ -13,6 +13,7 @@ import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
 import { pageLabelForPath } from '@/lib/pageFeatures'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { RefreshCw, WifiOff } from 'lucide-react'
 
 /** True when a parent layout already rendered the app chrome. */
 const DashboardShellContext = createContext(false)
@@ -56,12 +57,12 @@ export default function DashboardLayout({
   hideNavigation?: boolean
 }) {
   const nested = useContext(DashboardShellContext)
-  const { user, loading } = useAuth()
+  const { user, loading, token, refreshProfile } = useAuth()
   const pathname = usePathname()
   const { isPageEnabled, loading: featuresLoading } = usePageFeatures()
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !user && !token) {
       const next = typeof window !== 'undefined' ? window.location.pathname : '/dashboard'
       // Full navigation is reliable in the desktop WebView; Next router can stall.
       window.location.href = `/login?next=${encodeURIComponent(next)}`
@@ -70,7 +71,7 @@ export default function DashboardLayout({
     if (!loading && user?.must_change_password) {
       window.location.href = '/change-password-required'
     }
-  }, [loading, user])
+  }, [loading, user, token])
 
   // POS keeps a permanently expanded sidebar; elsewhere content sits beside the
   // collapsed rail and the menu overlays when hovered. On small screens the
@@ -87,6 +88,26 @@ export default function DashboardLayout({
   }
 
   if (loading || !user) {
+    if (!loading && !user && token) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-50 p-6">
+          <WifiOff className="h-12 w-12 text-gray-400" />
+          <div className="text-center">
+            <h2 className="text-lg font-semibold text-gray-700">Unable to reach server</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Your session is still active. Please check your connection and try again.
+            </p>
+          </div>
+          <button
+            onClick={() => refreshProfile()}
+            className="inline-flex items-center gap-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Retry
+          </button>
+        </div>
+      )
+    }
     return <AuthBootSkeleton />
   }
 

@@ -43,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [profileRetry, setProfileRetry] = useState(0)
 
   useEffect(() => {
     const storedToken = getAuthToken()
@@ -53,6 +54,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false)
     }
   }, [])
+
+  // Auto-retry profile fetch when token exists but profile couldn't be loaded
+  // (e.g. network interruption). This keeps the user logged in and seamlessly
+  // restores the session once the connection is back.
+  useEffect(() => {
+    if (!loading && !user && token) {
+      const timer = setTimeout(() => {
+        setProfileRetry(r => r + 1)
+        fetchProfile(token)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [loading, user, token, profileRetry])
 
   const fetchProfile = async (authToken: string) => {
     try {
@@ -84,9 +98,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setActiveStoreId(data.stores[0].id)
         }
       } else {
-        clearAuthToken()
-        setToken(null)
-        if (res.status === 401) clearAuthAndRedirect()
+        if (res.status === 401) {
+          clearAuthToken()
+          setToken(null)
+          clearAuthAndRedirect()
+        }
       }
     } catch (err) {
       console.error('Fetch profile error:', err)

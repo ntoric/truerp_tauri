@@ -28,7 +28,7 @@ export default function ChangePasswordRequiredPage() {
   const [success, setSuccess] = useState(false)
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !user && !getAuthToken()) {
       window.location.href = '/login'
     }
   }, [loading, user])

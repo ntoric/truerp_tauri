@@ -149,21 +149,23 @@ const BarcodeScannerInput = forwardRef<BarcodeScannerInputHandle, BarcodeScanner
     }, [captureGlobal, enabled, focusInput])
 
     return (
-      <div className={cn('flex items-center gap-2', className)}>
+      <div className={cn('flex min-w-0 flex-wrap items-center gap-2', className)}>
         {showToggle && (
           <Button
             type="button"
             variant={enabled ? 'default' : 'outline'}
             size="sm"
+            className="shrink-0"
             onClick={() => onEnabledChange?.(!enabled)}
             title={enabled ? 'Disable barcode scanner' : 'Enable barcode scanner'}
           >
             <Barcode className="mr-2 h-4 w-4" />
-            {enabled ? 'Scanner On' : 'Barcode scanner'}
+            <span className="hidden min-[360px]:inline">{enabled ? 'Scanner On' : 'Barcode scanner'}</span>
+            <span className="min-[360px]:hidden">{enabled ? 'On' : 'Scan'}</span>
           </Button>
         )}
         {enabled && (
-          <label className="relative min-w-0 flex-1 cursor-text basis-[12rem] sm:min-w-[220px]">
+          <label className="relative min-w-0 flex-1 cursor-text basis-[10rem]">
             <Barcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <Input
               ref={inputRef}
@@ -190,7 +192,7 @@ const BarcodeScannerInput = forwardRef<BarcodeScannerInputHandle, BarcodeScanner
           </label>
         )}
         {enabled && showToggle && (
-          <span className="flex items-center gap-1 text-sm font-medium text-green-600 whitespace-nowrap">
+          <span className="hidden items-center gap-1 whitespace-nowrap text-sm font-medium text-green-600 sm:flex">
             <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
             Ready
           </span>

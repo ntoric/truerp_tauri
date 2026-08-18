@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, Fragment } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -13,21 +13,27 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { cn, formatCurrency } from '@/lib/utils'
+import { cn, formatCurrency, asArray } from '@/lib/utils'
+import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
+import { isDefaultVendorName, pickDefaultVendor, DEFAULT_VENDOR_NAME } from '@/lib/defaultVendor'
 import { exclusiveUnitPrice, limitDecimalInput, parseItemNumber, parseMoney, productPurchaseUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
-import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
+import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/components/ui/BarcodeScannerInput'
 import CreateProductDialog, { type CreatedProduct } from '@/components/CreateProductDialog'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
-import { Plus, Trash2, Loader2, Save, Search, Package, X, Camera } from 'lucide-react'
+import NewPurchaseItemForm, {
+  emptyNewProductDraft,
+  type NewProductDraft,
+  type NewPurchaseLineItem,
+} from '@/components/NewPurchaseItemForm'
+import { Plus, Trash2, Loader2, Save, Search, Package, X, Camera, Copy, ChevronRight, ChevronDown, Clock } from 'lucide-react'
+import { SearchableSelect } from '@/components/ui/searchable-select'
+import { ProductCombobox } from '@/components/ui/ProductCombobox'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import {
-  useBankAccounts,
-  CASH_IN_HAND_ACCOUNT,
-  bankAccountIdForApi,
-  defaultBankAccountSelection,
-  resolveBankAccountSelection,
-} from '@/hooks/useBankAccounts'
+import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
+import { PAYMENT_METHODS } from '@/lib/paymentSplits'
+import { useBankAccounts } from '@/hooks/useBankAccounts'
+import ItemsEmptyState, { type PastedItemRow } from '@/components/ItemsEmptyState'
 
 interface Vendor {
   id: string
@@ -64,6 +70,22 @@ interface Warehouse {
   is_default?: boolean
 }
 
+interface RecentVendorProduct {
+  product_id: string
+  description: string
+  item_code: string
+  hsn_code: string
+  unit: string
+  unit_price: number
+  quantity: number
+  tax_rate: number
+  discount: number
+  mrp: number
+  sale_price: number
+  frequency: number
+  last_date: string
+}
+
 interface PurchaseBillItem {
   product_id: string
   item_code: string
@@ -96,6 +118,24 @@ const ITEM_NUMBER_FIELDS: (keyof PurchaseBillItem)[] = [
   'total',
 ]
 
+function remapIndexSet(prev: Set<number>, mapIndex: (i: number) => number | null): Set<number> {
+  const next = new Set<number>()
+  prev.forEach((i) => {
+    const mapped = mapIndex(i)
+    if (mapped !== null) next.add(mapped)
+  })
+  return next
+}
+
+function remapIndexRecord<T>(prev: Record<number, T>, mapIndex: (i: number) => number | null): Record<number, T> {
+  const next: Record<number, T> = {}
+  Object.entries(prev).forEach(([key, val]) => {
+    const mapped = mapIndex(Number(key))
+    if (mapped !== null) next[mapped] = val
+  })
+  return next
+}
+
 export default function CreatePurchaseInvoicePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -124,13 +164,13 @@ export default function CreatePurchaseInvoicePage() {
   const [terms, setTerms] = useState('')
   const [additionalCharges, setAdditionalCharges] = useState(0)
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
-  const [taxExempt, setTaxExempt] = useState(false)
+  const [taxExempt, setTaxExempt] = useState(true)
   const [autoRoundOff, setAutoRoundOff] = useState(true)
   const [amountPaid, setAmountPaid] = useState(0)
   const [amountPaidEdited, setAmountPaidEdited] = useState(false)
-  const [paidFrom, setPaidFrom] = useState(CASH_IN_HAND_ACCOUNT)
-  const [pendingBillAccountId, setPendingBillAccountId] = useState<string | null | undefined>(undefined)
-  const { accounts: bankAccounts, primaryAccount } = useBankAccounts()
+  const [paidFrom, setPaidFrom] = useState('cash')
+  const { accounts: bankAccounts } = useBankAccounts()
+  const { getDepositHint } = usePaymentMethodMappings()
   const [signature, setSignature] = useState('')
   const [items, setItems] = useState<PurchaseBillItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -139,6 +179,7 @@ export default function CreatePurchaseInvoicePage() {
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set())
   const [productAddQuantities, setProductAddQuantities] = useState<Record<string, string>>({})
   const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set())
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
   const [showCreateProduct, setShowCreateProduct] = useState(false)
   const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
   const [productSearch, setProductSearch] = useState('')
@@ -156,8 +197,8 @@ export default function CreatePurchaseInvoicePage() {
     opening_balance: 0
   })
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const barcodeScannerRef = useRef<BarcodeScannerInputHandle>(null)
   const [isDrawing, setIsDrawing] = useState(false)
-  const [barcodeScannerEnabled, setBarcodeScannerEnabled] = useState(false)
   const [matchingProducts, setMatchingProducts] = useState<Product[]>([])
   const [showProductSelector, setShowProductSelector] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
@@ -167,6 +208,12 @@ export default function CreatePurchaseInvoicePage() {
   const [draftSaveStatus, setDraftSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error' | 'need_vendor'>('idle')
   const [draftSaveError, setDraftSaveError] = useState('')
   const [draftSaveTick, setDraftSaveTick] = useState(0)
+  const [recentVendorProducts, setRecentVendorProducts] = useState<RecentVendorProduct[]>([])
+  const [recentProductsLoading, setRecentProductsLoading] = useState(false)
+  const [showRecentProducts, setShowRecentProducts] = useState(true)
+  const [newProductRows, setNewProductRows] = useState<Set<number>>(new Set())
+  const [newProductExtras, setNewProductExtras] = useState<Record<number, NewProductDraft>>({})
+  const [creatingProducts, setCreatingProducts] = useState(false)
   const draftAutosaveInFlightRef = useRef(false)
   const draftAutosaveQueuedRef = useRef(false)
   const skipNextBillFetchRef = useRef(false)
@@ -181,18 +228,21 @@ export default function CreatePurchaseInvoicePage() {
   }, [])
 
   useEffect(() => {
-    if (pendingBillAccountId !== undefined) {
-      setPaidFrom(resolveBankAccountSelection(pendingBillAccountId, bankAccounts))
-      setPendingBillAccountId(undefined)
+    if (!vendorId) {
+      setRecentVendorProducts([])
       return
     }
-    setPaidFrom((prev) => {
-      if (prev !== CASH_IN_HAND_ACCOUNT && bankAccounts.some((a) => a.id === prev)) {
-        return prev
-      }
-      return defaultBankAccountSelection(bankAccounts, primaryAccount)
-    })
-  }, [bankAccounts, primaryAccount, pendingBillAccountId])
+    let cancelled = false
+    setRecentProductsLoading(true)
+    apiFetch(`/purchase/bills/vendor/${vendorId}/recent-products`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: RecentVendorProduct[]) => {
+        if (!cancelled) setRecentVendorProducts(Array.isArray(data) ? data : [])
+      })
+      .catch(() => { if (!cancelled) setRecentVendorProducts([]) })
+      .finally(() => { if (!cancelled) setRecentProductsLoading(false) })
+    return () => { cancelled = true }
+  }, [vendorId])
 
   useEffect(() => {
     if (billDate && paymentTerms) {
@@ -298,21 +348,40 @@ export default function CreatePurchaseInvoicePage() {
 
   const fetchData = async () => {
     try {
-      const [vendorsRes, productsRes, warehousesRes] = await Promise.all([
+      const [vendorsRes, productsRes, warehousesRes, categoriesRes] = await Promise.all([
         apiFetch('/parties?party_type=vendor'),
         apiFetch('/products'),
         apiFetch('/warehouses?is_active=true'),
+        apiFetch('/categories'),
       ])
       if (vendorsRes.ok) {
         const d = await vendorsRes.json()
-        setVendors(Array.isArray(d) ? d : Array.isArray(d.data) ? d.data : [])
+        const list: Vendor[] = Array.isArray(d) ? d : Array.isArray(d.data) ? d.data : []
+        setVendors(list)
+        if (!editId) {
+          const defaultVendor = pickDefaultVendor(list)
+          if (defaultVendor) {
+            setVendorId((prev) => prev || defaultVendor.id)
+          }
+        }
       }
+      const categoryNames = new Set<string>()
       if (productsRes.ok) {
         const productData = await productsRes.json()
         setProducts(productData)
-        const cats = Array.from(new Set(productData.map((p: Product) => p.category).filter(Boolean))) as string[]
-        setCategories(cats)
+        if (Array.isArray(productData)) {
+          productData.forEach((p: Product) => {
+            if (p.category) categoryNames.add(p.category)
+          })
+        }
       }
+      if (categoriesRes.ok) {
+        const categoryData = await categoriesRes.json()
+        asArray<{ name?: string }>(categoryData).forEach((cat) => {
+          if (cat.name) categoryNames.add(cat.name)
+        })
+      }
+      setCategories(Array.from(categoryNames).sort())
       if (warehousesRes.ok) {
         const warehouseData = await warehousesRes.json()
         const list: Warehouse[] = Array.isArray(warehouseData)
@@ -349,7 +418,7 @@ export default function CreatePurchaseInvoicePage() {
         const loadedTotal = bill.total_amount || 0
         setAmountPaid(loadedPaid)
         setAmountPaidEdited(loadedPaid + 0.01 < loadedTotal)
-        setPendingBillAccountId(bill.bank_account_id ?? null)
+        setPaidFrom(bill.payment_mode || 'cash')
         setBillStatus(bill.status || '')
         setSavedBillId(bill.id || editId)
         setAutosaveEnabled((bill.status || '') === 'draft')
@@ -365,8 +434,7 @@ export default function CreatePurchaseInvoicePage() {
         preExemptTaxRatesRef.current = null
         formHydratedRef.current = true
         suppressAutosaveRef.current = true
-        setItems(
-          billItems.map((item: any) => {
+        const loadedItems = billItems.map((item: any) => {
             const prod = products.find((p: Product) => p.id === item.product_id)
             // Always use the saved line tax_rate — never the product master rate.
             const savedTaxRate = loadedTaxExempt ? 0 : parseItemNumber(item.tax_rate)
@@ -391,7 +459,31 @@ export default function CreatePurchaseInvoicePage() {
               enable_batching: prod?.enable_batching ?? Boolean(item.batch_no),
             }, loadedTaxExempt)
           })
-        )
+        setItems(loadedItems)
+        const defaultCategory = pickDefaultCategoryName(categories.map((c) => ({ name: c })))
+        const restoredNewRows = new Set<number>()
+        const restoredExtras: Record<number, NewProductDraft> = {}
+        const restoredExpanded = new Set<number>()
+        loadedItems.forEach((item: PurchaseBillItem, index: number) => {
+          const raw = billItems[index] || {}
+          const isNew =
+            Boolean(raw.is_new_item) ||
+            ((bill.status || '') === 'draft' && !item.product_id)
+          if (!isNew) return
+          restoredNewRows.add(index)
+          restoredExtras[index] = {
+            item_code: item.item_code || '',
+            category: String(raw.category || '').trim() || defaultCategory,
+          }
+          restoredExpanded.add(index)
+        })
+        setNewProductRows(restoredNewRows)
+        setNewProductExtras(restoredExtras)
+        setExpandedRows((prev) => {
+          const next = new Set(prev)
+          restoredExpanded.forEach((i) => next.add(i))
+          return next
+        })
       }
     } catch (err) {
       console.error(err)
@@ -572,6 +664,121 @@ export default function CreatePurchaseInvoicePage() {
     setProductSearch('')
     setSelectedProductIds(new Set())
     setProductAddQuantities({})
+  }
+
+  const addCustomItemToInvoice = (description: string) => {
+    const trimmed = description.trim()
+    if (!trimmed) return
+    const item = calcItemTotals({
+      product_id: '',
+      item_code: '',
+      description: trimmed,
+      hsn_code: '',
+      quantity: 1,
+      unit_price: 0,
+      discount: 0,
+      tax_rate: taxExempt ? 0 : 0,
+      mrp: 0,
+      sale_price: 0,
+      unit: 'PCS',
+      tax_amount: 0,
+      total: 0,
+      purchase_price_with_tax: false,
+      batch_no: '',
+      mfg_date: '',
+      exp_date: '',
+      enable_batching: false,
+    })
+    setItems((prev) => [...prev, item])
+    setShowProductModal(false)
+    setProductSearch('')
+    setSelectedProductIds(new Set())
+    setProductAddQuantities({})
+    setToast({ message: `Added custom item: ${trimmed}`, type: 'success' })
+    setTimeout(() => setToast(null), 2000)
+  }
+
+  const handleCreateNewItem = (index: number, name: string) => {
+    const trimmed = name.trim()
+    const defaultCategory = pickDefaultCategoryName(categories.map((c) => ({ name: c })))
+    setNewProductRows((prev) => new Set(prev).add(index))
+    setNewProductExtras((prev) => ({
+      ...prev,
+      [index]: emptyNewProductDraft(defaultCategory),
+    }))
+    setExpandedRows((prev) => new Set(prev).add(index))
+    setItems((prev) => {
+      const next = [...prev]
+      if (!next[index]) return prev
+      next[index] = calcItemTotals({
+        ...next[index],
+        product_id: '',
+        description: trimmed || next[index].description,
+      })
+      return next
+    })
+  }
+
+  const updateNewProductExtras = (index: number, patch: Partial<NewProductDraft>) => {
+    setNewProductExtras((prev) => ({
+      ...prev,
+      [index]: { ...(prev[index] || emptyNewProductDraft()), ...patch },
+    }))
+  }
+
+  const cancelNewProductRow = (index: number) => {
+    setNewProductRows((prev) => {
+      const next = new Set(prev)
+      next.delete(index)
+      return next
+    })
+    setNewProductExtras((prev) => {
+      const next = { ...prev }
+      delete next[index]
+      return next
+    })
+  }
+
+  const addRecentProductToInvoice = (rp: RecentVendorProduct) => {
+    const product = rp.product_id ? products.find((p) => p.id === rp.product_id) : undefined
+    const item = calcItemTotals({
+      product_id: rp.product_id || '',
+      item_code: rp.item_code || product?.item_code || '',
+      description: rp.description || product?.name || '',
+      hsn_code: rp.hsn_code || product?.hsn_code || '',
+      quantity: parseItemNumber(rp.quantity, 1),
+      unit_price: parseMoney(rp.unit_price),
+      discount: parseItemNumber(rp.discount),
+      tax_rate: taxExempt ? 0 : parseItemNumber(rp.tax_rate),
+      mrp: parseItemNumber(rp.mrp),
+      sale_price: parseItemNumber(rp.sale_price),
+      unit: rp.unit || product?.unit || 'PCS',
+      tax_amount: 0,
+      total: 0,
+      purchase_price_with_tax: product?.purchase_price_with_tax ?? false,
+      batch_no: '',
+      mfg_date: '',
+      exp_date: '',
+      enable_batching: product?.enable_batching ?? false,
+    })
+
+    const existingIndex = items.findIndex(
+      (i) => i.product_id && i.product_id === rp.product_id && i.item_code === (rp.item_code || '')
+    )
+    if (existingIndex >= 0) {
+      const newItems = [...items]
+      newItems[existingIndex] = {
+        ...newItems[existingIndex],
+        quantity: newItems[existingIndex].quantity + parseItemNumber(rp.quantity, 1),
+      }
+      newItems[existingIndex] = calcItemTotals(newItems[existingIndex])
+      setItems(newItems)
+      setToast({ message: `Quantity increased: ${rp.description}`, type: 'success' })
+    } else {
+      setItems((prev) => [...prev, item])
+      setToast({ message: `Added: ${rp.description}`, type: 'success' })
+    }
+    setTimeout(() => setToast(null), 2000)
   }
 
   const toggleProductSelection = (productId: string) => {
@@ -767,11 +974,6 @@ export default function CreatePurchaseInvoicePage() {
         newItems[index].hsn_code = product.hsn_code || ''
         newItems[index].purchase_price_with_tax = isProductGstEnabled(product) ? (product.purchase_price_with_tax ?? false) : false
         newItems[index].enable_batching = product.enable_batching ?? false
-        if (!(product.enable_batching ?? false)) {
-          newItems[index].batch_no = ''
-          newItems[index].mfg_date = ''
-          newItems[index].exp_date = ''
-        }
       }
     }
 
@@ -784,20 +986,85 @@ export default function CreatePurchaseInvoicePage() {
     setItems(newItems)
   }
 
+  const patchItem = (index: number, patch: Partial<PurchaseBillItem>) => {
+    if (patch.product_id !== undefined || patch.description !== undefined) clearFieldError('items')
+    setItems((prev) => {
+      const newItems = [...prev]
+      if (!newItems[index]) return prev
+      const merged: PurchaseBillItem = { ...newItems[index], ...patch }
+      if (patch.unit_price !== undefined) {
+        merged.unit_price = parseMoney(limitDecimalInput(String(patch.unit_price ?? ''), 2))
+      }
+      if (patch.quantity !== undefined) merged.quantity = parseItemNumber(patch.quantity)
+      if (patch.discount !== undefined) merged.discount = parseItemNumber(patch.discount)
+      if (patch.tax_rate !== undefined) merged.tax_rate = parseItemNumber(patch.tax_rate)
+      if (patch.mrp !== undefined) merged.mrp = parseItemNumber(patch.mrp)
+      if (patch.sale_price !== undefined) merged.sale_price = parseItemNumber(patch.sale_price)
+      if (taxExempt) merged.tax_rate = 0
+      newItems[index] = calcItemTotals(merged)
+      return newItems
+    })
+  }
+
   const addItem = () => {
     setItems([...items, { product_id: '', item_code: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 0, mrp: 0, sale_price: 0, unit: 'PCS', tax_amount: 0, total: 0, purchase_price_with_tax: false, batch_no: '', mfg_date: '', exp_date: '', enable_batching: false }])
   }
 
-  const removeItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index))
-    setSelectedLineIndices((prev) => {
-      const next = new Set<number>()
-      prev.forEach((i) => {
-        if (i < index) next.add(i)
-        else if (i > index) next.add(i - 1)
+  const handlePasteFromExcel = (rows: PastedItemRow[]) => {
+    const newItems = rows.map((row) =>
+      calcItemTotals({
+        product_id: '',
+        item_code: '',
+        description: row.description,
+        hsn_code: row.hsnCode,
+        quantity: parseItemNumber(row.quantity, 1),
+        unit_price: parseMoney(row.unitPrice),
+        discount: 0,
+        tax_rate: parseItemNumber(row.taxRate),
+        mrp: 0,
+        sale_price: 0,
+        unit: 'PCS',
+        tax_amount: 0,
+        total: 0,
+        purchase_price_with_tax: false,
+        batch_no: '',
+        mfg_date: '',
+        exp_date: '',
+        enable_batching: false,
       })
+    )
+    setItems((prev) => [...prev, ...newItems])
+    setToast({ message: `Added ${newItems.length} item(s) from clipboard`, type: 'success' })
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  const removeItem = (index: number) => {
+    const mapIndex = (i: number) => (i < index ? i : i > index ? i - 1 : null)
+    setItems(items.filter((_, i) => i !== index))
+    setSelectedLineIndices((prev) => remapIndexSet(prev, mapIndex))
+    setNewProductRows((prev) => remapIndexSet(prev, mapIndex))
+    setNewProductExtras((prev) => remapIndexRecord(prev, mapIndex))
+    setExpandedRows((prev) => remapIndexSet(prev, mapIndex))
+  }
+
+  const duplicateItem = (index: number) => {
+    const newItem = { ...items[index] }
+    const newItems = [...items]
+    newItems.splice(index + 1, 0, newItem)
+    setItems(newItems)
+    const mapIndex = (i: number) => (i <= index ? i : i + 1)
+    setSelectedLineIndices((prev) => remapIndexSet(prev, mapIndex))
+    setNewProductRows((prev) => {
+      const next = remapIndexSet(prev, mapIndex)
+      if (prev.has(index)) next.add(index + 1)
       return next
     })
+    setNewProductExtras((prev) => {
+      const next = remapIndexRecord(prev, mapIndex)
+      if (prev[index]) next[index + 1] = { ...prev[index] }
+      return next
+    })
+    setExpandedRows((prev) => remapIndexSet(prev, mapIndex))
   }
 
   const toggleLineItemSelection = (index: number) => {
@@ -819,7 +1086,18 @@ export default function CreatePurchaseInvoicePage() {
 
   const removeSelectedLineItems = () => {
     if (selectedLineIndices.size === 0) return
+    const mapIndex = (i: number) => {
+      if (selectedLineIndices.has(i)) return null
+      let mapped = i
+      selectedLineIndices.forEach((s) => {
+        if (s < i) mapped -= 1
+      })
+      return mapped
+    }
     setItems(items.filter((_, index) => !selectedLineIndices.has(index)))
+    setNewProductRows((prev) => remapIndexSet(prev, mapIndex))
+    setNewProductExtras((prev) => remapIndexRecord(prev, mapIndex))
+    setExpandedRows((prev) => remapIndexSet(prev, mapIndex))
     setSelectedLineIndices(new Set())
   }
 
@@ -849,6 +1127,29 @@ export default function CreatePurchaseInvoicePage() {
     return true
   }
 
+  const serializeBillItem = (item: PurchaseBillItem, index: number) => {
+    const extras = newProductExtras[index]
+    const isNew = newProductRows.has(index) && !item.product_id
+    return {
+      product_id: item.product_id || null,
+      item_code: extras?.item_code || item.item_code,
+      description: item.description || 'Item',
+      quantity: parseItemNumber(item.quantity),
+      unit: item.unit,
+      unit_price: parseMoney(item.unit_price),
+      discount: parseItemNumber(item.discount),
+      tax_rate: taxExempt ? 0 : parseItemNumber(item.tax_rate),
+      mrp: parseMoney(item.mrp),
+      sale_price: parseMoney(item.sale_price),
+      hsn_code: item.hsn_code,
+      batch_no: item.batch_no || '',
+      mfg_date: item.mfg_date || null,
+      exp_date: item.exp_date || null,
+      is_new_item: isNew,
+      category: extras?.category || '',
+    }
+  }
+
   const buildBillPayload = (asDraft: boolean, sourceItems: PurchaseBillItem[]) => {
     const status = asDraft
       ? 'draft'
@@ -865,28 +1166,13 @@ export default function CreatePurchaseInvoicePage() {
         total_amount: totalAmount,
         paid_amount: effectiveAmountPaid,
         balance_due: balance,
-        payment_mode: paidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
-        bank_account_id: bankAccountIdForApi(paidFrom),
+        payment_mode: paidFrom,
+        bank_account_id: null,
         status,
         notes,
         terms,
         tax_exempt: taxExempt,
-        items: sourceItems.map((item) => ({
-          product_id: item.product_id || null,
-          item_code: item.item_code,
-          description: item.description,
-          quantity: parseItemNumber(item.quantity),
-          unit: item.unit,
-          unit_price: parseMoney(item.unit_price),
-          discount: parseItemNumber(item.discount),
-          tax_rate: taxExempt ? 0 : parseItemNumber(item.tax_rate),
-          mrp: parseMoney(item.mrp),
-          sale_price: parseMoney(item.sale_price),
-          hsn_code: item.hsn_code,
-          batch_no: item.batch_no || '',
-          mfg_date: item.mfg_date || null,
-          exp_date: item.exp_date || null,
-        })),
+        items: sourceItems.map((item, index) => serializeBillItem(item, index)),
       },
     }
   }
@@ -940,28 +1226,16 @@ export default function CreatePurchaseInvoicePage() {
           total_amount: totalAmount,
           paid_amount: effectiveAmountPaid,
           balance_due: balance,
-          payment_mode: paidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
-          bank_account_id: bankAccountIdForApi(paidFrom),
+          payment_mode: paidFrom,
+          bank_account_id: null,
           status: 'draft',
           notes,
           terms,
           tax_exempt: taxExempt,
-          items: readyItems.map((item) => ({
-            product_id: item.product_id || null,
-            item_code: item.item_code,
-            description: item.description || 'Item',
-            quantity: parseItemNumber(item.quantity),
-            unit: item.unit,
-            unit_price: parseMoney(item.unit_price),
-            discount: parseItemNumber(item.discount),
-            tax_rate: taxExempt ? 0 : parseItemNumber(item.tax_rate),
-            mrp: parseMoney(item.mrp),
-            sale_price: parseMoney(item.sale_price),
-            hsn_code: item.hsn_code,
-            batch_no: item.batch_no || '',
-            mfg_date: item.mfg_date || null,
-            exp_date: item.exp_date || null,
-          })),
+          items: items.flatMap((item, index) => {
+            if (!isItemReadyForDraft(item)) return []
+            return [serializeBillItem(item, index)]
+          }),
         }),
       })
 
@@ -1030,6 +1304,8 @@ export default function CreatePurchaseInvoicePage() {
     autoRoundOff,
     taxExempt,
     items,
+    newProductRows,
+    newProductExtras,
     totalAmount,
     savedBillId,
     draftSaveTick,
@@ -1055,14 +1331,106 @@ export default function CreatePurchaseInvoicePage() {
       showErrorToast(`Batch number is required for ${missingBatch.description || 'batched product'}`)
       return
     }
+    const invalidNewProduct = items.find((item, i) => {
+      if (!newProductRows.has(i)) return false
+      return !item.description.trim() || parseItemNumber(item.quantity) <= 0
+    })
+    if (!asDraft && invalidNewProduct) {
+      setError('items', `Please fill product name and quantity for new item`)
+      showErrorToast('Please fill product name and quantity for new item')
+      return
+    }
     setSaving(true)
-    // Stop background autosave while the explicit submit is in flight.
     if (!asDraft) setAutosaveEnabled(false)
     try {
+      let itemsToSave = [...items]
+
+      if (!asDraft && newProductRows.size > 0) {
+        setCreatingProducts(true)
+        const sortedIndices = Array.from(newProductRows).sort((a, b) => a - b)
+        for (const idx of sortedIndices) {
+          const item = itemsToSave[idx]
+          if (!item?.description.trim()) {
+            if (asDraft) continue
+            throw new Error('Please fill product name for new item')
+          }
+          const extras = newProductExtras[idx] || emptyNewProductDraft()
+          const enableBatching = Boolean(String(item.batch_no || '').trim())
+          const productRes = await apiFetch('/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: item.description.trim(),
+              item_code: extras.item_code || undefined,
+              category: extras.category || DEFAULT_CATEGORY_NAME,
+              unit: item.unit || 'PCS',
+              purchase_price: parseMoney(item.unit_price),
+              sale_price: parseMoney(item.sale_price),
+              mrp: parseMoney(item.mrp),
+              tax_rate: 0,
+              gst_enabled: false,
+              item_type: 'product',
+              enable_batching: enableBatching,
+              sale_price_with_tax: true,
+              purchase_price_with_tax: false,
+              is_active: true,
+            }),
+          })
+          if (!productRes.ok) {
+            const errBody = await productRes.json().catch(() => null)
+            throw new Error(errBody?.error || `Failed to create product: ${item.description}`)
+          }
+          const created = await productRes.json()
+          const newProduct: Product = {
+            id: created.id,
+            name: created.name || item.description,
+            sku: created.sku || '',
+            item_code: created.item_code || extras.item_code,
+            hsn_code: created.hsn_code || item.hsn_code,
+            purchase_price: parseMoney(item.unit_price),
+            sale_price: parseMoney(item.sale_price),
+            mrp: parseMoney(item.mrp),
+            tax_rate: 0,
+            unit: created.unit || item.unit || 'PCS',
+            stock_qty: 0,
+            category: created.category || extras.category || '',
+            purchase_price_with_tax: false,
+            gst_enabled: false,
+            enable_batching: created.enable_batching ?? enableBatching,
+          }
+          setProducts((prev) => [newProduct, ...prev.filter((p) => p.id !== newProduct.id)])
+          if (newProduct.category && !categories.includes(newProduct.category)) {
+            setCategories((prev) => [...prev, newProduct.category].sort())
+          }
+          itemsToSave[idx] = {
+            ...itemsToSave[idx],
+            product_id: created.id,
+            item_code: created.item_code || extras.item_code || itemsToSave[idx].item_code,
+            enable_batching: created.enable_batching ?? enableBatching,
+            purchase_price_with_tax: false,
+          }
+          setItems([...itemsToSave])
+          setNewProductRows((prev) => {
+            const next = new Set(prev)
+            next.delete(idx)
+            return next
+          })
+          setNewProductExtras((prev) => {
+            const next = { ...prev }
+            delete next[idx]
+            return next
+          })
+        }
+        setCreatingProducts(false)
+        setItems(itemsToSave)
+        setNewProductRows(new Set())
+        setNewProductExtras({})
+      }
+
       const billId = savedBillId || editId
       const url = billId ? `/purchase/bills/${billId}` : '/purchase/bills'
       const method = billId ? 'PUT' : 'POST'
-      const { resolvedBillNumber, body } = buildBillPayload(asDraft, items)
+      const { resolvedBillNumber, body } = buildBillPayload(asDraft, itemsToSave)
       if (!billNumber) setBillNumber(resolvedBillNumber)
 
       const res = await apiFetch(url, {
@@ -1081,7 +1449,8 @@ export default function CreatePurchaseInvoicePage() {
       }
     } catch (err) {
       if (!asDraft) setAutosaveEnabled(true)
-      showErrorToast('An error occurred')
+      setCreatingProducts(false)
+      showErrorToast(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setSaving(false)
     }
@@ -1113,6 +1482,44 @@ export default function CreatePurchaseInvoicePage() {
     }
   }
 
+  const renderNewPurchaseItemCard = (index: number, idPrefix: string) => {
+    const item = items[index]
+    const extras = newProductExtras[index] || emptyNewProductDraft()
+    const reservedItemCodes = Object.entries(newProductExtras)
+      .filter(([key]) => Number(key) !== index)
+      .map(([, draft]) => draft.item_code)
+      .filter(Boolean)
+    return (
+      <NewPurchaseItemForm
+        idPrefix={idPrefix}
+        item={item}
+        extras={extras}
+        categories={categories}
+        reservedItemCodes={reservedItemCodes}
+        selected={selectedLineIndices.has(index)}
+        expanded={expandedRows.has(index)}
+        onToggleExpand={() => {
+          setExpandedRows((prev) => {
+            const next = new Set(prev)
+            if (next.has(index)) next.delete(index)
+            else next.add(index)
+            return next
+          })
+        }}
+        onToggleSelect={() => toggleLineItemSelection(index)}
+        onPatchItem={(patch: Partial<NewPurchaseLineItem>) => patchItem(index, patch)}
+        onPatchExtras={(patch) => {
+          updateNewProductExtras(index, patch)
+          if (patch.item_code !== undefined) {
+            patchItem(index, { item_code: patch.item_code })
+          }
+        }}
+        onCancel={() => cancelNewProductRow(index)}
+        onRemove={() => removeItem(index)}
+      />
+    )
+  }
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -1123,7 +1530,7 @@ export default function CreatePurchaseInvoicePage() {
 
   return (
     <DashboardLayout>
-      <div className="w-full space-y-4 pb-2">
+      <div className="w-full min-w-0 space-y-4 pb-2">
         <PageHeader
           title={`${editId || savedBillId ? 'Edit' : 'Create'} Purchase Invoice`}
           backHref="/purchase-invoices"
@@ -1135,101 +1542,95 @@ export default function CreatePurchaseInvoicePage() {
           }
         />
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="min-w-0 space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Invoice Details</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <div className="min-w-0 space-y-2">
-                  <Label>Purchase Invoice Number</Label>
-                  <Input
-                    value={billNumber}
-                    onChange={(e) => setBillNumber(e.target.value)}
-                    placeholder="Auto-generated if empty"
-                    className="min-w-0"
-                  />
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Vendor *</Label>
-                  <div className="flex min-w-0 items-center gap-2">
-                    <select
-                      value={vendorId}
-                      onChange={(e) => {
-                        clearFieldError('vendor_id')
-                        setVendorId(e.target.value)
-                      }}
-                      className={cn(
-                        'flex h-10 w-full min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm',
-                        fieldErrors.vendor_id && 'border-red-500'
-                      )}
-                      required
-                    >
-                      <option value="">Select Vendor</option>
-                      {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                    </select>
-                    <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => setShowAddVendor(true)}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <FieldError message={fieldErrors.vendor_id} />
-                </div>
+            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="min-w-0 space-y-2 xl:col-span-2">
+                <Label>Purchase Invoice Number</Label>
+                <Input
+                  value={billNumber}
+                  onChange={(e) => setBillNumber(e.target.value)}
+                  placeholder="Auto-generated if empty"
+                  className="w-full min-w-0"
+                />
               </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="min-w-0 space-y-2">
-                  <Label>Purchase Invoice Date</Label>
-                  <Input
-                    type="date"
-                    value={billDate}
-                    onChange={(e) => setBillDate(e.target.value)}
-                    className="min-w-0"
-                    required
-                  />
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Payment Terms (Days)</Label>
-                  <Input
-                    type="number"
-                    value={paymentTerms}
-                    onChange={(e) => setPaymentTerms(Number(e.target.value))}
-                    min="0"
-                    className="min-w-0"
-                  />
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Due Date</Label>
-                  <Input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="min-w-0"
-                  />
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Warehouse</Label>
-                  <select
-                    value={warehouseId}
-                    onChange={(e) => setWarehouseId(e.target.value)}
-                    className="flex h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="">Default warehouse</option>
-                    {warehouses.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name}{w.is_default ? ' (Default)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs leading-snug text-gray-500">
-                    Linked products will update inventory stock when this purchase is saved.
-                  </p>
-                </div>
+              <div className="min-w-0 space-y-2 xl:col-span-2">
+                <Label>Vendor *</Label>
+                <SearchableSelect
+                  value={vendorId}
+                  onValueChange={(value) => {
+                    clearFieldError('vendor_id')
+                    setVendorId(value)
+                  }}
+                  options={vendors.map((v) => ({
+                    value: v.id,
+                    label: isDefaultVendorName(v.name) ? `${v.name} (Default)` : v.name,
+                  }))}
+                  placeholder="Select Vendor"
+                  searchPlaceholder="Search vendors..."
+                  emptyMessage="No vendors found"
+                  onAddNew={() => setShowAddVendor(true)}
+                  addNewLabel="Add New Vendor"
+                  className={cn('w-full min-w-0', fieldErrors.vendor_id && 'border-red-500')}
+                />
+                <FieldError message={fieldErrors.vendor_id} />
+                <p className="text-xs leading-snug text-gray-500">
+                  {DEFAULT_VENDOR_NAME} is selected by default. Choose another vendor if needed.
+                </p>
               </div>
-
               <div className="min-w-0 space-y-2">
+                <Label>Purchase Invoice Date</Label>
+                <Input
+                  type="date"
+                  value={billDate}
+                  onChange={(e) => setBillDate(e.target.value)}
+                  className="w-full min-w-0"
+                  required
+                />
+              </div>
+              <div className="min-w-0 space-y-2">
+                <Label>Payment Terms (Days)</Label>
+                <Input
+                  type="number"
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(Number(e.target.value))}
+                  min="0"
+                  className="w-full min-w-0"
+                />
+              </div>
+              <div className="min-w-0 space-y-2">
+                <Label>Due Date</Label>
+                <Input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="w-full min-w-0"
+                />
+              </div>
+              <div className="min-w-0 space-y-2">
+                <Label>Warehouse</Label>
+                <select
+                  value={warehouseId}
+                  onChange={(e) => setWarehouseId(e.target.value)}
+                  className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
+                >
+                  <option value="">Default warehouse</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}{w.is_default ? ' (Default)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs leading-snug text-gray-500">
+                  Linked products will update inventory stock when this purchase is saved.
+                </p>
+              </div>
+              <div className="min-w-0 space-y-2 sm:col-span-2 xl:col-span-4">
                 <Label htmlFor="tax_exempt">Exempt Tax</Label>
-                <div className="flex min-h-10 items-center gap-3">
+                <div className="flex min-h-8 items-center gap-3">
                   <Switch
                     id="tax_exempt"
                     checked={taxExempt}
@@ -1244,26 +1645,95 @@ export default function CreatePurchaseInvoicePage() {
             </CardContent>
           </Card>
 
-          <Card>
+          {vendorId && (recentProductsLoading || recentVendorProducts.length > 0) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <button
+                  type="button"
+                  onClick={() => setShowRecentProducts((prev) => !prev)}
+                  className="flex items-center gap-2"
+                >
+                  <Clock className="h-4 w-4 text-gray-500" />
+                  <CardTitle className="text-base">Frequently Purchased from this Vendor</CardTitle>
+                  <span className="text-xs font-normal text-gray-500">
+                    ({recentVendorProducts.length})
+                  </span>
+                  <ChevronDown
+                    className={cn('ml-auto h-4 w-4 text-gray-400 transition-transform', showRecentProducts && 'rotate-180')}
+                  />
+                </button>
+              </CardHeader>
+              {showRecentProducts && (
+                <CardContent>
+                  {recentProductsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading recent products…
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {recentVendorProducts.map((rp) => {
+                        const alreadyInInvoice = items.some(
+                          (i) => i.product_id && i.product_id === rp.product_id
+                        )
+                        return (
+                          <button
+                            key={rp.product_id || rp.description}
+                            type="button"
+                            onClick={() => addRecentProductToInvoice(rp)}
+                            className={cn(
+                              'group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                              alreadyInInvoice
+                                ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-gray-300 hover:bg-gray-100'
+                            )}
+                            title={`Last purchased: ${rp.last_date}\nQty: ${rp.quantity} ${rp.unit}\nPrice: ${formatCurrency(rp.unit_price)}\nFrequency: ${rp.frequency}x`}
+                          >
+                            <span className="font-medium">{rp.description}</span>
+                            <span className="text-xs text-gray-500">
+                              {formatCurrency(rp.unit_price)} × {rp.quantity}
+                            </span>
+                            {alreadyInInvoice && (
+                              <span className="text-xs text-blue-500">✓</span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-gray-400">
+                    Click a product to add it with its last-used price and quantity.
+                  </p>
+                </CardContent>
+              )}
+            </Card>
+          )}
+
+          <Card className="min-w-0">
             <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle>Items</CardTitle>
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={openProductModal}>
-                    <Package className="mr-2 h-4 w-4" /> Add Item to Bill
+                <div className="flex min-w-0 w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                  <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={openProductModal}>
+                    <Package className="mr-2 h-4 w-4" />
+                    <span className="hidden min-[420px]:inline">Add Item to Bill</span>
+                    <span className="min-[420px]:hidden">Add Item</span>
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={addItem}>
+                    <Plus className="mr-2 h-4 w-4" /> New Row
                   </Button>
                   <BarcodeScannerInput
-                    showToggle
-                    enabled={barcodeScannerEnabled}
-                    onEnabledChange={setBarcodeScannerEnabled}
+                    ref={barcodeScannerRef}
+                    enabled
+                    autoFocusWhenEnabled={false}
                     onScan={handleItemCodeScan}
                     placeholder="Scan product barcode…"
-                    className="min-w-0 flex-1 sm:flex-initial"
+                    className="min-w-0 w-full basis-full sm:w-56 sm:basis-[14rem] sm:flex-none"
                   />
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="min-w-0 space-y-4">
               <FieldError message={fieldErrors.items} />
               {selectedLineIndices.size > 0 && (
                 <div className="flex flex-wrap items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
@@ -1279,10 +1749,11 @@ export default function CreatePurchaseInvoicePage() {
                   </Button>
                 </div>
               )}
-              <div className="table-scroll">
-                <table className={cn('w-full text-sm', taxExempt ? 'min-w-[62rem]' : 'min-w-[68rem]')}>
+              <div className="hidden min-w-0 overflow-x-auto xl:block">
+                <table className={cn('w-full text-sm', taxExempt ? 'min-w-[44rem]' : 'min-w-[48rem]')}>
                   <thead>
                     <tr className="border-b text-left text-gray-500">
+                      <th className="w-8 min-w-8 whitespace-nowrap pb-2 pr-0"></th>
                       <th className="w-10 min-w-10 whitespace-nowrap pb-2 pr-2">
                         <Checkbox
                           checked={items.length > 0 && selectedLineIndices.size === items.length}
@@ -1291,125 +1762,330 @@ export default function CreatePurchaseInvoicePage() {
                         />
                       </th>
                       <th className="min-w-[12rem] whitespace-nowrap pb-2 pr-2 font-medium">Item</th>
-                      <th className="min-w-[5.5rem] whitespace-nowrap pb-2 px-1 font-medium">HSN</th>
-                      <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium">Batch</th>
-                      <th className="min-w-[8rem] whitespace-nowrap pb-2 px-1 font-medium">Expiry</th>
                       <th className="min-w-[6rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Quantity</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Unit Price</th>
                       <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
                       {!taxExempt && (
                         <th className="min-w-[5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Tax %</th>
                       )}
+                      <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium">Batch No</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Amount</th>
                       <th className="w-12 min-w-12 pb-2 pl-1 font-medium"></th>
                     </tr>
                   </thead>
+                  {items.length === 0 ? (
+                    <ItemsEmptyState
+                      onAddProduct={openProductModal}
+                      onScanBarcode={() => barcodeScannerRef.current?.focus()}
+                      onScanInvoiceAI={() => router.push('/purchase-invoices/ai-parse')}
+                      onPasteFromExcel={handlePasteFromExcel}
+                    />
+                  ) : (
                   <tbody>
                     {items.map((item, index) => {
                       const needsBatch =
                         Boolean(item.enable_batching) ||
                         Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
+                      const isExpanded = expandedRows.has(index)
+                      const isNewProduct = newProductRows.has(index)
+                      const toggleExpand = () => {
+                        setExpandedRows((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(index)) next.delete(index)
+                          else next.add(index)
+                          return next
+                        })
+                      }
+                      const detailColSpan = taxExempt ? 9 : 10
+
+                      if (isNewProduct) {
+                        return (
+                          <tr key={index} className="border-b">
+                            <td colSpan={detailColSpan} className="px-1 py-2">
+                              {renderNewPurchaseItemCard(index, `new-item-${index}`)}
+                            </td>
+                          </tr>
+                        )
+                      }
+
                       return (
-                      <tr key={index} className="border-b">
-                        <td className="py-2 pr-2">
-                          <Checkbox
-                            checked={selectedLineIndices.has(index)}
-                            onCheckedChange={() => toggleLineItemSelection(index)}
-                            aria-label={`Select line item ${index + 1}`}
-                          />
-                        </td>
-                        <td className="py-2 pr-2">
-                          <select
-                            value={item.product_id}
-                            onChange={(e) => updateItem(index, 'product_id', e.target.value)}
-                            className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm"
-                          >
-                            <option value="">Select Product</option>
-                            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
-                        </td>
-                        <td className="px-1 py-2">
-                          <Input
-                            value={item.hsn_code}
-                            onChange={(e) => updateItem(index, 'hsn_code', e.target.value)}
-                            className="h-8 w-full min-w-0"
-                          />
-                        </td>
-                        <td className="px-1 py-2">
-                          <Input
-                            value={item.batch_no}
-                            onChange={(e) => updateItem(index, 'batch_no', e.target.value)}
-                            placeholder={needsBatch ? 'Required' : 'Optional'}
-                            className={`h-8 w-full min-w-0 ${needsBatch && !item.batch_no ? 'border-amber-500' : ''}`}
-                            required={needsBatch}
-                          />
-                        </td>
-                        <td className="px-1 py-2">
-                          <Input
-                            type="date"
-                            value={item.exp_date}
-                            onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
-                            className="h-8 w-full min-w-0"
-                          />
-                        </td>
-                        <td className="px-1 py-2">
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.quantity}
-                            onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                            className="h-8 w-full min-w-0 text-right"
-                            required
-                          />
-                        </td>
-                        <td className="px-1 py-2">
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            inputMode="decimal"
-                            value={item.unit_price}
-                            onChange={(e) => updateItem(index, 'unit_price', limitDecimalInput(e.target.value, 2))}
-                            onBlur={() => updateItem(index, 'unit_price', parseMoney(item.unit_price))}
-                            className="h-8 w-full min-w-0 text-right"
-                            required
-                          />
-                        </td>
-                        <td className="px-1 py-2">
-                          <Input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={item.discount}
-                            onChange={(e) => updateItem(index, 'discount', e.target.value)}
-                            className="h-8 w-full min-w-0 text-right"
-                          />
-                        </td>
-                        {!taxExempt && (
+                        <Fragment key={index}>
+                        <tr className="border-b">
+                          <td className="py-2 pr-0">
+                            <button
+                              type="button"
+                              onClick={toggleExpand}
+                              className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:text-gray-600"
+                              aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
+                            >
+                              <ChevronRight className={cn('h-4 w-4 transition-transform', isExpanded && 'rotate-90')} />
+                            </button>
+                          </td>
+                          <td className="py-2 pr-2">
+                            <Checkbox
+                              checked={selectedLineIndices.has(index)}
+                              onCheckedChange={() => toggleLineItemSelection(index)}
+                              aria-label={`Select line item ${index + 1}`}
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            <ProductCombobox
+                              products={products}
+                              value={item.product_id}
+                              onChange={(productId) => updateItem(index, 'product_id', productId)}
+                              onCreateNew={(query) => handleCreateNewItem(index, query)}
+                              className="w-full min-w-0"
+                            />
+                          </td>
                           <td className="px-1 py-2">
                             <Input
                               type="number"
-                              value={item.tax_rate}
-                              onChange={(e) => updateItem(index, 'tax_rate', e.target.value)}
+                              min="0"
+                              step="0.01"
+                              value={item.quantity}
+                              onChange={(e) => updateItem(index, 'quantity', e.target.value)}
                               className="h-8 w-full min-w-0 text-right"
                               required
                             />
                           </td>
+                          <td className="px-1 py-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              inputMode="decimal"
+                              value={item.unit_price}
+                              onChange={(e) => updateItem(index, 'unit_price', limitDecimalInput(e.target.value, 2))}
+                              onBlur={() => updateItem(index, 'unit_price', parseMoney(item.unit_price))}
+                              className="h-8 w-full min-w-0 text-right"
+                              required
+                            />
+                          </td>
+                          <td className="px-1 py-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={item.discount}
+                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                              className="h-8 w-full min-w-0 text-right"
+                            />
+                          </td>
+                          {!taxExempt && (
+                            <td className="px-1 py-2">
+                              <Input
+                                type="number"
+                                value={item.tax_rate}
+                                onChange={(e) => updateItem(index, 'tax_rate', e.target.value)}
+                                className="h-8 w-full min-w-0 text-right"
+                                required
+                              />
+                            </td>
+                          )}
+                          <td className="px-1 py-2">
+                            <Input
+                              value={item.batch_no}
+                              onChange={(e) => updateItem(index, 'batch_no', e.target.value)}
+                              placeholder={needsBatch ? 'Required' : 'Optional'}
+                              className={cn('h-8 w-full min-w-0', needsBatch && !item.batch_no && 'border-amber-500')}
+                              required={needsBatch}
+                            />
+                          </td>
+                          <td className="whitespace-nowrap px-1 py-2 text-right font-medium tabular-nums">
+                            {formatCurrency(item.total)}
+                          </td>
+                          <td className="py-2 pl-1">
+                            <div className="flex items-center gap-1">
+                              <button type="button" onClick={() => duplicateItem(index)} className="text-gray-500 hover:text-gray-700" title="Duplicate line item">
+                                <Copy className="h-4 w-4" />
+                              </button>
+                              <button type="button" onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="border-b bg-gray-50/50">
+                            <td colSpan={detailColSpan} className="px-4 pb-3 pt-1">
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:flex xl:flex-wrap xl:items-end">
+                                <div className="min-w-0 space-y-1">
+                                  <Label className="text-xs text-gray-500">HSN Code</Label>
+                                  <Input
+                                    value={item.hsn_code}
+                                    onChange={(e) => updateItem(index, 'hsn_code', e.target.value)}
+                                    className="h-8 w-full min-w-0 xl:w-32"
+                                  />
+                                </div>
+                                <div className="min-w-0 space-y-1">
+                                  <Label className="text-xs text-gray-500">Expiry Date</Label>
+                                  <Input
+                                    type="date"
+                                    value={item.exp_date}
+                                    onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
+                                    className="h-8 w-full min-w-0 xl:w-40"
+                                  />
+                                </div>
+                                <div className="min-w-0 space-y-1">
+                                  <Label className="text-xs text-gray-500">Mfg Date</Label>
+                                  <Input
+                                    type="date"
+                                    value={item.mfg_date}
+                                    onChange={(e) => updateItem(index, 'mfg_date', e.target.value)}
+                                    className="h-8 w-full min-w-0 xl:w-40"
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                        <td className="whitespace-nowrap px-1 py-2 text-right font-medium tabular-nums">
-                          {formatCurrency(item.total)}
-                        </td>
-                        <td className="py-2 pl-1">
-                          <button type="button" onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
+                        </Fragment>
                       )
                     })}
                   </tbody>
+                  )}
                 </table>
+              </div>
+              {/* Phone / tablet card layout — table is too wide below xl */}
+              <div className="space-y-3 xl:hidden">
+                {items.length === 0 ? (
+                  <ItemsEmptyState
+                    variant="block"
+                    onAddProduct={openProductModal}
+                    onScanBarcode={() => barcodeScannerRef.current?.focus()}
+                    onScanInvoiceAI={() => router.push('/purchase-invoices/ai-parse')}
+                    onPasteFromExcel={handlePasteFromExcel}
+                  />
+                ) : (
+                  items.map((item, index) => {
+                    const needsBatch =
+                      Boolean(item.enable_batching) ||
+                      Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
+                    if (newProductRows.has(index)) {
+                      return (
+                        <div key={index} className="min-w-0">
+                          {renderNewPurchaseItemCard(index, `m-new-item-${index}`)}
+                        </div>
+                      )
+                    }
+                    return (
+                      <div key={index} className="min-w-0 space-y-3 rounded-lg border p-3">
+                        <div className="flex min-w-0 items-start gap-2">
+                          <Checkbox
+                            checked={selectedLineIndices.has(index)}
+                            onCheckedChange={() => toggleLineItemSelection(index)}
+                            aria-label={`Select line item ${index + 1}`}
+                            className="mt-1.5 shrink-0"
+                          />
+                          <ProductCombobox
+                            products={products}
+                            value={item.product_id}
+                            onChange={(productId) => updateItem(index, 'product_id', productId)}
+                            onCreateNew={(query) => handleCreateNewItem(index, query)}
+                            className="min-w-0 flex-1"
+                          />
+                          <div className="flex shrink-0 items-center gap-1 pt-1">
+                            <button type="button" onClick={() => duplicateItem(index)} className="text-gray-500 hover:text-gray-700" title="Duplicate line item">
+                              <Copy className="h-4 w-4" />
+                            </button>
+                            <button type="button" onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
+                          <div className="min-w-0 space-y-1">
+                            <Label className="text-xs text-gray-500">Quantity</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.quantity}
+                              onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                              className="h-8 w-full min-w-0 text-right"
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-1">
+                            <Label className="text-xs text-gray-500">Unit Price</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              inputMode="decimal"
+                              value={item.unit_price}
+                              onChange={(e) => updateItem(index, 'unit_price', limitDecimalInput(e.target.value, 2))}
+                              onBlur={() => updateItem(index, 'unit_price', parseMoney(item.unit_price))}
+                              className="h-8 w-full min-w-0 text-right"
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-1">
+                            <Label className="text-xs text-gray-500">Discount %</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={item.discount}
+                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                              className="h-8 w-full min-w-0 text-right"
+                            />
+                          </div>
+                          {!taxExempt && (
+                            <div className="min-w-0 space-y-1">
+                              <Label className="text-xs text-gray-500">Tax %</Label>
+                              <Input
+                                type="number"
+                                value={item.tax_rate}
+                                onChange={(e) => updateItem(index, 'tax_rate', e.target.value)}
+                                className="h-8 w-full min-w-0 text-right"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between border-t pt-2">
+                          <span className="text-xs text-gray-500">Amount</span>
+                          <span className="font-medium tabular-nums">{formatCurrency(item.total)}</span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 border-t pt-2 min-[420px]:grid-cols-2">
+                          <div className="min-w-0 space-y-1">
+                            <Label className="text-xs text-gray-500">HSN Code</Label>
+                            <Input
+                              value={item.hsn_code}
+                              onChange={(e) => updateItem(index, 'hsn_code', e.target.value)}
+                              className="h-8 w-full min-w-0"
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-1">
+                            <Label className="text-xs text-gray-500">Batch No</Label>
+                            <Input
+                              value={item.batch_no}
+                              onChange={(e) => updateItem(index, 'batch_no', e.target.value)}
+                              placeholder={needsBatch ? 'Required' : 'Optional'}
+                              className={cn('h-8 w-full min-w-0', needsBatch && !item.batch_no && 'border-amber-500')}
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-1">
+                            <Label className="text-xs text-gray-500">Expiry Date</Label>
+                            <Input
+                              type="date"
+                              value={item.exp_date}
+                              onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
+                              className="h-8 w-full min-w-0"
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-1">
+                            <Label className="text-xs text-gray-500">Mfg Date</Label>
+                            <Input
+                              type="date"
+                              value={item.mfg_date}
+                              onChange={(e) => updateItem(index, 'mfg_date', e.target.value)}
+                              className="h-8 w-full min-w-0"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1420,20 +2096,34 @@ export default function CreatePurchaseInvoicePage() {
                 <CardTitle>Additional Charges & Discount</CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <Label>Additional Charges</Label>
-                  <Input type="number" min="0" step="0.01" value={additionalCharges} onChange={(e) => setAdditionalCharges(Number(e.target.value))} />
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={additionalCharges}
+                    onChange={(e) => setAdditionalCharges(Number(e.target.value))}
+                    className="w-full min-w-0"
+                  />
                 </div>
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <Label>Invoice Discount</Label>
-                  <Input type="number" min="0" step="0.01" value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Number(e.target.value))} />
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={invoiceDiscount}
+                    onChange={(e) => setInvoiceDiscount(Number(e.target.value))}
+                    className="w-full min-w-0"
+                  />
                 </div>
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <Label>Auto Round Off</Label>
                   <select
                     value={autoRoundOff ? 'true' : 'false'}
                     onChange={(e) => setAutoRoundOff(e.target.value === 'true')}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
                   >
                     <option value="true">Yes</option>
                     <option value="false">No</option>
@@ -1445,7 +2135,7 @@ export default function CreatePurchaseInvoicePage() {
                 <CardTitle>Payment Details</CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <Label>Amount Paid</Label>
                   <Input
                     type="number"
@@ -1456,45 +2146,38 @@ export default function CreatePurchaseInvoicePage() {
                       setAmountPaidEdited(true)
                       setAmountPaid(Number(e.target.value))
                     }}
+                    className="w-full min-w-0"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <Label>Paid From</Label>
                   <select
                     value={paidFrom}
                     onChange={(e) => setPaidFrom(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
                   >
-                    <option value={CASH_IN_HAND_ACCOUNT}>Cash in-hand</option>
-                    {bankAccounts.filter((a) => a.is_active).map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.account_name}
-                        {account.bank_name ? ` (${account.bank_name})` : ''}
-                        {' — '}
-                        {formatCurrency(account.balance)}
+                    {PAYMENT_METHODS.map((method) => (
+                      <option key={method.value} value={method.value}>
+                        {method.label}
                       </option>
                     ))}
                   </select>
                   <p className="text-xs text-muted-foreground">
                     {effectiveAmountPaid > 0
-                      ? `${formatCurrency(effectiveAmountPaid)} will be deducted from ${
-                          paidFrom === CASH_IN_HAND_ACCOUNT
-                            ? 'Cash in-hand'
-                            : bankAccounts.find((a) => a.id === paidFrom)?.account_name || 'the selected account'
-                        }.`
-                      : 'Select the account to pay from when recording a payment.'}
+                      ? `${formatCurrency(effectiveAmountPaid)} will be deducted from ${getDepositHint(paidFrom, bankAccounts)} (configure under Cash & Bank → Payment method accounts).`
+                      : 'Select the payment method to pay from when recording a payment.'}
                   </p>
                 </div>
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <Label>Balance</Label>
-                  <Input value={formatCurrency(balance)} readOnly className="bg-gray-50" />
+                  <Input value={formatCurrency(balance)} readOnly className="w-full min-w-0 bg-gray-50" />
                 </div>
-                <div className="space-y-2">
+                <div className="min-w-0 space-y-2">
                   <Label>Mark as Fully Paid</Label>
                   <Button
                     type="button"
                     variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
-                    className="w-full"
+                    className="h-8 w-full"
                     onClick={() => {
                       setAmountPaidEdited(false)
                       setAmountPaid(totalAmount)
@@ -1626,10 +2309,10 @@ export default function CreatePurchaseInvoicePage() {
               <span className="sm:hidden">Draft</span>
               <span className="hidden sm:inline">Save as Draft</span>
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || creatingProducts}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              <span className="sm:hidden">Save</span>
-              <span className="hidden sm:inline">Save Invoice</span>
+              <span className="sm:hidden">{creatingProducts ? 'Creating…' : 'Save'}</span>
+              <span className="hidden sm:inline">{creatingProducts ? 'Creating products…' : 'Save Invoice'}</span>
             </Button>
           </PageActionBar>
         </form>
@@ -1734,8 +2417,19 @@ export default function CreatePurchaseInvoicePage() {
                       ))}
                       {filteredProducts.length === 0 && (
                         <tr>
-                          <td colSpan={8} className="py-8 text-center text-gray-500">
-                            No products found
+                          <td colSpan={8} className="py-8 text-center">
+                            {productSearch.trim() ? (
+                              <button
+                                type="button"
+                                onClick={() => addCustomItemToInvoice(productSearch)}
+                                className="inline-flex items-center gap-2 rounded-md border border-dashed border-blue-400 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                              >
+                                <Plus className="h-4 w-4" />
+                                Add as custom item: '{productSearch.trim()}'
+                              </button>
+                            ) : (
+                              <span className="text-gray-500">No products found</span>
+                            )}
                           </td>
                         </tr>
                       )}
@@ -2013,6 +2707,12 @@ export default function CreatePurchaseInvoicePage() {
             </Card>
           </div>
         )}
+
+        <datalist id="product-categories">
+          {categories.map((cat) => (
+            <option key={cat} value={cat} />
+          ))}
+        </datalist>
       </div>
     </DashboardLayout>
   )

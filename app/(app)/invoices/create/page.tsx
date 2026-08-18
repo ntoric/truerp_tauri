@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useRef, useMemo, Fragment } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn, formatCurrency } from '@/lib/utils'
 import { limitDecimalInput, parseItemNumber, parseMoney, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
-import { Plus, Trash2, Loader2, Save, Search, X, Edit2, Package, FileText, Gift, Scale, Printer } from 'lucide-react'
+import { Plus, Trash2, Loader2, Save, Search, X, Edit2, Package, FileText, Gift, Scale, Printer, Copy, ChevronRight } from 'lucide-react'
 import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { fetchPrintSettings, printDocument } from '@/lib/printDocument'
@@ -23,6 +23,7 @@ import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
+import ItemsEmptyState, { type PastedItemRow } from '@/components/ItemsEmptyState'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { computeLoyaltyDiscount, estimatePointsEarned } from '@/lib/loyalty'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
@@ -151,6 +152,7 @@ export default function CreateInvoicePage() {
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set())
   const [productAddQuantities, setProductAddQuantities] = useState<Record<string, string>>({})
   const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set())
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
   const [showCreateProduct, setShowCreateProduct] = useState(false)
   const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
   const [barcodeScannerEnabled, setBarcodeScannerEnabled] = useState(false)
@@ -198,6 +200,26 @@ export default function CreateInvoicePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const prevLoyaltyDiscountRef = useRef(0)
   const [isDrawing, setIsDrawing] = useState(false)
+  const [focusTarget, setFocusTarget] = useState<{ lineIndex: number; field: 'description' | 'quantity' | 'unit_price' } | null>(null)
+  const lineInputRefs = useRef<Record<string, HTMLInputElement>>({})
+
+  const setLineInputRef = (index: number, field: string) => (el: HTMLInputElement | null) => {
+    const key = `${index}-${field}`
+    if (el) lineInputRefs.current[key] = el
+    else delete lineInputRefs.current[key]
+  }
+
+  useEffect(() => {
+    if (focusTarget) {
+      const key = `${focusTarget.lineIndex}-${focusTarget.field}`
+      const el = lineInputRefs.current[key]
+      if (el) {
+        el.focus()
+        el.select()
+      }
+      setFocusTarget(null)
+    }
+  }, [focusTarget, items])
 
   const partyCategories = useMemo(
     () => Array.from(new Set(parties.map(p => p.category).filter(Boolean))) as string[],
@@ -411,24 +433,54 @@ export default function CreateInvoicePage() {
       setSelectedProductIds(new Set())
       setProductAddQuantities({})
     }
+    setFocusTarget({ lineIndex: startIndex, field: 'quantity' })
   }
 
   const addProductToInvoice = (product: Product, overrideQuantity?: number) => {
     const item = buildInvoiceItemFromProduct(product, overrideQuantity)
     if (!item) return
 
-    let lineIndex = 0
-    setItems((prev) => {
-      lineIndex = prev.length
-      return [...prev, applyTaxToInvoiceItem(item, isInterState)]
-    })
+    const newLineIndex = items.length
+    setItems((prev) => [...prev, applyTaxToInvoiceItem(item, isInterState)])
     if (product.enable_batching) {
-      applyBatchDefaults(product, lineIndex)
+      applyBatchDefaults(product, newLineIndex)
     }
     setShowProductModal(false)
     setProductSearch('')
     setSelectedProductIds(new Set())
     setProductAddQuantities({})
+    setFocusTarget({ lineIndex: newLineIndex, field: 'quantity' })
+  }
+
+  const addCustomItemToInvoice = (description: string) => {
+    const trimmed = description.trim()
+    if (!trimmed) return
+    const item = applyTaxToInvoiceItem({
+      product_id: '',
+      description: trimmed,
+      hsn_code: '',
+      quantity: 1,
+      unit_price: 0,
+      discount: 0,
+      tax_rate: 0,
+      unit: 'PCS',
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      total: 0,
+      sale_price_with_tax: false,
+      batch_no: '',
+      exp_date: '',
+      enable_batching: false,
+    }, isInterState)
+    const newLineIndex = items.length
+    setItems((prev) => [...prev, item])
+    setShowProductModal(false)
+    setProductSearch('')
+    setSelectedProductIds(new Set())
+    setProductAddQuantities({})
+    notifySuccess(`Added custom item: ${trimmed}`)
+    setFocusTarget({ lineIndex: newLineIndex, field: 'quantity' })
   }
 
   /** Explicit modal qty, or undefined so scale auto-apply can still run. */
@@ -674,7 +726,34 @@ export default function CreateInvoicePage() {
   }
 
   const addItem = () => {
+    const newIndex = items.length
     setItems([...items, { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false, batch_no: '', exp_date: '', enable_batching: false }])
+    setFocusTarget({ lineIndex: newIndex, field: 'description' })
+  }
+
+  const handlePasteFromExcel = (rows: PastedItemRow[]) => {
+    const newItems = rows.map((row) =>
+      applyTaxToInvoiceItem({
+        product_id: '',
+        description: row.description,
+        hsn_code: row.hsnCode,
+        quantity: parseItemNumber(row.quantity, 1),
+        unit_price: parseMoney(row.unitPrice),
+        discount: 0,
+        tax_rate: parseItemNumber(row.taxRate, 18),
+        unit: 'PCS',
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        total: 0,
+        sale_price_with_tax: false,
+        batch_no: '',
+        exp_date: '',
+        enable_batching: false,
+      }, isInterState)
+    )
+    setItems((prev) => [...prev, ...newItems])
+    notifySuccess(`Added ${newItems.length} item(s) from clipboard`)
   }
 
   const removeItem = (index: number) => {
@@ -689,6 +768,21 @@ export default function CreateInvoicePage() {
         return next
       })
     }
+  }
+
+  const duplicateItem = (index: number) => {
+    const newItem = { ...items[index] }
+    const newItems = [...items]
+    newItems.splice(index + 1, 0, newItem)
+    setItems(newItems)
+    setSelectedLineIndices((prev) => {
+      const next = new Set<number>()
+      prev.forEach((i) => {
+        if (i <= index) next.add(i)
+        else next.add(i + 1)
+      })
+      return next
+    })
   }
 
   const toggleLineItemSelection = (index: number) => {
@@ -1296,170 +1390,403 @@ export default function CreateInvoicePage() {
                   </Button>
                 </div>
               )}
-              <div className="table-scroll">
-                <table className="w-full table-fixed text-sm">
-                  <colgroup>
-                    <col className="w-[4%]" />
-                    <col className="w-[24%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[10%]" />
-                    <col className="w-[10%]" />
-                    <col className="w-[4%]" />
-                  </colgroup>
+              <div className="hidden md:block table-scroll">
+                <table className="w-full text-sm min-w-[44rem]">
                   <thead>
                     <tr className="border-b text-left text-gray-500">
-                      <th className="pb-2 pr-2">
+                      <th className="w-8 min-w-8 whitespace-nowrap pb-2 pr-0"></th>
+                      <th className="w-10 min-w-10 whitespace-nowrap pb-2 pr-2">
                         <Checkbox
                           checked={items.length > 0 && selectedLineIndices.size === items.length}
                           onCheckedChange={toggleSelectAllLineItems}
                           aria-label="Select all line items"
                         />
                       </th>
-                      <th className="pb-2 pr-2 font-medium">Item</th>
-                      <th className="pb-2 px-1 font-medium">HSN</th>
-                      <th className="pb-2 px-1 font-medium text-right">Quantity</th>
-                      <th className="pb-2 px-1 font-medium text-right">Unit Price</th>
-                      <th className="pb-2 px-1 font-medium text-right">Discount %</th>
-                      <th className="pb-2 px-1 font-medium text-right">Tax %</th>
-                      <th className="pb-2 px-1 font-medium text-right">Amount</th>
-                      <th className="pb-2 pl-1 font-medium"></th>
+                      <th className="min-w-[12rem] whitespace-nowrap pb-2 pr-2 font-medium">Item</th>
+                      <th className="min-w-[6rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Quantity</th>
+                      <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Unit Price</th>
+                      <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
+                      <th className="min-w-[5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Tax %</th>
+                      <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Amount</th>
+                      <th className="w-12 min-w-12 pb-2 pl-1 font-medium"></th>
                     </tr>
                   </thead>
+                  {items.length === 0 ? (
+                    <ItemsEmptyState
+                      onAddProduct={openProductModal}
+                      onScanBarcode={() => setBarcodeScannerEnabled(true)}
+                      onPasteFromExcel={handlePasteFromExcel}
+                    />
+                  ) : (
                   <tbody>
-                    {items.map((item, index) => (
-                      <tr key={index} className="border-b">
-                        <td className="py-2 pr-2">
-                          <Checkbox
-                            checked={selectedLineIndices.has(index)}
-                            onCheckedChange={() => toggleLineItemSelection(index)}
-                            aria-label={`Select line item ${index + 1}`}
-                          />
-                        </td>
-                        <td className="py-2 pr-2">
-                          <Input
-                            value={item.description}
-                            onChange={(e) => updateItem(index, 'description', e.target.value)}
-                            className="h-8 w-full"
-                            required
-                          />
-                          {(item.enable_batching ||
-                            products.find((p) => p.id === item.product_id)?.enable_batching) && (
-                            <select
-                              value={item.batch_no}
-                              onChange={(e) => {
-                                const batches = lineBatches[index] || []
-                                const selected = batches.find((b) => b.batch_no === e.target.value)
-                                const next = [...items]
-                                next[index] = {
-                                  ...next[index],
-                                  batch_no: e.target.value,
-                                  exp_date: selected?.exp_date
-                                    ? String(selected.exp_date).slice(0, 10)
-                                    : '',
-                                }
-                                setItems(next)
-                              }}
-                              onFocus={() => {
-                                if (item.product_id && !lineBatches[index]) {
-                                  void fetchProductBatches(item.product_id).then((batches) => {
-                                    setLineBatches((lb) => ({ ...lb, [index]: batches }))
-                                  })
-                                }
-                              }}
-                              className="mt-1 flex h-7 w-full rounded-md border border-input bg-background px-2 text-xs"
+                    {items.map((item, index) => {
+                      const needsBatch =
+                        Boolean(item.enable_batching) ||
+                        Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
+                      const isExpanded = expandedRows.has(index)
+                      const toggleExpand = () => {
+                        setExpandedRows((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(index)) next.delete(index)
+                          else next.add(index)
+                          return next
+                        })
+                      }
+                      const detailColSpan = 9
+                      return (
+                        <Fragment key={index}>
+                        <tr className="border-b">
+                          <td className="py-2 pr-0">
+                            <button
+                              type="button"
+                              onClick={toggleExpand}
+                              className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:text-gray-600"
+                              aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
                             >
-                              <option value="">Select batch (FEFO)</option>
-                              {(lineBatches[index] || []).map((b) => (
-                                <option key={`${b.id}-${b.batch_no}`} value={b.batch_no}>
-                                  {formatBatchLabel(b)}
-                                </option>
-                              ))}
-                              {item.batch_no &&
-                                !(lineBatches[index] || []).some((b) => b.batch_no === item.batch_no) && (
-                                  <option value={item.batch_no}>{item.batch_no}</option>
-                                )}
-                            </select>
-                          )}
-                        </td>
-                        <td className="py-2 px-1">
-                          <Input
-                            value={item.hsn_code}
-                            onChange={(e) => updateItem(index, 'hsn_code', e.target.value)}
-                            className="h-8 w-full"
-                          />
-                        </td>
-                        <td className="py-2 px-1">
-                          <div className="flex items-center justify-end gap-1">
+                              <ChevronRight className={cn('h-4 w-4 transition-transform', isExpanded && 'rotate-90')} />
+                            </button>
+                          </td>
+                          <td className="py-2 pr-2">
+                            <Checkbox
+                              checked={selectedLineIndices.has(index)}
+                              onCheckedChange={() => toggleLineItemSelection(index)}
+                              aria-label={`Select line item ${index + 1}`}
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
                             <Input
+                              ref={setLineInputRef(index, 'description')}
+                              value={item.description}
+                              onChange={(e) => updateItem(index, 'description', e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  setFocusTarget({ lineIndex: index, field: 'quantity' })
+                                }
+                              }}
+                              className="h-8 w-full min-w-0"
+                              required
+                            />
+                          </td>
+                          <td className="px-1 py-2">
+                            <div className="flex items-center justify-end gap-1">
+                              <Input
+                                ref={setLineInputRef(index, 'quantity')}
+                                type="number"
+                                min="0"
+                                step="0.001"
+                                value={item.quantity}
+                                onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                                onFocus={() => setActiveWeightLineIndex(index)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    setFocusTarget({ lineIndex: index, field: 'unit_price' })
+                                  }
+                                }}
+                                className="h-8 w-full min-w-0 text-right"
+                                required
+                              />
+                              {isWeightBasedUnit(item.unit) && scaleSettings.enabled && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 w-8 shrink-0 p-0"
+                                  title="Apply scale weight"
+                                  onClick={() => applyScaleWeightToInvoiceLine(index, item.unit)}
+                                >
+                                  <Scale className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-1 py-2">
+                            <Input
+                              ref={setLineInputRef(index, 'unit_price')}
                               type="number"
                               min="0"
-                              step="0.001"
-                              value={item.quantity}
-                              onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                              onFocus={() => setActiveWeightLineIndex(index)}
+                              step="0.01"
+                              inputMode="decimal"
+                              value={item.unit_price}
+                              onChange={(e) => updateItem(index, 'unit_price', limitDecimalInput(e.target.value, 2))}
+                              onBlur={() => updateItem(index, 'unit_price', parseMoney(item.unit_price))}
                               className="h-8 w-full min-w-0 text-right"
                               required
                             />
-                            {isWeightBasedUnit(item.unit) && scaleSettings.enabled && (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 w-8 shrink-0 p-0"
-                                title="Apply scale weight"
-                                onClick={() => applyScaleWeightToInvoiceLine(index, item.unit)}
-                              >
-                                <Scale className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-2 px-1">
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            inputMode="decimal"
-                            value={item.unit_price}
-                            onChange={(e) => updateItem(index, 'unit_price', limitDecimalInput(e.target.value, 2))}
-                            onBlur={() => updateItem(index, 'unit_price', parseMoney(item.unit_price))}
-                            className="h-8 w-full text-right"
-                            required
-                          />
-                        </td>
-                        <td className="py-2 px-1">
-                          <Input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={item.discount}
-                            onChange={(e) => updateItem(index, 'discount', e.target.value)}
-                            className="h-8 w-full text-right"
-                          />
-                        </td>
-                        <td className="py-2 px-1">
-                          <Input
-                            type="number"
-                            value={item.tax_rate}
-                            onChange={(e) => updateItem(index, 'tax_rate', e.target.value)}
-                            className="h-8 w-full text-right"
-                            required
-                          />
-                        </td>
-                        <td className="py-2 px-1 text-right font-medium">{formatCurrency(item.total)}</td>
-                        <td className="py-2 pl-1">
-                          <button type="button" onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-1 py-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={item.discount}
+                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                              className="h-8 w-full min-w-0 text-right"
+                            />
+                          </td>
+                          <td className="px-1 py-2">
+                            <Input
+                              type="number"
+                              value={item.tax_rate}
+                              onChange={(e) => updateItem(index, 'tax_rate', e.target.value)}
+                              className="h-8 w-full min-w-0 text-right"
+                              required
+                            />
+                          </td>
+                          <td className="whitespace-nowrap px-1 py-2 text-right font-medium tabular-nums">
+                            {formatCurrency(item.total)}
+                          </td>
+                          <td className="py-2 pl-1">
+                            <div className="flex items-center gap-1">
+                              <button type="button" onClick={() => duplicateItem(index)} className="text-gray-500 hover:text-gray-700" title="Duplicate line item">
+                                <Copy className="h-4 w-4" />
+                              </button>
+                              <button type="button" onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="border-b bg-gray-50/50">
+                            <td colSpan={detailColSpan} className="px-4 pb-3 pt-1">
+                              <div className="flex flex-wrap items-end gap-4">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-gray-500">HSN Code</Label>
+                                  <Input
+                                    value={item.hsn_code}
+                                    onChange={(e) => updateItem(index, 'hsn_code', e.target.value)}
+                                    className="h-8 w-32"
+                                  />
+                                </div>
+                                {needsBatch && (
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-gray-500">Batch (FEFO)</Label>
+                                    <select
+                                      value={item.batch_no}
+                                      onChange={(e) => {
+                                        const batches = lineBatches[index] || []
+                                        const selected = batches.find((b) => b.batch_no === e.target.value)
+                                        const next = [...items]
+                                        next[index] = {
+                                          ...next[index],
+                                          batch_no: e.target.value,
+                                          exp_date: selected?.exp_date
+                                            ? String(selected.exp_date).slice(0, 10)
+                                            : '',
+                                        }
+                                        setItems(next)
+                                      }}
+                                      onFocus={() => {
+                                        if (item.product_id && !lineBatches[index]) {
+                                          void fetchProductBatches(item.product_id).then((batches) => {
+                                            setLineBatches((lb) => ({ ...lb, [index]: batches }))
+                                          })
+                                        }
+                                      }}
+                                      className="flex h-8 w-40 rounded-md border border-input bg-background px-2 text-xs"
+                                    >
+                                      <option value="">Select batch</option>
+                                      {(lineBatches[index] || []).map((b) => (
+                                        <option key={`${b.id}-${b.batch_no}`} value={b.batch_no}>
+                                          {formatBatchLabel(b)}
+                                        </option>
+                                      ))}
+                                      {item.batch_no &&
+                                        !(lineBatches[index] || []).some((b) => b.batch_no === item.batch_no) && (
+                                          <option value={item.batch_no}>{item.batch_no}</option>
+                                        )}
+                                    </select>
+                                  </div>
+                                )}
+                                {needsBatch && (
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-gray-500">Expiry Date</Label>
+                                    <Input
+                                      type="date"
+                                      value={item.exp_date}
+                                      onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
+                                      className="h-8 w-40"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </Fragment>
+                      )
+                    })}
                   </tbody>
+                  )}
                 </table>
               </div>
+              {/* Mobile card layout */}
+              {items.length > 0 && (
+                <div className="block md:hidden space-y-3">
+                  {items.map((item, index) => {
+                    const needsBatch =
+                      Boolean(item.enable_batching) ||
+                      Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
+                    return (
+                      <div key={index} className="rounded-lg border p-3 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <Checkbox
+                              checked={selectedLineIndices.has(index)}
+                              onCheckedChange={() => toggleLineItemSelection(index)}
+                              aria-label={`Select line item ${index + 1}`}
+                            />
+                            <Input
+                              ref={setLineInputRef(index, 'description')}
+                              value={item.description}
+                              onChange={(e) => updateItem(index, 'description', e.target.value)}
+                              className="h-8 w-full min-w-0"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button type="button" onClick={() => duplicateItem(index)} className="text-gray-500 hover:text-gray-700" title="Duplicate line item">
+                              <Copy className="h-4 w-4" />
+                            </button>
+                            <button type="button" onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-gray-500">Quantity</Label>
+                            <div className="flex items-center gap-1">
+                              <Input
+                                ref={setLineInputRef(index, 'quantity')}
+                                type="number"
+                                min="0"
+                                step="0.001"
+                                value={item.quantity}
+                                onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                                onFocus={() => setActiveWeightLineIndex(index)}
+                                className="h-8 w-full text-right"
+                              />
+                              {isWeightBasedUnit(item.unit) && scaleSettings.enabled && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 w-8 shrink-0 p-0"
+                                  title="Apply scale weight"
+                                  onClick={() => applyScaleWeightToInvoiceLine(index, item.unit)}
+                                >
+                                  <Scale className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-gray-500">Unit Price</Label>
+                            <Input
+                              ref={setLineInputRef(index, 'unit_price')}
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              inputMode="decimal"
+                              value={item.unit_price}
+                              onChange={(e) => updateItem(index, 'unit_price', limitDecimalInput(e.target.value, 2))}
+                              onBlur={() => updateItem(index, 'unit_price', parseMoney(item.unit_price))}
+                              className="h-8 w-full text-right"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-gray-500">Discount %</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={item.discount}
+                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                              className="h-8 w-full text-right"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-gray-500">Tax %</Label>
+                            <Input
+                              type="number"
+                              value={item.tax_rate}
+                              onChange={(e) => updateItem(index, 'tax_rate', e.target.value)}
+                              className="h-8 w-full text-right"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between border-t pt-2">
+                          <span className="text-xs text-gray-500">Amount</span>
+                          <span className="font-medium tabular-nums">{formatCurrency(item.total)}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 border-t pt-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-gray-500">HSN Code</Label>
+                            <Input
+                              value={item.hsn_code}
+                              onChange={(e) => updateItem(index, 'hsn_code', e.target.value)}
+                              className="h-8 w-full"
+                            />
+                          </div>
+                          {needsBatch && (
+                            <>
+                              <div className="space-y-1">
+                                <Label className="text-xs text-gray-500">Batch (FEFO)</Label>
+                                <select
+                                  value={item.batch_no}
+                                  onChange={(e) => {
+                                    const batches = lineBatches[index] || []
+                                    const selected = batches.find((b) => b.batch_no === e.target.value)
+                                    const next = [...items]
+                                    next[index] = {
+                                      ...next[index],
+                                      batch_no: e.target.value,
+                                      exp_date: selected?.exp_date
+                                        ? String(selected.exp_date).slice(0, 10)
+                                        : '',
+                                    }
+                                    setItems(next)
+                                  }}
+                                  onFocus={() => {
+                                    if (item.product_id && !lineBatches[index]) {
+                                      void fetchProductBatches(item.product_id).then((batches) => {
+                                        setLineBatches((lb) => ({ ...lb, [index]: batches }))
+                                      })
+                                    }
+                                  }}
+                                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                                >
+                                  <option value="">Select batch</option>
+                                  {(lineBatches[index] || []).map((b) => (
+                                    <option key={`${b.id}-${b.batch_no}`} value={b.batch_no}>
+                                      {formatBatchLabel(b)}
+                                    </option>
+                                  ))}
+                                  {item.batch_no &&
+                                    !(lineBatches[index] || []).some((b) => b.batch_no === item.batch_no) && (
+                                      <option value={item.batch_no}>{item.batch_no}</option>
+                                    )}
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs text-gray-500">Expiry Date</Label>
+                                <Input
+                                  type="date"
+                                  value={item.exp_date}
+                                  onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
+                                  className="h-8 w-full"
+                                />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1809,8 +2136,19 @@ export default function CreateInvoicePage() {
                       ))}
                       {filteredProducts.length === 0 && (
                         <tr>
-                          <td colSpan={8} className="py-8 text-center text-gray-500">
-                            No products found
+                          <td colSpan={8} className="py-8 text-center">
+                            {productSearch.trim() ? (
+                              <button
+                                type="button"
+                                onClick={() => addCustomItemToInvoice(productSearch)}
+                                className="inline-flex items-center gap-2 rounded-md border border-dashed border-blue-400 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                              >
+                                <Plus className="h-4 w-4" />
+                                Add as custom item: '{productSearch.trim()}'
+                              </button>
+                            ) : (
+                              <span className="text-gray-500">No products found</span>
+                            )}
                           </td>
                         </tr>
                       )}
