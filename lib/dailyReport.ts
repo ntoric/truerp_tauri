@@ -14,6 +14,24 @@ export interface PaymentMethodTotal {
   out: DailyReportMetric
 }
 
+export interface ExpenseLine {
+  id: string
+  item_id?: string
+  expense_number: string
+  category: string
+  description: string
+  item_description: string
+  vendor: string
+  quantity: number
+  unit_price: number
+  amount: number
+  payment_mode: string
+  date: string
+  with_gst: boolean
+  tax_total: number
+  sub_total: number
+}
+
 export interface DailyReport {
   date: string
   business_name: string
@@ -26,6 +44,7 @@ export interface DailyReport {
   payments_out: DailyReportMetric
   sales_returns: DailyReportMetric
   purchase_returns: DailyReportMetric
+  expense_lines?: ExpenseLine[]
   payments_by_method?: PaymentMethodTotal[]
   accounts_payable: DailyReportMetric
   accounts_payable_total: number
@@ -150,6 +169,21 @@ function appendPaymentMethodSection(lines: string[], report: DailyReport) {
   }
 }
 
+function appendExpenseLinesSection(lines: string[], report: DailyReport) {
+  const expenses = report.expense_lines ?? []
+  if (expenses.length === 0) return
+  lines.push('', 'Expenses (per item)', '--------')
+  for (const e of expenses) {
+    const vendor = e.vendor || '-'
+    const mode = e.payment_mode || '-'
+    const item = e.item_description || e.description || '-'
+    lines.push(
+      `${e.expense_number} · ${e.date} · ${e.category || '-'} · ${item} · qty ${e.quantity} @ ${formatCurrency(e.unit_price)} · ${vendor} · ${mode} · ${formatCurrency(e.amount)}`
+    )
+  }
+  lines.push(`Total expenses: ${formatCurrency(report.expenses.total_amount)}`)
+}
+
 export function buildDailyReportShareText(report: DailyReport, heading = 'Daily Business Report'): string {
   const title = report.business_name
     ? `${heading} — ${report.business_name}`
@@ -173,6 +207,7 @@ export function buildDailyReportShareText(report: DailyReport, heading = 'Daily 
   }
 
   appendPaymentMethodSection(lines, report)
+  appendExpenseLinesSection(lines, report)
 
   lines.push(
     '',
@@ -214,6 +249,7 @@ export function buildPeriodReportShareText(report: PeriodReport): string {
   }
 
   appendPaymentMethodSection(lines, report)
+  appendExpenseLinesSection(lines, report)
 
   lines.push(
     '',

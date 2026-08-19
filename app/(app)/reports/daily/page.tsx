@@ -32,6 +32,7 @@ import {
   type PeriodicReportPeriod,
   type PeriodReport,
   type PaymentMethodTotal,
+  type ExpenseLine,
 } from '@/lib/dailyReport'
 import { downloadBlob } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -54,6 +55,7 @@ import {
   CreditCard,
   Landmark,
   ScrollText,
+  Receipt,
   type LucideIcon,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -224,6 +226,103 @@ function PaymentsByMethodTable({ report }: { report: DailyReport }) {
                   {formatCurrency(report.payments_out.total_amount)}
                 </p>
                 <p className="text-xs text-blue-800">{report.payments_out.count} txn</p>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function ExpensesTable({ report }: { report: DailyReport }) {
+  const expenses = report.expense_lines ?? []
+  if (expenses.length === 0) return null
+
+  const methodLabel = (mode: string): string => {
+    if (!mode) return '-'
+    const match = (report.payments_by_method ?? []).find((m) => m.method === mode)
+    if (match) return match.label
+    return mode
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+
+  const distinctExpenses = new Set(expenses.map((e) => e.expense_number)).size
+
+  return (
+    <div className="mt-6 overflow-hidden rounded-lg border border-amber-200">
+      <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3">
+        <Receipt className="h-4 w-4 text-amber-700" />
+        <h3 className="text-sm font-semibold text-amber-900">Expenses</h3>
+        <span className="text-xs text-amber-700">
+          {distinctExpenses} {distinctExpenses === 1 ? 'expense' : 'expenses'} ·{' '}
+          {expenses.length} {expenses.length === 1 ? 'item' : 'items'} ·{' '}
+          {formatCurrency(report.expenses.total_amount)}
+        </span>
+      </div>
+      <div className="table-scroll">
+        <table className="w-full text-sm">
+          <thead className="bg-amber-50/60 text-left text-amber-900">
+            <tr>
+              <th className="px-4 py-3 font-medium">Number</th>
+              <th className="px-4 py-3 font-medium">Date</th>
+              <th className="px-4 py-3 font-medium">Category</th>
+              <th className="px-4 py-3 font-medium">Item</th>
+              <th className="px-4 py-3 font-medium text-right">Qty</th>
+              <th className="px-4 py-3 font-medium text-right">Unit price</th>
+              <th className="px-4 py-3 font-medium text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {expenses.map((line: ExpenseLine, idx: number) => {
+              const isFirstOfExpense =
+                idx === 0 || expenses[idx - 1].expense_number !== line.expense_number
+              const itemDesc = line.item_description || line.description || '-'
+              return (
+                <tr
+                  key={(line.item_id ?? line.id) ?? idx}
+                  className={cn(
+                    'border-t border-amber-100',
+                    isFirstOfExpense && 'bg-amber-50/40'
+                  )}
+                >
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    {isFirstOfExpense ? line.expense_number || '-' : ''}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {isFirstOfExpense ? formatDate(line.date + 'T00:00:00') : ''}
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">
+                    {isFirstOfExpense ? line.category || '-' : ''}
+                  </td>
+                  <td className="px-4 py-3 text-gray-900">
+                    <span className="flex flex-col">
+                      <span>{itemDesc}</span>
+                      {isFirstOfExpense && (
+                        <span className="text-xs text-gray-500">
+                          {line.vendor || '-'} · {methodLabel(line.payment_mode)}
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right text-gray-700">{line.quantity}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">
+                    {formatCurrency(line.unit_price)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-amber-800">
+                    {formatCurrency(line.amount)}
+                  </td>
+                </tr>
+              )
+            })}
+            <tr className="border-t border-amber-200 bg-amber-50">
+              <td colSpan={6} className="px-4 py-3 font-semibold text-amber-900">
+                Total ({distinctExpenses} {distinctExpenses === 1 ? 'expense' : 'expenses'},{' '}
+                {expenses.length} {expenses.length === 1 ? 'item' : 'items'})
+              </td>
+              <td className="px-4 py-3 text-right font-semibold text-amber-900">
+                {formatCurrency(report.expenses.total_amount)}
               </td>
             </tr>
           </tbody>
@@ -453,6 +552,8 @@ function ReportSummaryBody({
       </div>
 
       <PaymentsByMethodTable report={report} />
+
+      <ExpensesTable report={report} />
 
       <p className="mt-4 text-xs text-gray-500">
         Period profit = sales − purchases − expenses ± returns/notes (accrual). Product profit =
