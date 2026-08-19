@@ -227,6 +227,29 @@ export default function CreatePurchaseInvoicePage() {
     fetchData()
   }, [])
 
+  // Listen for bottom menubar action buttons (purchase invoice create page only)
+  useEffect(() => {
+    const handleAddItem = () => openProductModal()
+    const handleAddRow = () => addItem()
+    const handleScanBarcode = () => barcodeScannerRef.current?.focus()
+    const handleRemoveSelected = () => removeSelectedLineItems()
+    window.addEventListener('pi-action:add-item', handleAddItem)
+    window.addEventListener('pi-action:add-row', handleAddRow)
+    window.addEventListener('pi-action:scan-barcode', handleScanBarcode)
+    window.addEventListener('pi-action:remove-selected', handleRemoveSelected)
+    return () => {
+      window.removeEventListener('pi-action:add-item', handleAddItem)
+      window.removeEventListener('pi-action:add-row', handleAddRow)
+      window.removeEventListener('pi-action:scan-barcode', handleScanBarcode)
+      window.removeEventListener('pi-action:remove-selected', handleRemoveSelected)
+    }
+  }, [items, selectedLineIndices])
+
+  // Notify bottom menubar of selection changes
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('pi-action:selection-changed', { detail: selectedLineIndices.size }))
+  }, [selectedLineIndices])
+
   useEffect(() => {
     if (!vendorId) {
       setRecentVendorProducts([])
@@ -1008,6 +1031,10 @@ export default function CreatePurchaseInvoicePage() {
 
   const addItem = () => {
     setItems([...items, { product_id: '', item_code: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 0, mrp: 0, sale_price: 0, unit: 'PCS', tax_amount: 0, total: 0, purchase_price_with_tax: false, batch_no: '', mfg_date: '', exp_date: '', enable_batching: false }])
+    requestAnimationFrame(() => {
+      const row = document.querySelector(`[data-pi-row="${items.length}"]`)
+      row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
   }
 
   const handlePasteFromExcel = (rows: PastedItemRow[]) => {
@@ -1777,8 +1804,6 @@ export default function CreatePurchaseInvoicePage() {
                     <ItemsEmptyState
                       onAddProduct={openProductModal}
                       onScanBarcode={() => barcodeScannerRef.current?.focus()}
-                      onScanInvoiceAI={() => router.push('/purchase-invoices/ai-parse')}
-                      onPasteFromExcel={handlePasteFromExcel}
                     />
                   ) : (
                   <tbody>
@@ -1800,7 +1825,7 @@ export default function CreatePurchaseInvoicePage() {
 
                       if (isNewProduct) {
                         return (
-                          <tr key={index} className="border-b">
+                          <tr key={index} className="border-b" data-pi-row={index}>
                             <td colSpan={detailColSpan} className="px-1 py-2">
                               {renderNewPurchaseItemCard(index, `new-item-${index}`)}
                             </td>
@@ -1810,7 +1835,7 @@ export default function CreatePurchaseInvoicePage() {
 
                       return (
                         <Fragment key={index}>
-                        <tr className="border-b">
+                        <tr className="border-b" data-pi-row={index}>
                           <td className="py-2 pr-0">
                             <button
                               type="button"
@@ -1953,8 +1978,6 @@ export default function CreatePurchaseInvoicePage() {
                     variant="block"
                     onAddProduct={openProductModal}
                     onScanBarcode={() => barcodeScannerRef.current?.focus()}
-                    onScanInvoiceAI={() => router.push('/purchase-invoices/ai-parse')}
-                    onPasteFromExcel={handlePasteFromExcel}
                   />
                 ) : (
                   items.map((item, index) => {
@@ -1963,13 +1986,13 @@ export default function CreatePurchaseInvoicePage() {
                       Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
                     if (newProductRows.has(index)) {
                       return (
-                        <div key={index} className="min-w-0">
+                        <div key={index} className="min-w-0" data-pi-row={index}>
                           {renderNewPurchaseItemCard(index, `m-new-item-${index}`)}
                         </div>
                       )
                     }
                     return (
-                      <div key={index} className="min-w-0 space-y-3 rounded-lg border p-3">
+                      <div key={index} className="min-w-0 space-y-3 rounded-lg border p-3" data-pi-row={index}>
                         <div className="flex min-w-0 items-start gap-2">
                           <Checkbox
                             checked={selectedLineIndices.has(index)}

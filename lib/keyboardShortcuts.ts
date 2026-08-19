@@ -1,6 +1,6 @@
 export type ShortcutKey = string | string[]
 
-export type ShortcutSection = 'general' | 'navigate' | 'create' | 'pos'
+export type ShortcutSection = 'general' | 'navigate' | 'create' | 'pos' | 'purchase-invoice'
 
 export const FORM_SAVE_KEYS: ShortcutKey = ['Alt', 'Enter']
 export const FORM_SAVE_NEW_KEYS: ShortcutKey = ['Shift', 'Enter']
@@ -13,6 +13,9 @@ export type ShortcutAction =
   | 'form-save'
   | 'form-save-new'
   | 'form-cancel'
+  | 'pi-add-item'
+  | 'pi-add-row'
+  | 'pi-scan-barcode'
 
 export interface ShortcutDefinition {
   id: string
@@ -292,6 +295,29 @@ export const KEYBOARD_SHORTCUTS: ShortcutDefinition[] = [
     keys: POS_CHECKOUT_PRINT_KEYS,
     section: 'pos',
     action: 'form-save-new',
+  },
+
+  // Purchase Invoice (page-specific)
+  {
+    id: 'pi-add-item',
+    label: 'Add Item to Bill',
+    keys: ['Alt', '1'],
+    section: 'purchase-invoice',
+    action: 'pi-add-item',
+  },
+  {
+    id: 'pi-add-row',
+    label: 'Add New Row',
+    keys: ['Alt', '2'],
+    section: 'purchase-invoice',
+    action: 'pi-add-row',
+  },
+  {
+    id: 'pi-scan-barcode',
+    label: 'Scan Barcode',
+    keys: ['Alt', '3'],
+    section: 'purchase-invoice',
+    action: 'pi-scan-barcode',
   },
 ]
 

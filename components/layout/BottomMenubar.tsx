@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, HelpCircle, LogOut, Menu, RefreshCw, Settings, X } from 'lucide-react'
+import { ArrowLeft, HelpCircle, LogOut, Menu, Package, Plus, RefreshCw, ScanLine, Settings, Trash2, X } from 'lucide-react'
+import { Kbd } from '@/components/keyboard-shortcuts/Kbd'
 import { useAuth } from '@/hooks/useAuth'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
@@ -43,10 +44,26 @@ export default function BottomMenubar() {
   const [moreOpen, setMoreOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [piSelectedCount, setPiSelectedCount] = useState(0)
+  const isPurchaseInvoiceCreate = pathname === '/purchase-invoices/create'
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Track selected line items count from purchase invoice create page
+  useEffect(() => {
+    if (!isPurchaseInvoiceCreate) {
+      setPiSelectedCount(0)
+      return
+    }
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<number>).detail
+      setPiSelectedCount(typeof detail === 'number' ? detail : 0)
+    }
+    window.addEventListener('pi-action:selection-changed', handler)
+    return () => window.removeEventListener('pi-action:selection-changed', handler)
+  }, [isPurchaseInvoiceCreate])
 
   // Own the html offset class whenever this bar is on screen so page content,
   // table max-heights, and sticky footers clear it on every breakpoint.
@@ -80,6 +97,77 @@ export default function BottomMenubar() {
       (link) => !primaryHrefs.has(link.href) && !ACCOUNT_HREFS.has(link.href)
     )
   }, [visibleNavItems])
+
+  const pageActionButtons = isPurchaseInvoiceCreate ? (
+    <div className="flex h-full shrink-0 items-stretch">
+      <div className="group relative flex shrink-0 items-stretch">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('pi-action:add-item'))}
+          className="flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium text-slate-600 hover:text-blue-700 md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs"
+          title="Add Item to Bill"
+          aria-label="Add Item to Bill"
+        >
+          <Package className="h-5 w-5 md:h-4 md:w-4" />
+          <span className="truncate">Add Item</span>
+        </button>
+        <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg group-hover:block">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-700">Add Item to Bill</span>
+            <Kbd keys={['Alt', '1']} size="sm" />
+          </div>
+        </div>
+      </div>
+      <div className="group relative flex shrink-0 items-stretch">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('pi-action:add-row'))}
+          className="flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium text-slate-600 hover:text-blue-700 md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs"
+          title="Add New Row"
+          aria-label="Add New Row"
+        >
+          <Plus className="h-5 w-5 md:h-4 md:w-4" />
+          <span className="truncate">New Row</span>
+        </button>
+        <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg group-hover:block">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-700">Add New Row</span>
+            <Kbd keys={['Alt', '2']} size="sm" />
+          </div>
+        </div>
+      </div>
+      <div className="group relative flex shrink-0 items-stretch">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('pi-action:scan-barcode'))}
+          className="flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium text-slate-600 hover:text-blue-700 md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs"
+          title="Scan Barcode"
+          aria-label="Scan Barcode"
+        >
+          <ScanLine className="h-5 w-5 md:h-4 md:w-4" />
+          <span className="truncate">Scan</span>
+        </button>
+        <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg group-hover:block">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-700">Scan Barcode</span>
+            <Kbd keys={['Alt', '3']} size="sm" />
+          </div>
+        </div>
+      </div>
+      {piSelectedCount > 0 && (
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('pi-action:remove-selected'))}
+          className="flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium text-red-600 hover:text-red-700 md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs"
+          title={`Remove ${piSelectedCount} selected item(s)`}
+          aria-label={`Remove ${piSelectedCount} selected item(s)`}
+        >
+          <Trash2 className="h-5 w-5 md:h-4 md:w-4" />
+          <span className="truncate">Remove ({piSelectedCount})</span>
+        </button>
+      )}
+    </div>
+  ) : null
 
   const settingsEnabled = isPageEnabled('/settings')
   const settingsActive = pathname === '/settings' || pathname.startsWith('/settings/')
@@ -283,6 +371,7 @@ export default function BottomMenubar() {
         {/* Mobile: Back/Refresh left — primary destinations + More right */}
         <div className="flex h-14 items-stretch justify-between gap-0.5 px-1 md:hidden">
           {navChromeActions}
+          {pageActionButtons}
           <div className="flex min-w-0 items-stretch justify-end gap-0.5">
             {primaryTabs.map((tab) => {
               const Icon = tab.icon
@@ -321,6 +410,7 @@ export default function BottomMenubar() {
         {/* Desktop: Back/Refresh left — Settings / Shortcuts / Logout right */}
         <div className="hidden h-11 w-full items-stretch justify-between gap-0.5 px-2 md:flex md:px-4">
           {navChromeActions}
+          {pageActionButtons}
           <div className="flex items-stretch justify-end gap-0.5">{accountActions}</div>
         </div>
       </nav>

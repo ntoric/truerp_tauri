@@ -111,6 +111,14 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
           navigateTo(shortcut.href)
           return
         }
+
+        if (shortcut.action === 'pi-add-item' || shortcut.action === 'pi-add-row' || shortcut.action === 'pi-scan-barcode') {
+          if (typeof window !== 'undefined' && window.location.pathname === '/purchase-invoices/create') {
+            event.preventDefault()
+            window.dispatchEvent(new CustomEvent(`pi-action:${shortcut.action === 'pi-add-item' ? 'add-item' : shortcut.action === 'pi-add-row' ? 'add-row' : 'scan-barcode'}`))
+          }
+          return
+        }
       }
     }
 

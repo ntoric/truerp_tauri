@@ -49,6 +49,7 @@ export default function KeyboardShortcutsPanel({
   const pos = shortcuts.filter((s) => s.section === 'pos')
   const navigate = shortcuts.filter((s) => s.section === 'navigate')
   const create = shortcuts.filter((s) => s.section === 'create')
+  const purchaseInvoice = shortcuts.filter((s) => s.section === 'purchase-invoice')
 
   return (
     <>
@@ -91,6 +92,7 @@ export default function KeyboardShortcutsPanel({
           <ShortcutSection title="POS" items={pos} />
           <ShortcutSection title="Go to" items={navigate} />
           <ShortcutSection title="Create" items={create} />
+          <ShortcutSection title="Purchase Invoice" items={purchaseInvoice} />
         </div>
       </aside>
     </>

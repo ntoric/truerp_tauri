@@ -16,7 +16,7 @@ interface ItemsEmptyStateProps {
   onAddProduct: () => void
   onScanBarcode: () => void
   onScanInvoiceAI?: () => void
-  onPasteFromExcel: (rows: PastedItemRow[]) => void
+  onPasteFromExcel?: (rows: PastedItemRow[]) => void
   /** Render as a standalone block instead of a table body (card / mobile layouts). */
   variant?: 'table' | 'block'
 }
@@ -63,7 +63,7 @@ export default function ItemsEmptyState({
       }).filter((r) => r.description)
 
       if (rows.length > 0) {
-        onPasteFromExcel(rows)
+        onPasteFromExcel?.(rows)
       }
     } catch {
       // Clipboard API may not be available (permissions, non-secure context)
@@ -99,20 +99,22 @@ export default function ItemsEmptyState({
             Scan Invoice (AI)
           </Button>
         )}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={handlePasteFromExcel}
-          disabled={pasting}
-        >
-          {pasting ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <ClipboardPaste className="mr-2 h-4 w-4" />
-          )}
-          Paste from Excel
-        </Button>
+        {onPasteFromExcel && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handlePasteFromExcel}
+            disabled={pasting}
+          >
+            {pasting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <ClipboardPaste className="mr-2 h-4 w-4" />
+            )}
+            Paste from Excel
+          </Button>
+        )}
       </div>
     </div>
   )
