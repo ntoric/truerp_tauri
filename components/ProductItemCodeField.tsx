@@ -143,6 +143,16 @@ export default function ProductItemCodeField({
             onClearError?.()
             onChange(e.target.value)
           }}
+          onKeyDown={(e) => {
+            // Prevent the surrounding <form> from submitting when the user
+            // presses Enter (or a hardware barcode scanner sends Enter) while
+            // this field is focused. Just blur the field instead.
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.stopPropagation()
+              ;(e.currentTarget as HTMLInputElement).blur()
+            }
+          }}
           placeholder={
             compact
               ? 'Barcode'

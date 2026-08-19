@@ -1569,7 +1569,28 @@ export default function CreatePurchaseInvoicePage() {
           }
         />
 
-        <form onSubmit={handleSubmit} className="min-w-0 space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          className="min-w-0 space-y-4"
+          onKeyDown={(e) => {
+            // Prevent Enter inside any text/select field from submitting the
+            // form (and saving the invoice). The invoice should only save via
+            // the Save buttons or the dedicated keyboard shortcut. Enter on a
+            // <button type="submit"> is still allowed because BUTTON elements
+            // are not caught by this guard.
+            if (e.key !== 'Enter') return
+            const t = e.target
+            if (
+              t instanceof HTMLElement &&
+              (t.tagName === 'INPUT' ||
+                t.tagName === 'TEXTAREA' ||
+                t.tagName === 'SELECT' ||
+                t.isContentEditable)
+            ) {
+              e.preventDefault()
+            }
+          }}
+        >
           <Card>
             <CardHeader>
               <CardTitle>Invoice Details</CardTitle>
