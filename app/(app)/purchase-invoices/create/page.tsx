@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef, Fragment } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import PageHeader from '@/components/layout/PageHeader'
@@ -14,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn, formatCurrency, asArray } from '@/lib/utils'
-import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
+import { pickDefaultCategoryName } from '@/lib/defaultCategories'
 import { isDefaultVendorName, pickDefaultVendor, DEFAULT_VENDOR_NAME } from '@/lib/defaultVendor'
 import { exclusiveUnitPrice, limitDecimalInput, parseItemNumber, parseMoney, productPurchaseUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
 import BarcodeScannerInput, { type BarcodeScannerInputHandle } from '@/components/ui/BarcodeScannerInput'
@@ -140,6 +141,8 @@ export default function CreatePurchaseInvoicePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editId = searchParams.get('id')
+  const { user } = useAuth()
+  const canScanInvoice = isSuperAdmin(user?.role)
   const {
     fieldErrors,
     clearFieldError,
@@ -213,7 +216,15 @@ export default function CreatePurchaseInvoicePage() {
   const [showRecentProducts, setShowRecentProducts] = useState(true)
   const [newProductRows, setNewProductRows] = useState<Set<number>>(new Set())
   const [newProductExtras, setNewProductExtras] = useState<Record<number, NewProductDraft>>({})
-  const [creatingProducts, setCreatingProducts] = useState(false)
+  // newProductRefs maps a new-item line index to a frontend-generated UUID
+  // (client_item_ref) that survives across save/retry/reload cycles. The
+  // backend uses it to restore the product_id created on a previous
+  // (possibly unacknowledged) save instead of creating a duplicate product.
+  const [newProductRefs, setNewProductRefs] = useState<Record<number, string>>({})
+  // clientBillId makes bill creation idempotent: a retry with the same value
+  // returns the already-saved bill instead of creating a duplicate. Generated
+  // once per form mount and reused on every save attempt.
+  const clientBillIdRef = useRef<string>(typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `cbid-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   const draftAutosaveInFlightRef = useRef(false)
   const draftAutosaveQueuedRef = useRef(false)
   const skipNextBillFetchRef = useRef(false)
@@ -486,6 +497,7 @@ export default function CreatePurchaseInvoicePage() {
         const defaultCategory = pickDefaultCategoryName(categories.map((c) => ({ name: c })))
         const restoredNewRows = new Set<number>()
         const restoredExtras: Record<number, NewProductDraft> = {}
+        const restoredRefs: Record<number, string> = {}
         const restoredExpanded = new Set<number>()
         loadedItems.forEach((item: PurchaseBillItem, index: number) => {
           const raw = billItems[index] || {}
@@ -498,10 +510,16 @@ export default function CreatePurchaseInvoicePage() {
             item_code: item.item_code || '',
             category: String(raw.category || '').trim() || defaultCategory,
           }
+          // Preserve the client_item_ref from the saved bill so a retry after
+          // a lost response reuses the same ref (and thus the same product_id
+          // on the backend) instead of generating a new one.
+          const savedRef = typeof raw.client_item_ref === 'string' ? raw.client_item_ref : ''
+          restoredRefs[index] = savedRef || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `cir-${Date.now()}-${Math.random().toString(36).slice(2)}`)
           restoredExpanded.add(index)
         })
         setNewProductRows(restoredNewRows)
         setNewProductExtras(restoredExtras)
+        setNewProductRefs(restoredRefs)
         setExpandedRows((prev) => {
           const next = new Set(prev)
           restoredExpanded.forEach((i) => next.add(i))
@@ -729,6 +747,10 @@ export default function CreatePurchaseInvoicePage() {
       ...prev,
       [index]: emptyNewProductDraft(defaultCategory),
     }))
+    setNewProductRefs((prev) => ({
+      ...prev,
+      [index]: prev[index] || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `cir-${Date.now()}-${Math.random().toString(36).slice(2)}`),
+    }))
     setExpandedRows((prev) => new Set(prev).add(index))
     setItems((prev) => {
       const next = [...prev]
@@ -756,6 +778,11 @@ export default function CreatePurchaseInvoicePage() {
       return next
     })
     setNewProductExtras((prev) => {
+      const next = { ...prev }
+      delete next[index]
+      return next
+    })
+    setNewProductRefs((prev) => {
       const next = { ...prev }
       delete next[index]
       return next
@@ -1071,6 +1098,7 @@ export default function CreatePurchaseInvoicePage() {
     setSelectedLineIndices((prev) => remapIndexSet(prev, mapIndex))
     setNewProductRows((prev) => remapIndexSet(prev, mapIndex))
     setNewProductExtras((prev) => remapIndexRecord(prev, mapIndex))
+    setNewProductRefs((prev) => remapIndexRecord(prev, mapIndex))
     setExpandedRows((prev) => remapIndexSet(prev, mapIndex))
   }
 
@@ -1089,6 +1117,15 @@ export default function CreatePurchaseInvoicePage() {
     setNewProductExtras((prev) => {
       const next = remapIndexRecord(prev, mapIndex)
       if (prev[index]) next[index + 1] = { ...prev[index] }
+      return next
+    })
+    setNewProductRefs((prev) => {
+      const next = remapIndexRecord(prev, mapIndex)
+      // Duplicated new-item line gets a fresh client_item_ref so the backend
+      // doesn't dedup it against the original.
+      if (prev[index]) {
+        next[index + 1] = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `cir-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      }
       return next
     })
     setExpandedRows((prev) => remapIndexSet(prev, mapIndex))
@@ -1124,6 +1161,7 @@ export default function CreatePurchaseInvoicePage() {
     setItems(items.filter((_, index) => !selectedLineIndices.has(index)))
     setNewProductRows((prev) => remapIndexSet(prev, mapIndex))
     setNewProductExtras((prev) => remapIndexRecord(prev, mapIndex))
+    setNewProductRefs((prev) => remapIndexRecord(prev, mapIndex))
     setExpandedRows((prev) => remapIndexSet(prev, mapIndex))
     setSelectedLineIndices(new Set())
   }
@@ -1174,6 +1212,9 @@ export default function CreatePurchaseInvoicePage() {
       exp_date: item.exp_date || null,
       is_new_item: isNew,
       category: extras?.category || '',
+      // Stable per-line id used by the backend to dedup product creation
+      // across save/retry cycles. Only sent for new-item lines.
+      client_item_ref: isNew ? (newProductRefs[index] || null) : null,
     }
   }
 
@@ -1199,6 +1240,9 @@ export default function CreatePurchaseInvoicePage() {
         notes,
         terms,
         tax_exempt: taxExempt,
+        // client_bill_id makes creation idempotent (also sent via
+        // Idempotency-Key header). Included in the body as a fallback.
+        client_bill_id: clientBillIdRef.current,
         items: sourceItems.map((item, index) => serializeBillItem(item, index)),
       },
     }
@@ -1244,6 +1288,8 @@ export default function CreatePurchaseInvoicePage() {
 
       const res = await apiFetch(url, {
         method,
+        headers: { 'Idempotency-Key': clientBillIdRef.current },
+        timeoutMs: 15000,
         body: JSON.stringify({
           party_id: vendorId,
           bill_number: resolvedBillNumber,
@@ -1259,6 +1305,7 @@ export default function CreatePurchaseInvoicePage() {
           notes,
           terms,
           tax_exempt: taxExempt,
+          client_bill_id: clientBillIdRef.current,
           items: items.flatMap((item, index) => {
             if (!isItemReadyForDraft(item)) return []
             return [serializeBillItem(item, index)]
@@ -1333,6 +1380,7 @@ export default function CreatePurchaseInvoicePage() {
     items,
     newProductRows,
     newProductExtras,
+    newProductRefs,
     totalAmount,
     savedBillId,
     draftSaveTick,
@@ -1370,89 +1418,12 @@ export default function CreatePurchaseInvoicePage() {
     setSaving(true)
     if (!asDraft) setAutosaveEnabled(false)
     try {
-      let itemsToSave = [...items]
-
-      if (!asDraft && newProductRows.size > 0) {
-        setCreatingProducts(true)
-        const sortedIndices = Array.from(newProductRows).sort((a, b) => a - b)
-        for (const idx of sortedIndices) {
-          const item = itemsToSave[idx]
-          if (!item?.description.trim()) {
-            if (asDraft) continue
-            throw new Error('Please fill product name for new item')
-          }
-          const extras = newProductExtras[idx] || emptyNewProductDraft()
-          const enableBatching = Boolean(String(item.batch_no || '').trim())
-          const productRes = await apiFetch('/products', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: item.description.trim(),
-              item_code: extras.item_code || undefined,
-              category: extras.category || DEFAULT_CATEGORY_NAME,
-              unit: item.unit || 'PCS',
-              purchase_price: parseMoney(item.unit_price),
-              sale_price: parseMoney(item.sale_price),
-              mrp: parseMoney(item.mrp),
-              tax_rate: 0,
-              gst_enabled: false,
-              item_type: 'product',
-              enable_batching: enableBatching,
-              sale_price_with_tax: true,
-              purchase_price_with_tax: false,
-              is_active: true,
-            }),
-          })
-          if (!productRes.ok) {
-            const errBody = await productRes.json().catch(() => null)
-            throw new Error(errBody?.error || `Failed to create product: ${item.description}`)
-          }
-          const created = await productRes.json()
-          const newProduct: Product = {
-            id: created.id,
-            name: created.name || item.description,
-            sku: created.sku || '',
-            item_code: created.item_code || extras.item_code,
-            hsn_code: created.hsn_code || item.hsn_code,
-            purchase_price: parseMoney(item.unit_price),
-            sale_price: parseMoney(item.sale_price),
-            mrp: parseMoney(item.mrp),
-            tax_rate: 0,
-            unit: created.unit || item.unit || 'PCS',
-            stock_qty: 0,
-            category: created.category || extras.category || '',
-            purchase_price_with_tax: false,
-            gst_enabled: false,
-            enable_batching: created.enable_batching ?? enableBatching,
-          }
-          setProducts((prev) => [newProduct, ...prev.filter((p) => p.id !== newProduct.id)])
-          if (newProduct.category && !categories.includes(newProduct.category)) {
-            setCategories((prev) => [...prev, newProduct.category].sort())
-          }
-          itemsToSave[idx] = {
-            ...itemsToSave[idx],
-            product_id: created.id,
-            item_code: created.item_code || extras.item_code || itemsToSave[idx].item_code,
-            enable_batching: created.enable_batching ?? enableBatching,
-            purchase_price_with_tax: false,
-          }
-          setItems([...itemsToSave])
-          setNewProductRows((prev) => {
-            const next = new Set(prev)
-            next.delete(idx)
-            return next
-          })
-          setNewProductExtras((prev) => {
-            const next = { ...prev }
-            delete next[idx]
-            return next
-          })
-        }
-        setCreatingProducts(false)
-        setItems(itemsToSave)
-        setNewProductRows(new Set())
-        setNewProductExtras({})
-      }
+      // New-item products are no longer created up front via POST /products.
+      // The bill payload carries is_new_item + category + client_item_ref for
+      // each new line, and the backend creates the products atomically inside
+      // the bill-save transaction. This eliminates the N+1 round-trips (the
+      // "multiple reloads" symptom) and makes the whole save idempotent.
+      const itemsToSave = [...items]
 
       const billId = savedBillId || editId
       const url = billId ? `/purchase/bills/${billId}` : '/purchase/bills'
@@ -1460,9 +1431,18 @@ export default function CreatePurchaseInvoicePage() {
       const { resolvedBillNumber, body } = buildBillPayload(asDraft, itemsToSave)
       if (!billNumber) setBillNumber(resolvedBillNumber)
 
+      // Idempotency-Key makes POST creation idempotent: a retry with the same
+      // key returns the already-saved bill instead of duplicating it. Sent on
+      // PUT too for logging/consistency (PUT idempotency for new-item products
+      // is handled server-side via client_item_ref dedup).
+      // Extended timeout: the save now creates products + stock entries +
+      // accounting in a single server-side transaction, which can exceed the
+      // default 8s when many new items are present.
       const res = await apiFetch(url, {
         method,
+        headers: { 'Idempotency-Key': clientBillIdRef.current },
         body: JSON.stringify(body),
+        timeoutMs: 120000,
       })
       if (res.ok) {
         const bill = await res.json().catch(() => null)
@@ -1476,7 +1456,6 @@ export default function CreatePurchaseInvoicePage() {
       }
     } catch (err) {
       if (!asDraft) setAutosaveEnabled(true)
-      setCreatingProducts(false)
       showErrorToast(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setSaving(false)
@@ -1562,10 +1541,12 @@ export default function CreatePurchaseInvoicePage() {
           title={`${editId || savedBillId ? 'Edit' : 'Create'} Purchase Invoice`}
           backHref="/purchase-invoices"
           actions={
-            <Button type="button" variant="outline" onClick={() => router.push('/purchase-invoices/ai-parse')}>
-              <Camera className="mr-2 h-4 w-4" />
-              Scan Invoice
-            </Button>
+            canScanInvoice ? (
+              <Button type="button" variant="outline" onClick={() => router.push('/purchase-invoices/ai-parse')}>
+                <Camera className="mr-2 h-4 w-4" />
+                Scan Invoice
+              </Button>
+            ) : null
           }
         />
 
@@ -2353,10 +2334,10 @@ export default function CreatePurchaseInvoicePage() {
               <span className="sm:hidden">Draft</span>
               <span className="hidden sm:inline">Save as Draft</span>
             </Button>
-            <Button type="submit" disabled={saving || creatingProducts}>
+            <Button type="submit" disabled={saving}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              <span className="sm:hidden">{creatingProducts ? 'Creating…' : 'Save'}</span>
-              <span className="hidden sm:inline">{creatingProducts ? 'Creating products…' : 'Save Invoice'}</span>
+              <span className="sm:hidden">Save</span>
+              <span className="hidden sm:inline">Save Invoice</span>
             </Button>
           </PageActionBar>
         </form>
