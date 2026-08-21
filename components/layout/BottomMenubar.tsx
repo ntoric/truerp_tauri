@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, HelpCircle, LogOut, Menu, Package, Plus, RefreshCw, ScanLine, Settings, Trash2, X } from 'lucide-react'
+import { ArrowLeft, HelpCircle, Menu, Package, Plus, RefreshCw, ScanLine, Settings, Trash2, X } from 'lucide-react'
 import { Kbd } from '@/components/keyboard-shortcuts/Kbd'
 import { useAuth } from '@/hooks/useAuth'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
@@ -35,10 +35,32 @@ function flattenNavLinks(items: NavItem[]): { name: string; href: string; icon: 
 
 const ACCOUNT_HREFS = new Set(['/settings'])
 
+function MenubarItemTooltip({
+  label,
+  kbd,
+  children,
+}: {
+  label: string
+  kbd?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <div className="group relative flex shrink-0 items-stretch">
+      {children}
+      <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg group-hover:block group-focus-within:block">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-slate-700">{label}</span>
+          {kbd}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function BottomMenubar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { logout, user } = useAuth()
+  const { user } = useAuth()
   const { isPageEnabled } = usePageFeatures()
   const { togglePanel, panelOpen } = useKeyboardShortcuts()
   const [moreOpen, setMoreOpen] = useState(false)
@@ -100,71 +122,51 @@ export default function BottomMenubar() {
 
   const pageActionButtons = isPurchaseInvoiceCreate ? (
     <div className="flex h-full shrink-0 items-stretch">
-      <div className="group relative flex shrink-0 items-stretch">
+      <MenubarItemTooltip label="Add Item to Bill" kbd={<Kbd keys={['Alt', '1']} size="sm" />}>
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('pi-action:add-item'))}
-          className="flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium text-slate-600 hover:text-blue-700 md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs"
+          className="flex w-11 shrink-0 items-center justify-center text-slate-600 hover:text-blue-700 md:w-auto md:px-3"
           title="Add Item to Bill"
           aria-label="Add Item to Bill"
         >
           <Package className="h-5 w-5 md:h-4 md:w-4" />
-          <span className="truncate">Add Item</span>
         </button>
-        <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg group-hover:block">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-700">Add Item to Bill</span>
-            <Kbd keys={['Alt', '1']} size="sm" />
-          </div>
-        </div>
-      </div>
-      <div className="group relative flex shrink-0 items-stretch">
+      </MenubarItemTooltip>
+      <MenubarItemTooltip label="Add New Row" kbd={<Kbd keys={['Alt', '2']} size="sm" />}>
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('pi-action:add-row'))}
-          className="flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium text-slate-600 hover:text-blue-700 md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs"
+          className="flex w-11 shrink-0 items-center justify-center text-slate-600 hover:text-blue-700 md:w-auto md:px-3"
           title="Add New Row"
           aria-label="Add New Row"
         >
           <Plus className="h-5 w-5 md:h-4 md:w-4" />
-          <span className="truncate">New Row</span>
         </button>
-        <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg group-hover:block">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-700">Add New Row</span>
-            <Kbd keys={['Alt', '2']} size="sm" />
-          </div>
-        </div>
-      </div>
-      <div className="group relative flex shrink-0 items-stretch">
+      </MenubarItemTooltip>
+      <MenubarItemTooltip label="Scan Barcode" kbd={<Kbd keys={['Alt', '3']} size="sm" />}>
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('pi-action:scan-barcode'))}
-          className="flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium text-slate-600 hover:text-blue-700 md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs"
+          className="flex w-11 shrink-0 items-center justify-center text-slate-600 hover:text-blue-700 md:w-auto md:px-3"
           title="Scan Barcode"
           aria-label="Scan Barcode"
         >
           <ScanLine className="h-5 w-5 md:h-4 md:w-4" />
-          <span className="truncate">Scan</span>
         </button>
-        <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg group-hover:block">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-700">Scan Barcode</span>
-            <Kbd keys={['Alt', '3']} size="sm" />
-          </div>
-        </div>
-      </div>
+      </MenubarItemTooltip>
       {piSelectedCount > 0 && (
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent('pi-action:remove-selected'))}
-          className="flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium text-red-600 hover:text-red-700 md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs"
-          title={`Remove ${piSelectedCount} selected item(s)`}
-          aria-label={`Remove ${piSelectedCount} selected item(s)`}
-        >
-          <Trash2 className="h-5 w-5 md:h-4 md:w-4" />
-          <span className="truncate">Remove ({piSelectedCount})</span>
-        </button>
+        <MenubarItemTooltip label={`Remove ${piSelectedCount} selected item(s)`}>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('pi-action:remove-selected'))}
+            className="flex w-11 shrink-0 items-center justify-center text-red-600 hover:text-red-700 md:w-auto md:px-3"
+            title={`Remove ${piSelectedCount} selected item(s)`}
+            aria-label={`Remove ${piSelectedCount} selected item(s)`}
+          >
+            <Trash2 className="h-5 w-5 md:h-4 md:w-4" />
+          </button>
+        </MenubarItemTooltip>
       )}
     </div>
   ) : null
@@ -187,11 +189,6 @@ export default function BottomMenubar() {
     togglePanel()
   }
 
-  const handleLogout = () => {
-    setMoreOpen(false)
-    logout()
-  }
-
   const handleBack = () => {
     setMoreOpen(false)
     if (typeof window !== 'undefined' && window.history.length > 1) {
@@ -210,67 +207,62 @@ export default function BottomMenubar() {
 
   const navChromeActions = (
     <div className="flex h-full shrink-0 items-stretch">
-      <button
-        type="button"
-        onClick={handleBack}
-        className="flex w-11 shrink-0 flex-col items-center justify-center gap-0.5 text-slate-500 hover:text-slate-800 md:w-auto md:flex-row md:gap-1.5 md:px-3"
-        title="Back"
-        aria-label="Back"
-      >
-        <ArrowLeft className="h-5 w-5 md:h-4 md:w-4" />
-        <span className="truncate text-[10px] font-medium md:text-xs">Back</span>
-      </button>
-      <button
-        type="button"
-        onClick={handleRefresh}
-        className="flex w-11 shrink-0 flex-col items-center justify-center gap-0.5 text-slate-500 hover:text-slate-800 md:w-auto md:flex-row md:gap-1.5 md:px-3"
-        title="Refresh"
-        aria-label="Refresh"
-        disabled={refreshing}
-      >
-        <RefreshCw className={cn('h-5 w-5 md:h-4 md:w-4', refreshing && 'animate-spin')} />
-        <span className="truncate text-[10px] font-medium md:text-xs">Refresh</span>
-      </button>
+      <MenubarItemTooltip label="Back">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="flex w-11 shrink-0 items-center justify-center text-slate-500 hover:text-slate-800 md:w-auto md:px-3"
+          title="Back"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5 md:h-4 md:w-4" />
+        </button>
+      </MenubarItemTooltip>
+      <MenubarItemTooltip label="Refresh">
+        <button
+          type="button"
+          onClick={handleRefresh}
+          className="flex w-11 shrink-0 items-center justify-center text-slate-500 hover:text-slate-800 md:w-auto md:px-3"
+          title="Refresh"
+          aria-label="Refresh"
+          disabled={refreshing}
+        >
+          <RefreshCw className={cn('h-5 w-5 md:h-4 md:w-4', refreshing && 'animate-spin')} />
+        </button>
+      </MenubarItemTooltip>
     </div>
   )
 
   const accountActions = (
     <>
       {settingsEnabled && (
-        <Link
-          href="/settings"
-          onClick={() => setMoreOpen(false)}
-          className={cn(
-            'flex w-16 shrink-0 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-medium md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs',
-            settingsActive ? 'text-blue-700' : 'text-slate-500 hover:text-slate-800'
-          )}
-        >
-          <Settings className={cn('h-5 w-5 md:h-4 md:w-4', settingsActive ? 'text-blue-600' : 'text-slate-500')} />
-          <span className="truncate">Settings</span>
-        </Link>
+        <MenubarItemTooltip label="Settings">
+          <Link
+            href="/settings"
+            onClick={() => setMoreOpen(false)}
+            className={cn(
+              'flex w-11 shrink-0 items-center justify-center md:w-auto md:px-3',
+              settingsActive ? 'text-blue-700' : 'text-slate-500 hover:text-slate-800'
+            )}
+          >
+            <Settings className={cn('h-5 w-5 md:h-4 md:w-4', settingsActive ? 'text-blue-600' : 'text-slate-500')} />
+          </Link>
+        </MenubarItemTooltip>
       )}
-      <button
-        type="button"
-        onClick={openShortcuts}
-        className={cn(
-          'flex w-16 shrink-0 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-medium md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs',
-          panelOpen ? 'text-blue-700' : 'text-slate-500 hover:text-slate-800'
-        )}
-        aria-pressed={panelOpen}
-        title="Keyboard shortcuts (Alt)"
-      >
-        <HelpCircle className={cn('h-5 w-5 md:h-4 md:w-4', panelOpen ? 'text-blue-600' : 'text-slate-500')} />
-        <span className="truncate">Shortcuts</span>
-      </button>
-      <button
-        type="button"
-        onClick={handleLogout}
-        className="flex w-16 shrink-0 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-medium text-red-600 hover:text-red-700 md:w-auto md:flex-row md:gap-1.5 md:px-3 md:text-xs"
-        title="Logout"
-      >
-        <LogOut className="h-5 w-5 md:h-4 md:w-4" />
-        <span className="truncate">Logout</span>
-      </button>
+      <MenubarItemTooltip label="Shortcuts" kbd={<Kbd keys={['Alt']} size="sm" />}>
+        <button
+          type="button"
+          onClick={openShortcuts}
+          className={cn(
+            'flex w-11 shrink-0 items-center justify-center md:w-auto md:px-3',
+            panelOpen ? 'text-blue-700' : 'text-slate-500 hover:text-slate-800'
+          )}
+          aria-pressed={panelOpen}
+          title="Keyboard shortcuts (Alt)"
+        >
+          <HelpCircle className={cn('h-5 w-5 md:h-4 md:w-4', panelOpen ? 'text-blue-600' : 'text-slate-500')} />
+        </button>
+      </MenubarItemTooltip>
     </>
   )
 
@@ -332,14 +324,6 @@ export default function BottomMenubar() {
                   <HelpCircle className={cn('h-4 w-4', panelOpen ? 'text-blue-600' : 'text-slate-500')} />
                   Shortcuts
                 </button>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 text-xs font-medium text-red-600 hover:bg-red-50"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Logout
-                </button>
               </div>
             </div>
 
@@ -377,37 +361,38 @@ export default function BottomMenubar() {
               const Icon = tab.icon
               const active = tab.match(pathname)
               return (
-                <Link
-                  key={tab.href}
-                  href={tab.href}
-                  onClick={() => setMoreOpen(false)}
-                  className={cn(
-                    'flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium',
-                    active ? 'text-blue-700' : 'text-slate-500'
-                  )}
-                >
-                  <Icon className={cn('h-5 w-5', active ? 'text-blue-600' : 'text-slate-500')} />
-                  <span className="truncate">{tab.name}</span>
-                </Link>
+                <MenubarItemTooltip key={tab.href} label={tab.name}>
+                  <Link
+                    href={tab.href}
+                    onClick={() => setMoreOpen(false)}
+                    className={cn(
+                      'flex w-11 shrink-0 items-center justify-center',
+                      active ? 'text-blue-700' : 'text-slate-500'
+                    )}
+                  >
+                    <Icon className={cn('h-5 w-5', active ? 'text-blue-600' : 'text-slate-500')} />
+                  </Link>
+                </MenubarItemTooltip>
               )
             })}
-            <button
-              type="button"
-              onClick={() => setMoreOpen((open) => !open)}
-              className={cn(
-                'flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium',
-                moreIsActive ? 'text-blue-700' : 'text-slate-500'
-              )}
-              aria-expanded={moreOpen}
-              aria-label="More"
-            >
-              <Menu className={cn('h-5 w-5', moreIsActive ? 'text-blue-600' : 'text-slate-500')} />
-              <span>More</span>
-            </button>
+            <MenubarItemTooltip label="More">
+              <button
+                type="button"
+                onClick={() => setMoreOpen((open) => !open)}
+                className={cn(
+                  'flex w-11 shrink-0 items-center justify-center',
+                  moreIsActive ? 'text-blue-700' : 'text-slate-500'
+                )}
+                aria-expanded={moreOpen}
+                aria-label="More"
+              >
+                <Menu className={cn('h-5 w-5', moreIsActive ? 'text-blue-600' : 'text-slate-500')} />
+              </button>
+            </MenubarItemTooltip>
           </div>
         </div>
 
-        {/* Desktop: Back/Refresh left — Settings / Shortcuts / Logout right */}
+        {/* Desktop: Back/Refresh left — Settings / Shortcuts right */}
         <div className="hidden h-11 w-full items-stretch justify-between gap-0.5 px-2 md:flex md:px-4">
           {navChromeActions}
           {pageActionButtons}

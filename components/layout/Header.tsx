@@ -3,9 +3,17 @@
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { useStore } from '@/hooks/useStore'
-import { ShoppingCart, Store, User } from 'lucide-react'
+import { LogOut, Settings, ShoppingCart, Store, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import NotificationBell from './NotificationBell'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
@@ -15,7 +23,7 @@ import {
 } from '@/components/ui/select'
 
 export default function Header() {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const { stores, activeStore, canSwitchStores, setActiveStore, loading } = useStore()
 
   const switchableStores = stores.filter((s) => s.is_active)
@@ -58,15 +66,49 @@ export default function Header() {
           </Link>
         </Button>
         <NotificationBell />
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-700">
-            <User className="h-4 w-4" />
-          </div>
-          <div className="hidden md:block">
-            <p className="text-xs font-medium leading-tight text-gray-900">{user?.name || 'User'}</p>
-            <p className="text-[11px] leading-tight text-gray-500">{user?.role || 'Owner'}</p>
-          </div>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              aria-label="Account menu"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+                <User className="h-4 w-4" />
+              </div>
+              <div className="hidden md:block text-left">
+                <p className="text-xs font-medium leading-tight text-gray-900">{user?.name || 'User'}</p>
+                <p className="text-[11px] leading-tight text-gray-500">{user?.role || 'Owner'}</p>
+              </div>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium leading-tight text-gray-900">{user?.name || 'User'}</p>
+                {user?.email && (
+                  <p className="text-[11px] leading-tight text-gray-500">{user.email}</p>
+                )}
+                <p className="text-[11px] leading-tight text-gray-500">{user?.role || 'Owner'}</p>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/settings" className="flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                <span>Settings</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => logout()}
+              className="flex items-center gap-2 text-red-600 focus:text-red-700"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Logout</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   )
