@@ -21,11 +21,12 @@ import { formatPaymentMethod, formatPaymentSplitsLabel } from '@/lib/paymentSpli
 import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { downloadInvoicePdf } from '@/lib/printDocument'
-import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2, Package, BarChart3, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react'
+import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2, Package, BarChart3, ChevronUp, ChevronDown, ArrowUpDown, Gift } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
+import type { LoyaltySettings } from '@/lib/loyalty-types'
 
 interface Invoice {
   id: string
@@ -37,6 +38,9 @@ interface Invoice {
   date: string
   due_date?: string
   is_pos?: boolean
+  loyalty_points_earned?: number
+  loyalty_points_redeemed?: number
+  loyalty_discount?: number
 }
 
 interface InvoiceStats {
@@ -142,10 +146,12 @@ export default function InvoicesPage() {
   const [importErrors, setImportErrors] = useState<string[]>([])
   const importFileRef = useRef<HTMLInputElement>(null)
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set())
+  const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
 
   useEffect(() => {
     fetchInvoices()
     fetchStats()
+    fetchLoyaltySettings()
   }, [filter, dateFrom, dateTo])
 
   useEffect(() => {
@@ -183,6 +189,15 @@ export default function InvoicesPage() {
       if (params.toString()) url += `?${params.toString()}`
       const res = await apiFetch(url)
       if (res.ok) setStats(await res.json())
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const fetchLoyaltySettings = async () => {
+    try {
+      const res = await apiFetch('/loyalty/settings', { timeoutMs: 5000 })
+      if (res.ok) setLoyaltySettings(await res.json())
     } catch (err) {
       console.error(err)
     }
@@ -695,6 +710,14 @@ export default function InvoicesPage() {
                               {inv.invoice_number}
                             </button>
                             {inv.is_pos && getPosBadge()}
+                            {loyaltySettings?.is_enabled && ((inv.loyalty_points_earned ?? 0) > 0 || (inv.loyalty_points_redeemed ?? 0) > 0) && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" title={`Earned ${inv.loyalty_points_earned ?? 0} · Redeemed ${inv.loyalty_points_redeemed ?? 0}`}>
+                                <Gift className="h-3 w-3" />
+                                {(inv.loyalty_points_earned ?? 0) > 0 ? `+${inv.loyalty_points_earned}` : ''}
+                                {(inv.loyalty_points_earned ?? 0) > 0 && (inv.loyalty_points_redeemed ?? 0) > 0 ? ' / ' : ''}
+                                {(inv.loyalty_points_redeemed ?? 0) > 0 ? `−${inv.loyalty_points_redeemed}` : ''}
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="py-3 text-gray-600">{partyLabel(inv)}</td>
@@ -946,6 +969,32 @@ export default function InvoicesPage() {
                         <span className="text-gray-600">Balance</span>
                         <span className="font-medium text-orange-600">{formatCurrency(previewData.total_amount - previewData.amount_paid)}</span>
                       </div>
+                      {loyaltySettings?.is_enabled && ((previewData.loyalty_points_redeemed ?? 0) > 0 || (previewData.loyalty_points_earned ?? 0) > 0 || (previewData.loyalty_discount ?? 0) > 0) && (
+                        <div className="mt-2 border-t pt-2">
+                          <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                            <Gift className="h-3.5 w-3.5" />
+                            Loyalty points
+                          </div>
+                          {(previewData.loyalty_points_redeemed ?? 0) > 0 && (
+                            <div className="flex justify-between pl-3 text-xs text-gray-600">
+                              <span>Points redeemed</span>
+                              <span className="font-medium text-amber-800">{previewData.loyalty_points_redeemed} pts</span>
+                            </div>
+                          )}
+                          {(previewData.loyalty_discount ?? 0) > 0 && (
+                            <div className="flex justify-between pl-3 text-xs text-gray-600">
+                              <span>Loyalty discount</span>
+                              <span className="font-medium text-red-600">-{formatCurrency(previewData.loyalty_discount ?? 0)}</span>
+                            </div>
+                          )}
+                          {(previewData.loyalty_points_earned ?? 0) > 0 && (
+                            <div className="flex justify-between pl-3 text-xs text-gray-600">
+                              <span>Points earned</span>
+                              <span className="font-medium text-emerald-700">+{previewData.loyalty_points_earned} pts</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
