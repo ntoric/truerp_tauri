@@ -34,6 +34,17 @@ import { useFormErrors } from '@/hooks/useFormErrors'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { PAYMENT_METHODS } from '@/lib/paymentSplits'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
+import { useOfflineSync } from '@/hooks/useOfflineSync'
+import {
+  clearPurchaseBillDraft,
+  enqueuePurchaseBillSubmission,
+  getPurchaseBillDraft,
+  getQueuedPurchaseBill,
+  savePurchaseBillDraft,
+  type PurchaseBillDraftForm,
+} from '@/lib/purchaseBillOffline'
+import { offlineStorage } from '@/lib/offlineStorage'
+import { PURCHASE_BILLS_SYNCED_EVENT } from '@/lib/purchaseBillSync'
 import ItemsEmptyState, { type PastedItemRow } from '@/components/ItemsEmptyState'
 
 interface Vendor {
@@ -141,8 +152,11 @@ export default function CreatePurchaseInvoicePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editId = searchParams.get('id')
+  const queueId = searchParams.get('queueId')
   const { user } = useAuth()
   const canScanInvoice = isSuperAdmin(user?.role)
+  const { syncStatus, manualSync } = useOfflineSync()
+  const isOnline = syncStatus.isOnline
   const {
     fieldErrors,
     clearFieldError,
@@ -233,6 +247,12 @@ export default function CreatePurchaseInvoicePage() {
   const persistDraftRef = useRef<() => Promise<void>>(async () => {})
   /** Line tax rates captured before Exempt Tax is turned on, so turning it off restores them. */
   const preExemptTaxRatesRef = useRef<number[] | null>(null)
+  // Local-draft autosave (IndexedDB) so the in-progress form survives app
+  // restart even while offline. Debounced alongside the server autosave.
+  const localDraftSaveRef = useRef<() => void>(() => {})
+  // Restore-from-previous-session modal state.
+  const [restoreDraft, setRestoreDraft] = useState<{ clientBillId: string; form: PurchaseBillDraftForm; createdAt: string } | null>(null)
+  const restoreCheckedRef = useRef(false)
 
   useEffect(() => {
     fetchData()
@@ -306,6 +326,163 @@ export default function CreatePurchaseInvoicePage() {
       fetchBillData()
     }
   }, [editId, products.length])
+
+  // Hydrate the form from a queued offline submission when navigated to with
+  // ?queueId=<clientBillId> (from the pending page). Reuses the same
+  // clientBillId so resubmit is idempotent against the original attempt.
+  useEffect(() => {
+    if (!queueId || editId) return
+    if (restoreCheckedRef.current) return
+    restoreCheckedRef.current = true
+    let cancelled = false
+    void (async () => {
+      const queued = await getQueuedPurchaseBill(queueId)
+      if (cancelled || !queued) return
+      const payload = queued.payload as {
+        party_id?: string
+        bill_number?: string
+        bill_date?: string
+        due_date?: string | null
+        warehouse_id?: string | null
+        notes?: string
+        terms?: string
+        payment_mode?: string
+        paid_amount?: number
+        tax_exempt?: boolean
+        items?: Array<Record<string, unknown>>
+      }
+      clientBillIdRef.current = queued.clientBillId
+      if (payload.party_id) setVendorId(payload.party_id)
+      if (payload.bill_number) setBillNumber(payload.bill_number)
+      if (payload.bill_date) setBillDate(String(payload.bill_date).slice(0, 10))
+      if (payload.due_date) setDueDate(String(payload.due_date).slice(0, 10))
+      if (payload.warehouse_id) setWarehouseId(payload.warehouse_id)
+      if (payload.notes !== undefined) setNotes(payload.notes)
+      if (payload.terms !== undefined) setTerms(payload.terms)
+      if (payload.payment_mode) setPaidFrom(payload.payment_mode)
+      if (typeof payload.paid_amount === 'number') {
+        setAmountPaid(payload.paid_amount)
+        setAmountPaidEdited(true)
+      }
+      if (typeof payload.tax_exempt === 'boolean') setTaxExempt(payload.tax_exempt)
+      if (Array.isArray(payload.items)) {
+        const restoredItems = payload.items.map((raw) => calcItemTotals({
+          product_id: String(raw.product_id || ''),
+          item_code: String(raw.item_code || ''),
+          description: String(raw.description || ''),
+          hsn_code: String(raw.hsn_code || ''),
+          quantity: parseItemNumber(raw.quantity, 1),
+          unit_price: parseMoney(String(raw.unit_price ?? 0)),
+          discount: parseItemNumber(raw.discount),
+          tax_rate: parseItemNumber(raw.tax_rate),
+          mrp: parseItemNumber(raw.mrp),
+          sale_price: parseItemNumber(raw.sale_price),
+          unit: String(raw.unit || 'PCS'),
+          tax_amount: 0,
+          total: 0,
+          purchase_price_with_tax: Boolean(raw.purchase_price_with_tax),
+          batch_no: String(raw.batch_no || ''),
+          mfg_date: raw.mfg_date ? String(raw.mfg_date).slice(0, 10) : '',
+          exp_date: raw.exp_date ? String(raw.exp_date).slice(0, 10) : '',
+          enable_batching: Boolean(raw.enable_batching),
+        } as PurchaseBillItem))
+        setItems(restoredItems)
+      }
+      formHydratedRef.current = true
+      setAutosaveEnabled(true)
+      setToast({ message: 'Loaded pending offline bill — review and resave', type: 'success' })
+      setTimeout(() => setToast(null), 3000)
+    })()
+    return () => { cancelled = true }
+  }, [queueId, editId])
+
+  // On a fresh create (no editId, no queueId), check for an in-progress draft
+  // from a previous session and offer to restore it.
+  useEffect(() => {
+    if (editId || queueId) return
+    if (restoreCheckedRef.current) return
+    if (!user?.id) return
+    restoreCheckedRef.current = true
+    let cancelled = false
+    void (async () => {
+      const draft = await getPurchaseBillDraft(user.id)
+      if (cancelled || !draft) return
+      // Only offer if there's something meaningful to restore.
+      const hasItems = Array.isArray(draft.form.items) && draft.form.items.length > 0
+      if (!hasItems && !draft.form.billNumber && !draft.form.vendorId) return
+      setRestoreDraft({
+        clientBillId: draft.clientBillId,
+        form: draft.form,
+        createdAt: draft.createdAt || draft.updatedAt,
+      })
+    })()
+    return () => { cancelled = true }
+  }, [editId, queueId, user?.id])
+
+  const applyRestoredDraft = (draft: { clientBillId: string; form: PurchaseBillDraftForm }) => {
+    clientBillIdRef.current = draft.clientBillId
+    if (draft.form.vendorId) setVendorId(draft.form.vendorId)
+    if (draft.form.billNumber) setBillNumber(draft.form.billNumber)
+    if (draft.form.billDate) setBillDate(draft.form.billDate)
+    if (draft.form.dueDate) setDueDate(draft.form.dueDate)
+    if (draft.form.warehouseId) setWarehouseId(draft.form.warehouseId)
+    if (draft.form.notes) setNotes(draft.form.notes)
+    if (draft.form.terms) setTerms(draft.form.terms)
+    if (draft.form.paidFrom) setPaidFrom(draft.form.paidFrom)
+    setAmountPaid(draft.form.amountPaid || 0)
+    setAmountPaidEdited(draft.form.amountPaid > 0)
+    setTaxExempt(draft.form.taxExempt)
+    if (Array.isArray(draft.form.items)) {
+      setItems(draft.form.items.map((raw) => calcItemTotals({
+        product_id: String(raw.product_id || ''),
+        item_code: String(raw.item_code || ''),
+        description: String(raw.description || ''),
+        hsn_code: String(raw.hsn_code || ''),
+        quantity: parseItemNumber(raw.quantity, 1),
+        unit_price: parseMoney(String(raw.unit_price ?? 0)),
+        discount: parseItemNumber(raw.discount),
+        tax_rate: parseItemNumber(raw.tax_rate),
+        mrp: parseItemNumber(raw.mrp),
+        sale_price: parseItemNumber(raw.sale_price),
+        unit: String(raw.unit || 'PCS'),
+        tax_amount: 0,
+        total: 0,
+        purchase_price_with_tax: Boolean(raw.purchase_price_with_tax),
+        batch_no: String(raw.batch_no || ''),
+        mfg_date: raw.mfg_date ? String(raw.mfg_date).slice(0, 10) : '',
+        exp_date: raw.exp_date ? String(raw.exp_date).slice(0, 10) : '',
+        enable_batching: Boolean(raw.enable_batching),
+      } as PurchaseBillItem)))
+    }
+    if (draft.form.newProductRefs) {
+      setNewProductRefs(draft.form.newProductRefs)
+    }
+    formHydratedRef.current = true
+    setAutosaveEnabled(true)
+  }
+
+  const handleRestoreContinue = () => {
+    if (!restoreDraft) return
+    applyRestoredDraft(restoreDraft)
+    setRestoreDraft(null)
+    setToast({ message: 'Restored previous session', type: 'success' })
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  const handleRestoreStartNew = () => {
+    // Leave the draft in place (still accessible from the pending page if it
+    // was ever queued); just generate a fresh idempotency key for the new bill.
+    clientBillIdRef.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `cbid-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    setRestoreDraft(null)
+  }
+
+  const handleRestoreDiscard = async () => {
+    if (!user?.id || !restoreDraft) return
+    await clearPurchaseBillDraft(user.id, restoreDraft.clientBillId)
+    setRestoreDraft(null)
+  }
 
   useEffect(() => {
     if (editId) return
@@ -431,6 +608,35 @@ export default function CreatePurchaseInvoicePage() {
       }
     } catch (err) {
       console.error(err)
+      // Offline fallback: load cached vendors/products from IndexedDB so the
+      // form is still usable (e.g. when editing a queued bill while offline).
+      if (!isOnline) {
+        try {
+          await offlineStorage.init()
+          const cachedParties = await offlineStorage.getCachedParties()
+          const vendorList: Vendor[] = (cachedParties || [])
+            .filter((p: any) => p.party_type === 'vendor' || !p.party_type)
+            .map((p: any) => ({
+              id: p.id,
+              name: p.name,
+              phone: p.phone || '',
+              gstin: p.gstin || '',
+              address: p.address || '',
+              city: p.city || '',
+              state: p.state || '',
+            }))
+          if (vendorList.length > 0) setVendors(vendorList)
+          const cachedProducts = await offlineStorage.getCachedProducts()
+          if (Array.isArray(cachedProducts) && cachedProducts.length > 0) {
+            setProducts(cachedProducts as Product[])
+            const cats = new Set<string>()
+            cachedProducts.forEach((p: any) => { if (p.category) cats.add(p.category) })
+            setCategories(Array.from(cats).sort())
+          }
+        } catch (cacheErr) {
+          console.warn('Offline cache load failed:', cacheErr)
+        }
+      }
     } finally {
       setLoading(false)
     }
@@ -1276,6 +1482,20 @@ export default function CreatePurchaseInvoicePage() {
     setDraftSaveStatus('saving')
     setDraftSaveError('')
 
+    // When offline, skip the server autosave — the local draft is already
+    // saved to IndexedDB by saveLocalDraft in the debounced effect. Just mark
+    // as saved locally so the status pill doesn't show a network error.
+    if (!isOnline) {
+      setDraftSaveStatus('saved')
+      setDraftSaveError('')
+      draftAutosaveInFlightRef.current = false
+      if (draftAutosaveQueuedRef.current) {
+        draftAutosaveQueuedRef.current = false
+        setDraftSaveTick((tick) => tick + 1)
+      }
+      return
+    }
+
     const billIdAtStart = savedBillId
     const resolvedBillNumber = billNumber || `PINV-${Date.now()}`
     if (!billNumber) {
@@ -1346,6 +1566,36 @@ export default function CreatePurchaseInvoicePage() {
 
   persistDraftRef.current = persistDraftSilently
 
+  // Local-draft autosave: mirror the in-progress form to IndexedDB so it
+  // survives an app restart / offline close. Cheap put, runs alongside the
+  // server autosave. Skipped while editing an existing bill (editId) or when
+  // restoring from the queue.
+  const saveLocalDraft = () => {
+    if (editId || queueId) return
+    if (!user?.id) return
+    const vendor = vendors.find((v) => v.id === vendorId)
+    const form: PurchaseBillDraftForm = {
+      vendorId,
+      vendorName: vendor?.name,
+      billNumber,
+      billDate,
+      dueDate,
+      warehouseId,
+      notes,
+      terms,
+      paidFrom,
+      amountPaid,
+      taxExempt,
+      items: items.map((item) => ({ ...item })),
+      newProductRefs: { ...newProductRefs },
+    }
+    void savePurchaseBillDraft(user.id, {
+      clientBillId: clientBillIdRef.current,
+      form,
+    }).catch((err) => console.warn('Local draft save failed:', err))
+  }
+  localDraftSaveRef.current = saveLocalDraft
+
   // Autosave draft whenever the form changes (debounced).
   useEffect(() => {
     if (!autosaveEnabled || saving || loading || !formHydratedRef.current) return
@@ -1355,6 +1605,7 @@ export default function CreatePurchaseInvoicePage() {
     }
 
     const timer = setTimeout(() => {
+      localDraftSaveRef.current()
       void persistDraftRef.current()
     }, 700)
 
@@ -1425,11 +1676,46 @@ export default function CreatePurchaseInvoicePage() {
       // "multiple reloads" symptom) and makes the whole save idempotent.
       const itemsToSave = [...items]
 
+      const { resolvedBillNumber, body } = buildBillPayload(asDraft, itemsToSave)
+      if (!billNumber) setBillNumber(resolvedBillNumber)
+
+      // Offline path: queue the submission locally. The background sync engine
+      // (purchaseBillSync.ts) will POST it to /purchase/bills with
+      // Idempotency-Key = clientBillId once back online. The backend dedups on
+      // client_bill_id, so even if this was triggered by a lost response (the
+      // request actually saved on the server but we never got the 200), a
+      // later retry will not create a duplicate.
+      const enqueueOffline = async (errorMessage?: string) => {
+        const vendor = vendors.find((v) => v.id === vendorId)
+        await enqueuePurchaseBillSubmission({
+          clientBillId: clientBillIdRef.current,
+          asDraft,
+          payload: body,
+          status: 'pending',
+          vendorName: vendor?.name,
+          itemCount: itemsToSave.length,
+          totalAmount: Number(body.total_amount) || 0,
+          errorMessage,
+          createdAt: new Date().toISOString(),
+        })
+        // Clear the in-progress draft so the restore modal doesn't re-offer an
+        // already-queued bill. Fire-and-forget — must not block the navigation.
+        if (user?.id) {
+          void clearPurchaseBillDraft(user.id, clientBillIdRef.current).catch(() => {})
+        }
+        showSuccessToast('Saved locally — will sync when online')
+        setSaving(false)
+        router.push('/purchase-invoices/pending')
+      }
+
+      if (!isOnline) {
+        await enqueueOffline()
+        return
+      }
+
       const billId = savedBillId || editId
       const url = billId ? `/purchase/bills/${billId}` : '/purchase/bills'
       const method = billId ? 'PUT' : 'POST'
-      const { resolvedBillNumber, body } = buildBillPayload(asDraft, itemsToSave)
-      if (!billNumber) setBillNumber(resolvedBillNumber)
 
       // Idempotency-Key makes POST creation idempotent: a retry with the same
       // key returns the already-saved bill instead of duplicating it. Sent on
@@ -1449,14 +1735,51 @@ export default function CreatePurchaseInvoicePage() {
         if (!asDraft && bill?.stock_status === 'approved') {
           showSuccessToast('Purchase saved. Inventory stock has been updated.')
         }
-        router.push('/purchase-invoices')
+        // Clear the local draft on a successful online save. Fire-and-forget.
+        if (user?.id) {
+          void clearPurchaseBillDraft(user.id, clientBillIdRef.current).catch(() => {})
+        }
+        setSaving(false)
+        router.push('/purchase-invoices/pending')
       } else {
         if (!asDraft) setAutosaveEnabled(true)
         await handleApiError(res)
       }
     } catch (err) {
-      if (!asDraft) setAutosaveEnabled(true)
-      showErrorToast(err instanceof Error ? err.message : 'An error occurred')
+      // Network drop / timeout after the request was sent: the server may have
+      // saved the bill but we never received the response. Queue locally — the
+      // idempotency key makes a later retry safe (no duplicate).
+      const isNetworkError = err instanceof TypeError
+        || (err instanceof Error && /fetch|network|abort|timeout/i.test(err.message))
+      if (isNetworkError) {
+        if (!asDraft) setAutosaveEnabled(true)
+        try {
+          const vendor = vendors.find((v) => v.id === vendorId)
+          const { body } = buildBillPayload(asDraft, [...items])
+          await enqueuePurchaseBillSubmission({
+            clientBillId: clientBillIdRef.current,
+            asDraft,
+            payload: body,
+            status: 'pending',
+            vendorName: vendor?.name,
+            itemCount: items.length,
+            totalAmount: Number(body.total_amount) || 0,
+            errorMessage: err instanceof Error ? err.message : 'Network error',
+            createdAt: new Date().toISOString(),
+          })
+          if (user?.id) {
+            void clearPurchaseBillDraft(user.id, clientBillIdRef.current).catch(() => {})
+          }
+          showSuccessToast('Connection lost — saved locally and will sync when online')
+          setSaving(false)
+          router.push('/purchase-invoices/pending')
+        } catch (queueErr) {
+          showErrorToast(queueErr instanceof Error ? queueErr.message : 'Failed to save locally')
+        }
+      } else {
+        if (!asDraft) setAutosaveEnabled(true)
+        showErrorToast(err instanceof Error ? err.message : 'An error occurred')
+      }
     } finally {
       setSaving(false)
     }
@@ -2299,26 +2622,34 @@ export default function CreatePurchaseInvoicePage() {
 
           <PageActionBar
             meta={
-              autosaveEnabled && draftSaveStatus !== 'idle' ? (
-                <span
-                  className={cn(
-                    'text-xs sm:text-sm',
-                    draftSaveStatus === 'saving' && 'text-gray-500',
-                    draftSaveStatus === 'saved' && 'text-green-600',
-                    draftSaveStatus === 'need_vendor' && 'text-amber-600',
-                    draftSaveStatus === 'error' && 'text-red-600',
-                  )}
-                >
-                  {draftSaveStatus === 'saving' && 'Saving draft…'}
-                  {draftSaveStatus === 'saved' && 'Draft saved'}
-                  {draftSaveStatus === 'need_vendor' && 'Select a vendor to autosave draft'}
-                  {draftSaveStatus === 'error' && (draftSaveError || 'Draft autosave failed')}
-                </span>
-              ) : (
-                <span className="font-semibold tabular-nums text-slate-800">
-                  Total {formatCurrency(totalAmount)}
-                </span>
-              )
+              <div className="flex items-center gap-3">
+                {!isOnline && (
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    Offline — changes saved locally
+                  </span>
+                )}
+                {autosaveEnabled && draftSaveStatus !== 'idle' ? (
+                  <span
+                    className={cn(
+                      'text-xs sm:text-sm',
+                      draftSaveStatus === 'saving' && 'text-gray-500',
+                      draftSaveStatus === 'saved' && 'text-green-600',
+                      draftSaveStatus === 'need_vendor' && 'text-amber-600',
+                      draftSaveStatus === 'error' && 'text-red-600',
+                    )}
+                  >
+                    {draftSaveStatus === 'saving' && 'Saving draft…'}
+                    {draftSaveStatus === 'saved' && 'Draft saved'}
+                    {draftSaveStatus === 'need_vendor' && 'Select a vendor to autosave draft'}
+                    {draftSaveStatus === 'error' && (draftSaveError || 'Draft autosave failed')}
+                  </span>
+                ) : (
+                  <span className="font-semibold tabular-nums text-slate-800">
+                    Total {formatCurrency(totalAmount)}
+                  </span>
+                )}
+              </div>
             }
           >
             <Button type="button" variant="outline" onClick={() => router.push('/purchase-invoices')}>
@@ -2738,6 +3069,33 @@ export default function CreatePurchaseInvoicePage() {
             <option key={cat} value={cat} />
           ))}
         </datalist>
+
+        {restoreDraft && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+              <h3 className="text-lg font-semibold text-slate-900">Resume previous session?</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                You have an unsaved purchase bill
+                {restoreDraft.form.vendorName ? ` for ${restoreDraft.form.vendorName}` : ''}
+                {Array.isArray(restoreDraft.form.items) && restoreDraft.form.items.length > 0
+                  ? ` with ${restoreDraft.form.items.length} item${restoreDraft.form.items.length === 1 ? '' : 's'}`
+                  : ''}
+                {' '}from a previous session that was not saved to the cloud.
+              </p>
+              <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={handleRestoreDiscard}>
+                  Discard
+                </Button>
+                <Button type="button" variant="outline" onClick={handleRestoreStartNew}>
+                  Start new
+                </Button>
+                <Button type="button" onClick={handleRestoreContinue}>
+                  Continue
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   )

@@ -68,7 +68,10 @@ export default function CreateExpensePage() {
 
   useEffect(() => {
     setPaidFrom((prev) => {
-      if (prev !== CASH_IN_HAND_ACCOUNT && bankAccounts.some((a) => a.id === prev)) {
+      if (prev === CASH_IN_HAND_ACCOUNT) {
+        return prev
+      }
+      if (bankAccounts.some((a) => a.id === prev)) {
         return prev
       }
       return defaultBankAccountSelection(bankAccounts, primaryAccount)

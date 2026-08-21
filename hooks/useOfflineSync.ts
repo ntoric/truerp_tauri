@@ -3,8 +3,10 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { offlineStorage } from '@/lib/offlineStorage'
 import { syncPendingPOSSales } from '@/lib/posSync'
+import { syncPendingPurchaseBills } from '@/lib/purchaseBillSync'
+import { pendingPurchaseBillCount, requeueFailedPurchaseBills } from '@/lib/purchaseBillOffline'
 import { subscribePOSAuthExpired } from '@/lib/posAuthGate'
-import { subscribeDesktopPosQueueSync } from '@/lib/desktopBridge'
+import { subscribeDesktopPosQueueSync, subscribeDesktopPurchaseBillQueueSync } from '@/lib/desktopBridge'
 import { useNetworkStatus } from './useNetworkStatus'
 import { apiFetch } from './useAuth'
 import { getAuthToken } from '@/lib/authToken'
@@ -14,6 +16,7 @@ interface SyncStatus {
   failed: number
   isOnline: boolean
   authExpired: boolean
+  purchaseBillPending: number
 }
 
 interface OfflineSyncValue {
@@ -35,6 +38,7 @@ function useOfflineSyncState(): OfflineSyncValue {
     failed: 0,
     isOnline: true,
     authExpired: false,
+    purchaseBillPending: 0,
   })
   const [isSyncing, setIsSyncing] = useState(false)
   const syncingRef = useRef(false)
@@ -47,9 +51,16 @@ function useOfflineSyncState(): OfflineSyncValue {
     const unsynced = await offlineStorage.getUnsynced()
     const pending = unsynced.length
     const failed = unsynced.filter((item) => item.status === 'failed').length
+    const purchaseBillPending = await pendingPurchaseBillCount().catch(() => 0)
     setSyncStatus((prev) => {
-      if (prev.pending === pending && prev.failed === failed) return prev
-      return { ...prev, pending, failed }
+      if (
+        prev.pending === pending &&
+        prev.failed === failed &&
+        prev.purchaseBillPending === purchaseBillPending
+      ) {
+        return prev
+      }
+      return { ...prev, pending, failed, purchaseBillPending }
     })
     return pending
   }, [])
@@ -65,10 +76,13 @@ function useOfflineSyncState(): OfflineSyncValue {
     if (!billing) setIsSyncing(true)
     try {
       const result = await syncPendingPOSSales()
+      const pbResult = await syncPendingPurchaseBills()
       setSyncStatus((prev) => {
+        const purchaseBillPending = pbResult.pending
         if (
           prev.pending === result.pending &&
           prev.failed === result.failed &&
+          prev.purchaseBillPending === purchaseBillPending &&
           prev.isOnline
         ) {
           return prev
@@ -77,6 +91,7 @@ function useOfflineSyncState(): OfflineSyncValue {
           ...prev,
           pending: result.pending,
           failed: result.failed,
+          purchaseBillPending,
           isOnline: true,
         }
       })
@@ -159,11 +174,31 @@ function useOfflineSyncState(): OfflineSyncValue {
     }
   }, [autoSync])
 
+  useEffect(() => {
+    let active = true
+    let unsub = () => {}
+    void subscribeDesktopPurchaseBillQueueSync(() => {
+      if (posBillingActiveRef.current) return
+      void autoSync()
+    }).then((fn) => {
+      if (!active) {
+        fn()
+        return
+      }
+      unsub = fn
+    })
+    return () => {
+      active = false
+      unsub()
+    }
+  }, [autoSync])
+
   const manualSync = useCallback(async () => {
     if (!onlineRef.current) {
       throw new Error('Cannot sync while offline')
     }
     await offlineStorage.requeueFailedSyncs()
+    await requeueFailedPurchaseBills()
     await autoSync()
   }, [autoSync])
 

@@ -78,3 +78,16 @@ commands.allow = [
   "pos_queue_pending_count",
   "pos_queue_requeue_failed"
 ]
+
+[[permission]]
+identifier = "allow-purchase-bill-queue"
+description = "Allow reading and writing the durable desktop purchase bill offline queue"
+commands.allow = [
+  "purchase_bill_queue_upsert",
+  "purchase_bill_queue_list_unsynced",
+  "purchase_bill_queue_update_status",
+  "purchase_bill_queue_pending_count",
+  "purchase_bill_queue_requeue_failed",
+  "purchase_bill_queue_delete",
+  "purchase_bill_queue_get"
+]

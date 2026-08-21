@@ -32,6 +32,7 @@
     "allow-app-version",
     "allow-check-for-updates",
     "allow-download-and-install-update",
-    "allow-pos-queue"
+    "allow-pos-queue",
+    "allow-purchase-bill-queue"
   ]
 }

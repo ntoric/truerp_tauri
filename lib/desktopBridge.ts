@@ -22,6 +22,7 @@ export interface DesktopUpdateProgress {
 
 const UPDATE_PROGRESS_EVENT = 'desktop-update-progress'
 export const POS_QUEUE_SYNC_EVENT = 'pos-queue-sync-requested'
+export const PURCHASE_BILL_QUEUE_SYNC_EVENT = 'purchase-bill-queue-sync-requested'
 
 type TauriEventApi = {
   listen?: <T>(
@@ -318,6 +319,19 @@ export async function subscribeDesktopPosQueueSync(onSync: () => void): Promise<
   if (!listen) return () => {}
   try {
     return await listen<number>(POS_QUEUE_SYNC_EVENT, () => {
+      onSync()
+    })
+  } catch {
+    return () => {}
+  }
+}
+
+/** Native shell asks the UI to retry pending purchase bill uploads while the app is open. */
+export async function subscribeDesktopPurchaseBillQueueSync(onSync: () => void): Promise<() => void> {
+  const listen = getTauri()?.event?.listen
+  if (!listen) return () => {}
+  try {
+    return await listen<number>(PURCHASE_BILL_QUEUE_SYNC_EVENT, () => {
       onSync()
     })
   } catch {

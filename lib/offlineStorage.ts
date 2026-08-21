@@ -7,6 +7,10 @@ import {
   parseDesktopPosSalePayload,
   shouldRetryDesktopPosQueue,
 } from '@/lib/desktopPosQueue'
+import {
+  desktopPurchaseBillQueueListUnsynced,
+  hasDesktopPurchaseBillQueue,
+} from '@/lib/desktopPurchaseBillQueue'
 
 export const POS_META_KEYS = {
   INVOICE_CURSOR: 'invoice_cursor',
@@ -68,7 +72,7 @@ export interface POSSaleRecord {
 type MetaRow = { key: string; value: unknown }
 
 const DB_NAME = 'TruERPOfflineDB'
-const DB_VERSION = 2
+const DB_VERSION = 3
 const STORES = {
   INVOICES: 'invoices',
   PAYMENTS: 'payments',
@@ -79,6 +83,7 @@ const STORES = {
   BATCHES: 'batches',
   META: 'meta',
   DRAFTS: 'posDrafts',
+  PURCHASE_BILLS: 'purchaseBills',
 }
 
 function sqliteStatus(status?: string): 'pending' | 'failed' | 'synced' {
@@ -104,6 +109,7 @@ class OfflineStorage {
   private db: IDBDatabase | null = null
   private opening: Promise<void> | null = null
   private hydratedDesktopQueue = false
+  private hydratedDesktopPurchaseBillQueue = false
 
   async init(): Promise<void> {
     if (this.opening) {
@@ -119,12 +125,21 @@ class OfflineStorage {
           this.opening = null
         }
       }
+      if (!this.hydratedDesktopPurchaseBillQueue) {
+        this.opening = this.hydrateFromDesktopPurchaseBillQueue()
+        try {
+          await this.opening
+        } finally {
+          this.opening = null
+        }
+      }
       return
     }
 
     this.opening = (async () => {
       await this.openIndexedDb()
       await this.hydrateFromDesktopQueue()
+      await this.hydrateFromDesktopPurchaseBillQueue()
     })()
     try {
       await this.opening
@@ -176,6 +191,10 @@ class OfflineStorage {
         }
         if (!db.objectStoreNames.contains(STORES.DRAFTS)) {
           db.createObjectStore(STORES.DRAFTS, { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains(STORES.PURCHASE_BILLS)) {
+          const pbStore = db.createObjectStore(STORES.PURCHASE_BILLS, { keyPath: 'id' })
+          pbStore.createIndex('kind', 'kind', { unique: false })
         }
       }
     })
@@ -229,6 +248,43 @@ class OfflineStorage {
       console.warn('Desktop POS queue hydrate failed:', err)
     } finally {
       this.hydratedDesktopQueue = true
+    }
+  }
+
+  /**
+   * Pull unsynced purchase bill submissions from the durable Tauri SQLite
+   * queue into the IndexedDB `purchaseBills` store so the JS sync engine can
+   * process them uniformly. Mirrors `hydrateFromDesktopQueue`. No-op outside
+   * the Tauri shell (browser dev falls back to IndexedDB-only).
+   */
+  private async hydrateFromDesktopPurchaseBillQueue(): Promise<void> {
+    if (this.hydratedDesktopPurchaseBillQueue) return
+    if (!hasDesktopPurchaseBillQueue()) {
+      this.hydratedDesktopPurchaseBillQueue = true
+      return
+    }
+    try {
+      const rows = await desktopPurchaseBillQueueListUnsynced()
+      for (const row of rows) {
+        if (!row.clientBillId) continue
+        await this.put(STORES.PURCHASE_BILLS, {
+          id: row.clientBillId,
+          kind: 'submission',
+          clientBillId: row.clientBillId,
+          asDraft: row.asDraft,
+          payload: row.payload,
+          status: row.status === 'failed' ? 'failed' : 'pending',
+          errorMessage: row.errorMessage || undefined,
+          vendorName: row.vendorName || undefined,
+          itemCount: row.itemCount,
+          totalAmount: row.totalAmount,
+          createdAt: row.createdAt,
+        })
+      }
+    } catch (err) {
+      console.warn('Desktop purchase bill queue hydrate failed:', err)
+    } finally {
+      this.hydratedDesktopPurchaseBillQueue = true
     }
   }
 
@@ -602,6 +658,33 @@ class OfflineStorage {
 
   async getLocalDrafts(): Promise<any[]> {
     return this.getAll(STORES.DRAFTS)
+  }
+
+  // ---- Purchase bill offline queue (IndexedDB fallback / mirror) ----
+
+  async putPurchaseBill(record: any): Promise<void> {
+    if (record?.id) await this.put(STORES.PURCHASE_BILLS, record)
+  }
+
+  async getPurchaseBill(id: string): Promise<any> {
+    if (!id) return null
+    return this.get(STORES.PURCHASE_BILLS, id)
+  }
+
+  async getAllPurchaseBills(): Promise<any[]> {
+    return this.getAll(STORES.PURCHASE_BILLS)
+  }
+
+  async deletePurchaseBill(id: string): Promise<void> {
+    if (!id) return
+    await this.delete(STORES.PURCHASE_BILLS, id)
+  }
+
+  async getPendingPurchaseBills(): Promise<any[]> {
+    const all = await this.getAll(STORES.PURCHASE_BILLS)
+    return all
+      .filter((item) => item.kind === 'submission' && (item.status === 'pending' || item.status === 'failed'))
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
   }
 }
 

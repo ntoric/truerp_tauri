@@ -94,6 +94,7 @@ export const navItems: NavItem[] = [
     icon: ShoppingCart,
     children: [
       { name: 'Purchase Invoices', href: '/purchase-invoices', icon: FileText },
+      { name: 'Pending Sync', href: '/purchase-invoices/pending', icon: Clock },
       { name: 'Purchase Return', href: '/purchase-returns', icon: RotateCcw },
       { name: 'Debit Notes', href: '/debit-notes', icon: FileMinus },
       { name: 'Payment Out', href: '/payment-outs', icon: CreditCard },

@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate, asArray } from '@/lib/utils'
 import { accountingExportDateStamp, downloadBlob, downloadCsv, rowsToCsv } from '@/lib/accountingExport'
 import { runWithExportProgress } from '@/lib/exportProgress'
-import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2, Package, BarChart3, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2, Package, BarChart3, ChevronUp, ChevronDown, CloudOff } from 'lucide-react'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import JSZip from 'jszip'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -35,6 +35,7 @@ import {
   type A4LabelSheetPresetKey,
 } from '@/lib/a4LabelSheets'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import { useOfflineSync } from '@/hooks/useOfflineSync'
 
 const THERMAL_LABEL_DIMENSIONS: Record<BarcodeLabelSize, { width: number; height: number }> = {
   '1inch': { width: 25.4, height: 15 },
@@ -74,6 +75,8 @@ interface PurchaseBillStats {
 
 export default function PurchaseInvoicesPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { syncStatus } = useOfflineSync()
+  const pendingOfflineCount = syncStatus.purchaseBillPending
   const [bills, setBills] = useState<PurchaseBill[]>([])
   const [stats, setStats] = useState<PurchaseBillStats>({ total_purchase: 0, paid: 0, unpaid: 0 })
   const [showStats, setShowStats] = useState(false)
@@ -663,6 +666,14 @@ export default function PurchaseInvoicesPage() {
             <Link href="/purchase-invoices/create">
               <Button><Plus className="mr-2 h-4 w-4" /> New Purchase Invoice</Button>
             </Link>
+            {pendingOfflineCount > 0 && (
+              <Link href="/purchase-invoices/pending">
+                <Button variant="outline" className="gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50">
+                  <CloudOff className="h-4 w-4" />
+                  Pending ({pendingOfflineCount})
+                </Button>
+              </Link>
+            )}
           </PageHeaderActions>
         </div>
 

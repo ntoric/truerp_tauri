@@ -2,6 +2,7 @@ mod paths;
 mod pos_queue;
 mod print;
 mod processes;
+mod purchase_bill_queue;
 mod proxy;
 mod thermal;
 #[cfg(desktop)]
@@ -15,6 +16,7 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 const POS_QUEUE_SYNC_EVENT: &str = "pos-queue-sync-requested";
+const PURCHASE_BILL_QUEUE_SYNC_EVENT: &str = "purchase-bill-queue-sync-requested";
 
 struct AppState {
     runtime: Arc<RuntimeProcesses>,
@@ -141,6 +143,13 @@ pub fn run() {
             pos_queue::pos_queue_update_status,
             pos_queue::pos_queue_pending_count,
             pos_queue::pos_queue_requeue_failed,
+            purchase_bill_queue::purchase_bill_queue_upsert,
+            purchase_bill_queue::purchase_bill_queue_list_unsynced,
+            purchase_bill_queue::purchase_bill_queue_update_status,
+            purchase_bill_queue::purchase_bill_queue_pending_count,
+            purchase_bill_queue::purchase_bill_queue_requeue_failed,
+            purchase_bill_queue::purchase_bill_queue_delete,
+            purchase_bill_queue::purchase_bill_queue_get,
         ])
         // Re-inject after splash → http://127.0.0.1:17888 navigation and any full reload.
         .on_page_load(|webview, payload| {
@@ -168,6 +177,17 @@ pub fn run() {
                     pos_queue::PosQueue::disabled()
                 }
             };
+            let pb_queue_path = data_root.join("purchase-bill-queue.sqlite");
+            let purchase_bill_queue = match purchase_bill_queue::PurchaseBillQueue::open(&pb_queue_path) {
+                Ok(queue) => {
+                    log::info!("Purchase bill queue: {}", pb_queue_path.display());
+                    queue
+                }
+                Err(err) => {
+                    log::error!("Purchase bill queue unavailable ({err}); falling back to IndexedDB only");
+                    purchase_bill_queue::PurchaseBillQueue::disabled()
+                }
+            };
             let runtime = Arc::new(RuntimeProcesses::new(data_root));
 
             let proxy_flag = Arc::clone(&runtime.frontend_ready);
@@ -190,6 +210,7 @@ pub fn run() {
                 close_confirm_open: AtomicBool::new(false),
             });
             app.manage(pos_queue);
+            app.manage(purchase_bill_queue);
 
             let sync_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -197,15 +218,25 @@ pub fn run() {
                 interval.tick().await;
                 loop {
                     interval.tick().await;
-                    let Some(queue) = sync_handle.try_state::<pos_queue::PosQueue>() else {
+                    let Some(pos_queue) = sync_handle.try_state::<pos_queue::PosQueue>() else {
                         continue;
                     };
-                    match queue.unsynced_count() {
+                    let Some(pb_queue) = sync_handle.try_state::<purchase_bill_queue::PurchaseBillQueue>() else {
+                        continue;
+                    };
+                    match pos_queue.unsynced_count() {
                         Ok(count) if count > 0 => {
                             let _ = sync_handle.emit(POS_QUEUE_SYNC_EVENT, count);
                         }
                         Ok(_) => {}
                         Err(err) => log::warn!("POS queue count: {err}"),
+                    }
+                    match pb_queue.unsynced_count() {
+                        Ok(count) if count > 0 => {
+                            let _ = sync_handle.emit(PURCHASE_BILL_QUEUE_SYNC_EVENT, count);
+                        }
+                        Ok(_) => {}
+                        Err(err) => log::warn!("Purchase bill queue count: {err}"),
                     }
                 }
             });
@@ -231,10 +262,15 @@ pub fn run() {
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {
-                    let Some(queue) = window.try_state::<pos_queue::PosQueue>() else {
+                    let Some(pos_queue) = window.try_state::<pos_queue::PosQueue>() else {
                         return;
                     };
-                    let pending = queue.unsynced_count().unwrap_or(0);
+                    let Some(pb_queue) = window.try_state::<purchase_bill_queue::PurchaseBillQueue>() else {
+                        return;
+                    };
+                    let pos_pending = pos_queue.unsynced_count().unwrap_or(0);
+                    let pb_pending = pb_queue.unsynced_count().unwrap_or(0);
+                    let pending = pos_pending + pb_pending;
                     if pending <= 0 {
                         return;
                     }
@@ -249,16 +285,32 @@ pub fn run() {
                         }
                     }
                     api.prevent_close();
-                    let noun = if pending == 1 { "sale has" } else { "sales have" };
+                    let mut parts: Vec<String> = Vec::new();
+                    if pos_pending > 0 {
+                        parts.push(format!(
+                            "{} POS {}",
+                            pos_pending,
+                            if pos_pending == 1 { "sale" } else { "sales" }
+                        ));
+                    }
+                    if pb_pending > 0 {
+                        parts.push(format!(
+                            "{} purchase {}",
+                            pb_pending,
+                            if pb_pending == 1 { "bill" } else { "bills" }
+                        ));
+                    }
+                    let joined = parts.join(" and ");
                     let message = format!(
-                        "{pending} POS {noun} not been uploaded to the cloud yet.\n\nThey stay on this computer and will sync the next time you open TruERP. Quit anyway?"
+                        "{joined} {} not been uploaded to the cloud yet.\n\nThey stay on this computer and will sync the next time you open TruERP. Quit anyway?",
+                        if pending == 1 { "has" } else { "have" }
                     );
                     let window = window.clone();
                     window
                         .app_handle()
                         .dialog()
                         .message(message)
-                        .title("Unsynced POS sales")
+                        .title("Unsynced records")
                         .kind(MessageDialogKind::Warning)
                         .buttons(MessageDialogButtons::OkCancelCustom("Quit".into(), "Stay".into()))
                         .show(move |should_quit| {
