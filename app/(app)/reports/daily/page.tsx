@@ -33,6 +33,7 @@ import {
   type PeriodReport,
   type PaymentMethodTotal,
   type ExpenseLine,
+  type LoyaltyReportSummary,
 } from '@/lib/dailyReport'
 import { downloadBlob } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -56,6 +57,7 @@ import {
   Landmark,
   ScrollText,
   Receipt,
+  Gift,
   type LucideIcon,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -332,6 +334,66 @@ function ExpensesTable({ report }: { report: DailyReport }) {
   )
 }
 
+function LoyaltySummaryTable({ report }: { report: DailyReport }) {
+  const loyalty = report.loyalty
+  if (!loyalty || !loyalty.enabled) return null
+  if (loyalty.points_earned === 0 && loyalty.points_redeemed === 0) return null
+
+  return (
+    <div className="mt-6 overflow-hidden rounded-lg border border-amber-200">
+      <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3">
+        <Gift className="h-4 w-4 text-amber-700" />
+        <h3 className="text-sm font-semibold text-amber-900">Loyalty points</h3>
+        <span className="text-xs text-amber-700">
+          {loyalty.points_earned.toLocaleString()} earned · {loyalty.points_redeemed.toLocaleString()} redeemed
+        </span>
+      </div>
+      <div className="table-scroll">
+        <table className="w-full text-sm">
+          <thead className="bg-amber-50/60 text-left text-amber-900">
+            <tr>
+              <th className="px-4 py-3 font-medium">Activity</th>
+              <th className="px-4 py-3 font-medium text-right">Transactions</th>
+              <th className="px-4 py-3 font-medium text-right">Points</th>
+              <th className="px-4 py-3 font-medium text-right">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-t border-amber-100">
+              <td className="px-4 py-3 font-medium text-gray-900">
+                <TermHelp
+                  label="Points earned"
+                  help={dailyReportSummaryHelp.loyalty_points_earned}
+                />
+              </td>
+              <td className="px-4 py-3 text-right text-gray-600">{loyalty.earn_transactions}</td>
+              <td className="px-4 py-3 text-right font-semibold text-emerald-800">
+                {loyalty.points_earned.toLocaleString()}
+              </td>
+              <td className="px-4 py-3 text-right text-gray-500">—</td>
+            </tr>
+            <tr className="border-t border-amber-100">
+              <td className="px-4 py-3 font-medium text-gray-900">
+                <TermHelp
+                  label="Points redeemed"
+                  help={dailyReportSummaryHelp.loyalty_points_redeemed}
+                />
+              </td>
+              <td className="px-4 py-3 text-right text-gray-600">{loyalty.redeem_transactions}</td>
+              <td className="px-4 py-3 text-right font-semibold text-amber-800">
+                {loyalty.points_redeemed.toLocaleString()}
+              </td>
+              <td className="px-4 py-3 text-right font-semibold text-amber-800">
+                {formatCurrency(loyalty.redemption_value)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function ReportSummaryBody({
   report,
   profitLabel = 'Period profit',
@@ -554,6 +616,8 @@ function ReportSummaryBody({
       <PaymentsByMethodTable report={report} />
 
       <ExpensesTable report={report} />
+
+      <LoyaltySummaryTable report={report} />
 
       <p className="mt-4 text-xs text-gray-500">
         Period profit = sales − purchases − expenses ± returns/notes (accrual). Product profit =

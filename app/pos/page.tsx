@@ -1337,6 +1337,14 @@ export default function POSPage() {
     const paymentMode = checkoutSplits[0]?.mode || paymentSplits[0]?.mode || 'upi'
     const saleStatus = amountPaid + 0.01 >= roundedTotal ? 'paid' : (amountPaid > 0 ? 'partial' : 'sent')
     const saleDiscount = getSaleDiscount()
+    const loyaltyDiscountValue = getLoyaltyDiscount(saleDiscount)
+    const loyaltyEarned = loyaltySettings?.is_enabled
+      ? estimatePointsEarned(loyaltySettings, Math.max(0, getCartTotal() - saleDiscount - loyaltyDiscountValue))
+      : 0
+    const loyaltyBalanceAfter =
+      loyaltySettings?.is_enabled && activeTab.selectedParty
+        ? Math.max(0, (activeTab.selectedParty.loyalty_points ?? 0) - loyaltyPointsToRedeem + loyaltyEarned)
+        : undefined
     const cartSnapshot = [...activeTab.cart]
     const partySnapshot = activeTab.selectedParty
     const clientSaleId = crypto.randomUUID()
@@ -1440,6 +1448,16 @@ export default function POSPage() {
                 tax_rate: item.tax_rate,
                 total: item.total || 0,
               })),
+              ...(loyaltyPointsToRedeem > 0
+                ? {
+                    loyalty_points_redeemed: loyaltyPointsToRedeem,
+                    loyalty_discount: loyaltyDiscountValue,
+                  }
+                : {}),
+              ...(loyaltyEarned > 0 ? { loyalty_points_earned: loyaltyEarned } : {}),
+              ...(loyaltyBalanceAfter !== undefined
+                ? { loyalty_points_balance: loyaltyBalanceAfter }
+                : {}),
             },
             printSize
           )

@@ -52,6 +52,16 @@ export interface DailyReport {
   net_cash_flow: number
   daily_profit: number
   product_profit: number
+  loyalty?: LoyaltyReportSummary
+}
+
+export interface LoyaltyReportSummary {
+  enabled: boolean
+  points_earned: number
+  points_redeemed: number
+  earn_transactions: number
+  redeem_transactions: number
+  redemption_value: number
 }
 
 export type PeriodicReportPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
@@ -134,6 +144,10 @@ export const dailyReportSummaryHelp: Record<string, string> = {
     'Gross margin on items sold: taxable sale value minus product purchase cost, net of sales returns and credit notes.',
   net_cash_flow:
     'Cash movement for this period: payments received − payment out − expenses.',
+  loyalty_points_earned:
+    'Loyalty points credited to customers from sales in this period (earn transactions).',
+  loyalty_points_redeemed:
+    'Loyalty points customers redeemed against bills in this period. Redemption value is the ₹ discount granted.',
 }
 
 function isMetric(value: unknown): value is DailyReportMetric {
@@ -184,6 +198,19 @@ function appendExpenseLinesSection(lines: string[], report: DailyReport) {
   lines.push(`Total expenses: ${formatCurrency(report.expenses.total_amount)}`)
 }
 
+function appendLoyaltySection(lines: string[], report: DailyReport) {
+  const loyalty = report.loyalty
+  if (!loyalty || !loyalty.enabled) return
+  if (loyalty.points_earned === 0 && loyalty.points_redeemed === 0) return
+  lines.push('', 'Loyalty points', '--------')
+  lines.push(
+    `Points earned: ${loyalty.earn_transactions} txn · ${loyalty.points_earned.toLocaleString()} pts`
+  )
+  lines.push(
+    `Points redeemed: ${loyalty.redeem_transactions} txn · ${loyalty.points_redeemed.toLocaleString()} pts · ${formatCurrency(loyalty.redemption_value)} discount`
+  )
+}
+
 export function buildDailyReportShareText(report: DailyReport, heading = 'Daily Business Report'): string {
   const title = report.business_name
     ? `${heading} — ${report.business_name}`
@@ -208,6 +235,7 @@ export function buildDailyReportShareText(report: DailyReport, heading = 'Daily 
 
   appendPaymentMethodSection(lines, report)
   appendExpenseLinesSection(lines, report)
+  appendLoyaltySection(lines, report)
 
   lines.push(
     '',
@@ -250,6 +278,7 @@ export function buildPeriodReportShareText(report: PeriodReport): string {
 
   appendPaymentMethodSection(lines, report)
   appendExpenseLinesSection(lines, report)
+  appendLoyaltySection(lines, report)
 
   lines.push(
     '',

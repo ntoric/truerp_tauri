@@ -9,7 +9,7 @@ import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter, Gift } from 'lucide-react'
 import ThermalPrintModal from '@/components/ThermalPrintModal'
 import InvoiceAttachments from '@/components/InvoiceAttachments'
 import InvoiceStatusTracker from '@/components/InvoiceStatusTracker'
@@ -20,6 +20,7 @@ import InvoiceCustomFieldsForm, {
 } from '@/components/InvoiceCustomFieldsForm'
 import { downloadInvoicePdf } from '@/lib/printDocument'
 import { notifyError } from '@/lib/notify'
+import type { LoyaltySettings } from '@/lib/loyalty-types'
 
 interface InvoiceItem {
   id: string
@@ -62,6 +63,9 @@ interface Invoice {
   custom_fields?: string
   pdf_template?: string
   items: InvoiceItem[]
+  loyalty_points_earned?: number
+  loyalty_points_redeemed?: number
+  loyalty_discount?: number
 }
 
 function partyName(invoice: Invoice) {
@@ -81,17 +85,28 @@ function InvoiceViewContent() {
   const [loading, setLoading] = useState(true)
   const [thermalPrintOpen, setThermalPrintOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
 
   useEffect(() => {
     if (id) {
       fetchInvoice()
       fetchFieldDefs()
     }
+    fetchLoyaltySettings()
   }, [id])
 
   const fetchFieldDefs = async () => {
     const res = await apiFetch('/settings/invoice-custom-fields')
     if (res.ok) setFieldDefs(await res.json())
+  }
+
+  const fetchLoyaltySettings = async () => {
+    try {
+      const res = await apiFetch('/loyalty/settings', { timeoutMs: 5000 })
+      if (res.ok) setLoyaltySettings(await res.json())
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   const fetchInvoice = async () => {
@@ -261,6 +276,32 @@ function InvoiceViewContent() {
                       <span>{formatCurrency(invoice.total_amount)}</span>
                     </div>
                   </div>
+                  {loyaltySettings?.is_enabled && ((invoice.loyalty_points_redeemed ?? 0) > 0 || (invoice.loyalty_points_earned ?? 0) > 0 || (invoice.loyalty_discount ?? 0) > 0) && (
+                    <div className="border-t pt-2 mt-2 space-y-1">
+                      <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                        <Gift className="h-3.5 w-3.5" />
+                        Loyalty points
+                      </div>
+                      {(invoice.loyalty_points_redeemed ?? 0) > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Points redeemed</span>
+                          <span className="font-medium text-amber-800">{invoice.loyalty_points_redeemed} pts</span>
+                        </div>
+                      )}
+                      {(invoice.loyalty_discount ?? 0) > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Loyalty discount</span>
+                          <span className="font-medium text-red-600">-{formatCurrency(invoice.loyalty_discount ?? 0)}</span>
+                        </div>
+                      )}
+                      {(invoice.loyalty_points_earned ?? 0) > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Points earned</span>
+                          <span className="font-medium text-emerald-700">+{invoice.loyalty_points_earned} pts</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
