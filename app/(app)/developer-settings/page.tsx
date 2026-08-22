@@ -22,8 +22,9 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Mail, MessageSquare, Send, Loader2, CheckCircle, XCircle,
-  Smartphone, Save, LayoutGrid, Sparkles,
+  Smartphone, Save, LayoutGrid, Sparkles, Clock,
 } from 'lucide-react'
+import { getServerTime, type ServerTimeInfo } from '@/lib/dailyReport'
 
 interface AiBusinessSettings {
   enable_ai_hsn_search: boolean
@@ -62,12 +63,13 @@ interface DeveloperSettings {
   aws_secret_key?: string
   aws_region: string
   sendgrid_sms_api_key?: string
+  timezone: string
 }
 
 export default function DeveloperSettingsPage() {
   const { user, loading: authLoading } = useAuth()
   const { setPagesLocal, refresh: refreshPageFeatures } = usePageFeatures()
-  const [activeTab, setActiveTab] = useState('email')
+  const [activeTab, setActiveTab] = useState('general')
   const [settings, setSettings] = useState<DeveloperSettings>({
     id: '',
     user_id: '',
@@ -90,6 +92,7 @@ export default function DeveloperSettingsPage() {
     textlocal_sender_id: '',
     aws_access_key: '',
     aws_region: '',
+    timezone: '',
   })
   const [pageFeatures, setPageFeatures] = useState<PageFeaturesMap>(defaultPageFeatures)
   const [aiSettings, setAiSettings] = useState<AiBusinessSettings>({
@@ -102,6 +105,7 @@ export default function DeveloperSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState<'email' | 'whatsapp' | 'sms' | null>(null)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [serverTime, setServerTime] = useState<ServerTimeInfo | null>(null)
 
   useEffect(() => {
     if (!authLoading && user && isSuperAdmin(user.role)) {
@@ -110,6 +114,27 @@ export default function DeveloperSettingsPage() {
       setLoading(false)
     }
   }, [authLoading, user])
+
+  // Poll server time so the user can see the detected server timezone and the
+  // current time in their configured timezone (which the scheduler uses).
+  useEffect(() => {
+    if (!user || !isSuperAdmin(user.role)) return
+    let active = true
+    const fetchServerTime = async () => {
+      try {
+        const info = await getServerTime()
+        if (active) setServerTime(info)
+      } catch {
+        // ignore — non-critical
+      }
+    }
+    void fetchServerTime()
+    const interval = setInterval(fetchServerTime, 30000)
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [user])
 
   const fetchSettings = async () => {
     try {
@@ -311,7 +336,11 @@ export default function DeveloperSettingsPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
+            <TabsTrigger value="general" className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              General
+            </TabsTrigger>
             <TabsTrigger value="email" className="flex items-center gap-2">
               <Mail className="h-4 w-4" />
               Email
@@ -333,6 +362,103 @@ export default function DeveloperSettingsPage() {
               Pages & Menus
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="general">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Timezone
+                </CardTitle>
+                <CardDescription>
+                  Set the timezone used by all scheduled automations (e.g. the
+                  daily report email send time). The server runs in UTC; this
+                  setting converts the server clock to your local timezone so
+                  scheduled times fire when you expect.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Configured timezone</Label>
+                    <Select
+                      value={settings.timezone ? settings.timezone : '__server__'}
+                      onValueChange={(value) =>
+                        setSettings({ ...settings, timezone: value === '__server__' ? '' : value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Use server timezone (UTC)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__server__">
+                          Use server timezone ({serverTime?.timezone_name || 'UTC'})
+                        </SelectItem>
+                        {(serverTime?.common_timezones || []).map((tz) => (
+                          <SelectItem key={tz} value={tz}>
+                            {tz}
+                          </SelectItem>
+                        ))}
+                        {settings.timezone &&
+                          !(serverTime?.common_timezones || []).includes(settings.timezone) && (
+                            <SelectItem value={settings.timezone}>{settings.timezone}</SelectItem>
+                          )}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500">
+                      Choose an IANA timezone (e.g. Asia/Kolkata). Leave blank to use the
+                      server&apos;s timezone.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5 rounded-md border bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                    <div>
+                      <span className="font-medium text-gray-800">Server time:</span>{' '}
+                      {serverTime ? (
+                        <span>
+                          {serverTime.server_time} ({serverTime.timezone_name})
+                          {serverTime.utc_offset_hours !== 0 && (
+                            <span className="text-gray-500">
+                              {' '}· UTC{serverTime.utc_offset_hours > 0 ? '+' : ''}
+                              {serverTime.utc_offset_hours}h
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">Loading…</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-800">Scheduler time:</span>{' '}
+                      {serverTime ? (
+                        <span>
+                          {serverTime.configured_time} ({serverTime.configured_timezone_name || serverTime.configured_timezone || 'server-default'})
+                          {serverTime.configured_utc_offset_hours !== 0 && (
+                            <span className="text-gray-500">
+                              {' '}· UTC{serverTime.configured_utc_offset_hours > 0 ? '+' : ''}
+                              {serverTime.configured_utc_offset_hours}h
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">Loading…</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-800">Status:</span>{' '}
+                      {serverTime?.has_configured_timezone ? (
+                        <span className="text-green-700">Using configured timezone</span>
+                      ) : (
+                        <span className="text-amber-700">
+                          No timezone configured — using server timezone. Set one above so the
+                          daily report scheduler fires at your local time.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="email">
             <Card>

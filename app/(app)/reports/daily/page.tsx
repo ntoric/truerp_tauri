@@ -28,12 +28,20 @@ import {
   downloadPeriodReportPdf,
   paymentMethodsForReport,
   PERIODIC_REPORT_OPTIONS,
+  getDailyReportEmailSettings,
+  updateDailyReportEmailSettings,
+  sendDailyReportEmailNow,
+  getServerTime,
+  REPORT_EMAIL_PERIOD_OPTIONS,
   type DailyReport,
   type PeriodicReportPeriod,
   type PeriodReport,
   type PaymentMethodTotal,
   type ExpenseLine,
   type LoyaltyReportSummary,
+  type DailyReportEmailSettings,
+  type ReportEmailPeriod,
+  type ServerTimeInfo,
 } from '@/lib/dailyReport'
 import { downloadBlob } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -67,6 +75,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -630,6 +641,304 @@ function ReportSummaryBody({
   )
 }
 
+function ReportEmailSettingsCard() {
+  const [settings, setSettings] = useState<DailyReportEmailSettings | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [serverTime, setServerTime] = useState<ServerTimeInfo | null>(null)
+
+  // Local editable form state
+  const [isEnabled, setIsEnabled] = useState(false)
+  const [recipients, setRecipients] = useState('')
+  const [period, setPeriod] = useState<ReportEmailPeriod>('daily')
+  const [sendTime, setSendTime] = useState('09:00')
+  const [subject, setSubject] = useState('')
+
+  const loadSettings = useCallback(async () => {
+    setLoading(true)
+    try {
+      const s = await getDailyReportEmailSettings()
+      setSettings(s)
+      setIsEnabled(s.is_enabled)
+      setRecipients(s.recipient_emails || '')
+      setPeriod((s.period as ReportEmailPeriod) || 'daily')
+      setSendTime(s.send_time || '09:00')
+      setSubject(s.subject || '')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to load report email settings')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadSettings()
+  }, [loadSettings])
+
+  // Poll server time every 30s so the user can see the scheduler's clock.
+  useEffect(() => {
+    let active = true
+    const fetchServerTime = async () => {
+      try {
+        const info = await getServerTime()
+        if (active) setServerTime(info)
+      } catch {
+        // ignore — non-critical
+      }
+    }
+    void fetchServerTime()
+    const interval = setInterval(fetchServerTime, 30000)
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const updated = await updateDailyReportEmailSettings({
+        is_enabled: isEnabled,
+        recipient_emails: recipients,
+        period,
+        send_time: sendTime,
+        subject,
+      })
+      setSettings(updated)
+      setIsEnabled(updated.is_enabled)
+      setRecipients(updated.recipient_emails || '')
+      setPeriod((updated.period as ReportEmailPeriod) || 'daily')
+      setSendTime(updated.send_time || '09:00')
+      setSubject(updated.subject || '')
+      notifySuccess('Report email settings saved')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const sendNow = async () => {
+    setSending(true)
+    try {
+      const result = await sendDailyReportEmailNow()
+      if (result.settings) setSettings(result.settings)
+      if (result.warning && result.sent_count === 0) {
+        notifyError(result.warning_msg || 'Failed to send report email')
+      } else if (result.warning) {
+        notifyError(
+          `Sent ${result.sent_count} of ${result.total}. ${result.warning_msg || ''}`
+        )
+      } else {
+        notifySuccess(`Report email sent to ${result.sent_count} recipient(s)`)
+      }
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to send report email')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const lastSentLabel = () => {
+    if (!settings?.last_sent_at) return 'Never'
+    const d = new Date(settings.last_sent_at)
+    const status = settings.last_sent_status || ''
+    const statusLabel =
+      status === 'success'
+        ? '✓ sent'
+        : status === 'partial'
+          ? '⚠ partial'
+          : status === 'failed'
+            ? '✗ failed'
+            : ''
+    return `${formatDate(d.toISOString())} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${statusLabel}`
+  }
+
+  const lastScheduledLabel = () => {
+    if (!settings?.last_scheduled_at) return 'Never (waiting for scheduled time)'
+    const d = new Date(settings.last_scheduled_at)
+    return `${formatDate(d.toISOString())} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <Mail className="h-5 w-5 text-blue-600" />
+          <div>
+            <CardTitle className="text-base">Auto-email report PDF</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Automatically email the daily/periodic report PDF export to a list of recipients at a
+              scheduled time each day.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">{isEnabled ? 'On' : 'Off'}</span>
+          <Switch checked={isEnabled} onCheckedChange={setIsEnabled} aria-label="Enable report email" />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <div className="flex h-24 items-center justify-center">
+            <div className="h-6 w-6 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label>Report period</Label>
+                <Select
+                  value={period}
+                  onValueChange={(value) => setPeriod(value as ReportEmailPeriod)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select period" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REPORT_EMAIL_PERIOD_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Send time (24h)</Label>
+                <Input
+                  type="time"
+                  value={sendTime}
+                  onChange={(e) => setSendTime(e.target.value)}
+                />
+                <p className="text-xs text-gray-500">
+                  {serverTime?.has_configured_timezone
+                    ? `In your configured timezone (${serverTime.configured_timezone_name}).`
+                    : 'In the server timezone — set a timezone in Developer Settings.'}{' '}
+                  Report covers the previous day/week/month.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email subject (optional)</Label>
+                <Input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="Defaults to e.g. &quot;Daily Report — Business — 01 Jan 2026&quot;"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Recipient email addresses</Label>
+              <Textarea
+                value={recipients}
+                onChange={(e) => setRecipients(e.target.value)}
+                placeholder={'Comma or newline separated, e.g.\nowner@example.com\naccountant@example.com'}
+                rows={3}
+              />
+              <p className="text-xs text-gray-500">
+                Separate multiple addresses with commas, semicolons, or new lines. SMTP must be
+                configured in Developer Settings for emails to send.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-gray-50 px-3 py-2">
+              <div className="space-y-0.5 text-xs text-gray-600">
+                <div>
+                  <span className="font-medium text-gray-800">Scheduler time:</span>{' '}
+                  {serverTime ? (
+                    <span>
+                      {serverTime.configured_time} ({serverTime.configured_timezone_name || serverTime.configured_timezone || 'server-default'})
+                      {serverTime.configured_utc_offset_hours !== 0 && (
+                        <span className="text-gray-500">
+                          {' '}
+                          · UTC{serverTime.configured_utc_offset_hours > 0 ? '+' : ''}
+                          {serverTime.configured_utc_offset_hours}h
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">Loading…</span>
+                  )}
+                  {serverTime && !serverTime.has_configured_timezone && (
+                    <span className="ml-1 text-amber-700">
+                      (server-default — set a timezone in Developer Settings)
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span className="font-medium text-gray-800">Server time:</span>{' '}
+                  {serverTime ? (
+                    <span>
+                      {serverTime.server_time} ({serverTime.timezone_name})
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">Loading…</span>
+                  )}
+                </div>
+                <div>
+                  <span className="font-medium text-gray-800">Last sent (any):</span> {lastSentLabel()}
+                  {settings?.last_sent_error && (
+                    <span className="ml-2 block text-red-600">{settings.last_sent_error}</span>
+                  )}
+                </div>
+                <div>
+                  <span className="font-medium text-gray-800">Last scheduled send:</span> {lastScheduledLabel()}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void sendNow()}
+                  disabled={sending || !settings?.recipient_emails}
+                >
+                  <Mail className="mr-2 h-4 w-4" />
+                  {sending ? 'Sending…' : 'Send now (test)'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void save()}
+                  disabled={saving}
+                >
+                  {saving ? 'Saving…' : 'Save settings'}
+                </Button>
+              </div>
+            </div>
+
+            {serverTime && settings?.is_enabled && (
+              <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                <span className="font-medium">Scheduler info:</span> The scheduler checks every 60
+                seconds and sends when the configured-timezone clock reaches{' '}
+                <span className="font-mono font-semibold">{sendTime || '09:00'}</span>. Current
+                time is{' '}
+                <span className="font-mono font-semibold">{serverTime.configured_time_hhmm}</span>{' '}
+                ({serverTime.configured_timezone_name || serverTime.configured_timezone || 'server-default'}).{' '}
+                {serverTime.configured_time_hhmm < (sendTime || '09:00') ? (
+                  <>Waiting — send time has not been reached yet.</>
+                ) : (
+                  <>Send time has been reached — the scheduler should send on the next check (within 60s).</>
+                )}
+                {!serverTime.has_configured_timezone && (
+                  <span className="mt-1 block">
+                    Note: no timezone configured in Developer Settings, so the server timezone
+                    ({serverTime.timezone_name}) is used. Set a timezone there to make the send
+                    time match your local clock.
+                  </span>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function DailyReportPage() {
   const [reportDate, setReportDate] = useState(todayISO)
   const [report, setReport] = useState<DailyReport | null>(null)
@@ -881,6 +1190,8 @@ export default function DailyReportPage() {
                 )}
               </CardContent>
             </Card>
+
+            <ReportEmailSettingsCard />
           </TabsContent>
 
           <TabsContent value="periodic" className="space-y-4">

@@ -127,10 +127,17 @@ export default function WhatsAppMarketingPage() {
     e.preventDefault()
     setCreating(true)
     try {
+      const { scheduled_date, ...rest } = newCampaign
+      const payload = {
+        ...rest,
+        ...(scheduled_date
+          ? { scheduled_date: new Date(scheduled_date).toISOString() }
+          : {}),
+      }
       const res = await apiFetch('/whatsapp-marketing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCampaign)
+        body: JSON.stringify(payload)
       })
       if (res.ok) {
         setNewCampaign({

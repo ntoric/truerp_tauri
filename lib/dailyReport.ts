@@ -362,3 +362,92 @@ export async function downloadPeriodReportPdf(params: {
 }
 
 export const dailyReportSections = metricRows
+
+// --- Daily report email automation ---
+
+export type ReportEmailPeriod = 'today' | 'daily' | 'weekly' | 'monthly'
+
+export interface DailyReportEmailSettings {
+  id: string
+  user_id: string
+  is_enabled: boolean
+  recipient_emails: string
+  period: ReportEmailPeriod
+  send_time: string
+  subject: string
+  last_sent_at?: string | null
+  last_sent_status?: string
+  last_sent_error?: string
+  last_scheduled_at?: string | null
+}
+
+export const REPORT_EMAIL_PERIOD_OPTIONS: { value: ReportEmailPeriod; label: string }[] = [
+  { value: 'today', label: 'Today (current day)' },
+  { value: 'daily', label: 'Daily (previous day)' },
+  { value: 'weekly', label: 'Weekly (last week)' },
+  { value: 'monthly', label: 'Monthly (last month)' },
+]
+
+export async function getDailyReportEmailSettings(): Promise<DailyReportEmailSettings> {
+  const res = await apiFetch('/dashboard/report-email-settings')
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || 'Failed to load report email settings')
+  }
+  return res.json()
+}
+
+export async function updateDailyReportEmailSettings(
+  payload: Partial<DailyReportEmailSettings>
+): Promise<DailyReportEmailSettings> {
+  const res = await apiFetch('/dashboard/report-email-settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || 'Failed to save report email settings')
+  }
+  return res.json()
+}
+
+export async function sendDailyReportEmailNow(
+  date?: string
+): Promise<{ sent_count: number; total: number; settings: DailyReportEmailSettings; warning: boolean; warning_msg?: string }> {
+  const qs = date ? `?date=${date}` : ''
+  const res = await apiFetch(`/dashboard/report-email-settings/send-now${qs}`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || 'Failed to send report email')
+  }
+  return res.json()
+}
+
+export interface ServerTimeInfo {
+  server_time: string
+  server_date: string
+  server_time_hhmm: string
+  timezone: string
+  utc_offset_hours: number
+  timezone_name: string
+  // Configured timezone clock — what the scheduler actually uses.
+  configured_time: string
+  configured_date: string
+  configured_time_hhmm: string
+  configured_timezone: string
+  configured_timezone_name: string
+  configured_utc_offset_hours: number
+  has_configured_timezone: boolean
+  common_timezones?: string[]
+}
+
+export async function getServerTime(): Promise<ServerTimeInfo> {
+  const res = await apiFetch('/dashboard/report-email-settings/server-time')
+  if (!res.ok) {
+    throw new Error('Failed to fetch server time')
+  }
+  return res.json()
+}
