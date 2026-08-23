@@ -51,6 +51,7 @@ interface DeveloperSettings {
   twilio_account_sid: string
   twilio_auth_token?: string
   twilio_phone_number: string
+  telegram_bot_token?: string
   sms_provider: string
   twilio_sms_account_sid: string
   twilio_sms_auth_token?: string
@@ -85,6 +86,7 @@ export default function DeveloperSettingsPage() {
     whatsapp_business_account_id: '',
     twilio_account_sid: '',
     twilio_phone_number: '',
+    telegram_bot_token: '',
     sms_provider: 'twilio',
     twilio_sms_account_sid: '',
     twilio_sms_phone_number: '',
@@ -103,7 +105,7 @@ export default function DeveloperSettingsPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState<'email' | 'whatsapp' | 'sms' | null>(null)
+  const [testing, setTesting] = useState<'email' | 'whatsapp' | 'sms' | 'telegram' | null>(null)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
   const [serverTime, setServerTime] = useState<ServerTimeInfo | null>(null)
 
@@ -288,6 +290,27 @@ export default function DeveloperSettingsPage() {
     }
   }
 
+  const testTelegramConnection = async () => {
+    setTesting('telegram')
+    setTestResult(null)
+    try {
+      const res = await apiFetch('/developer-settings/test-telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ telegram_bot_token: settings.telegram_bot_token }),
+      })
+      const data = await res.json()
+      const msg = data.bot_username
+        ? `${data.message} (@${data.bot_username})`
+        : data.message || data.error || (res.ok ? 'Telegram connection successful' : 'Telegram connection failed')
+      setTestResult({ success: res.ok, message: msg })
+    } catch (err) {
+      setTestResult({ success: false, message: 'Telegram connection failed' })
+    } finally {
+      setTesting(null)
+    }
+  }
+
   if (authLoading || loading) {
     return (
       <DashboardLayout>
@@ -336,7 +359,7 @@ export default function DeveloperSettingsPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
               General
@@ -348,6 +371,10 @@ export default function DeveloperSettingsPage() {
             <TabsTrigger value="whatsapp" className="flex items-center gap-2">
               <MessageSquare className="h-4 w-4" />
               WhatsApp
+            </TabsTrigger>
+            <TabsTrigger value="telegram" className="flex items-center gap-2">
+              <Send className="h-4 w-4" />
+              Telegram
             </TabsTrigger>
             <TabsTrigger value="sms" className="flex items-center gap-2">
               <Smartphone className="h-4 w-4" />
@@ -647,6 +674,50 @@ export default function DeveloperSettingsPage() {
                 <Button onClick={testWhatsAppConnection} disabled={testing === 'whatsapp'} variant="outline">
                   {testing === 'whatsapp' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                   Test WhatsApp Connection
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="telegram">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Send className="h-5 w-5" />
+                  Telegram Bot Configuration
+                </CardTitle>
+                <CardDescription>
+                  Configure the Telegram bot used for Telegram Marketing campaigns and
+                  automatic daily/periodic report delivery. Create a bot via{' '}
+                  <a
+                    href="https://t.me/BotFather"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 underline"
+                  >
+                    @BotFather
+                  </a>{' '}
+                  and paste the token below. The bot must be added to any channel/group
+                  you want to send to (with send permission).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Telegram Bot Token</Label>
+                  <Input
+                    type="password"
+                    placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                    onChange={(e) => setSettings({ ...settings, telegram_bot_token: e.target.value })}
+                  />
+                  <p className="text-xs text-gray-500">
+                    Leave blank to keep the saved token. The token is stored encrypted.
+                    A global fallback can be set via the <code>TELEGRAM_BOT_TOKEN</code> env var.
+                  </p>
+                </div>
+
+                <Button onClick={testTelegramConnection} disabled={testing === 'telegram'} variant="outline">
+                  {testing === 'telegram' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Test Telegram Connection
                 </Button>
               </CardContent>
             </Card>

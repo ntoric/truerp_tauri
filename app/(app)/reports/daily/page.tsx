@@ -43,6 +43,15 @@ import {
   type ReportEmailPeriod,
   type ServerTimeInfo,
 } from '@/lib/dailyReport'
+import {
+  buildTelegramShareURL,
+  getDailyReportTelegramSettings,
+  updateDailyReportTelegramSettings,
+  sendDailyReportTelegramNow,
+  REPORT_TELEGRAM_PERIOD_OPTIONS,
+  type DailyReportTelegramSettings,
+  type ReportTelegramPeriod,
+} from '@/lib/telegram'
 import { downloadBlob } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import {
@@ -51,6 +60,8 @@ import {
   Share2,
   Mail,
   Copy,
+  Send,
+  Settings,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -939,6 +950,255 @@ function ReportEmailSettingsCard() {
   )
 }
 
+function ReportTelegramSettingsCard() {
+  const [settings, setSettings] = useState<DailyReportTelegramSettings | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [serverTime, setServerTime] = useState<ServerTimeInfo | null>(null)
+
+  const [isEnabled, setIsEnabled] = useState(false)
+  const [targetChats, setTargetChats] = useState('')
+  const [period, setPeriod] = useState<ReportTelegramPeriod>('daily')
+  const [sendTime, setSendTime] = useState('09:00')
+  const [caption, setCaption] = useState('')
+
+  const loadSettings = useCallback(async () => {
+    setLoading(true)
+    try {
+      const s = await getDailyReportTelegramSettings()
+      setSettings(s)
+      setIsEnabled(s.is_enabled)
+      setTargetChats(s.target_chats || '')
+      setPeriod((s.period as ReportTelegramPeriod) || 'daily')
+      setSendTime(s.send_time || '09:00')
+      setCaption(s.caption || '')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to load report Telegram settings')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadSettings()
+  }, [loadSettings])
+
+  // Reuse the same server-time poll the email card uses.
+  useEffect(() => {
+    let active = true
+    const fetchServerTime = async () => {
+      try {
+        const info = await getServerTime()
+        if (active) setServerTime(info)
+      } catch {
+        // ignore — non-critical
+      }
+    }
+    void fetchServerTime()
+    const interval = setInterval(fetchServerTime, 30000)
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const updated = await updateDailyReportTelegramSettings({
+        is_enabled: isEnabled,
+        target_chats: targetChats,
+        period,
+        send_time: sendTime,
+        caption,
+      })
+      setSettings(updated)
+      setIsEnabled(updated.is_enabled)
+      setTargetChats(updated.target_chats || '')
+      setPeriod((updated.period as ReportTelegramPeriod) || 'daily')
+      setSendTime(updated.send_time || '09:00')
+      setCaption(updated.caption || '')
+      notifySuccess('Report Telegram settings saved')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const sendNow = async () => {
+    setSending(true)
+    try {
+      const result = await sendDailyReportTelegramNow()
+      if (result.settings) setSettings(result.settings)
+      if (result.warning && result.sent_count === 0) {
+        notifyError(result.warning_msg || 'Failed to send report via Telegram')
+      } else if (result.warning) {
+        notifyError(`Sent ${result.sent_count} of ${result.total}. ${result.warning_msg || ''}`)
+      } else {
+        notifySuccess(`Report sent to ${result.sent_count} Telegram chat(s)`)
+      }
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to send report via Telegram')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const lastSentLabel = () => {
+    if (!settings?.last_sent_at) return 'Never'
+    const d = new Date(settings.last_sent_at)
+    const status = settings.last_sent_status || ''
+    const statusLabel =
+      status === 'success'
+        ? '✓ sent'
+        : status === 'partial'
+          ? '⚠ partial'
+          : status === 'failed'
+            ? '✗ failed'
+            : ''
+    return `${formatDate(d.toISOString())} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${statusLabel}`
+  }
+
+  const lastScheduledLabel = () => {
+    if (!settings?.last_scheduled_at) return 'Never (waiting for scheduled time)'
+    const d = new Date(settings.last_scheduled_at)
+    return `${formatDate(d.toISOString())} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <Send className="h-5 w-5 text-blue-600" />
+          <div>
+            <CardTitle className="text-base">Auto-send report PDF to Telegram</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Automatically send the daily/periodic report PDF export to a list of Telegram chats
+              via your configured bot at a scheduled time each day.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">{isEnabled ? 'On' : 'Off'}</span>
+          <Switch checked={isEnabled} onCheckedChange={setIsEnabled} aria-label="Enable report Telegram" />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <div className="flex h-24 items-center justify-center">
+            <div className="h-6 w-6 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label>Report period</Label>
+                <Select
+                  value={period}
+                  onValueChange={(value) => setPeriod(value as ReportTelegramPeriod)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select period" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REPORT_TELEGRAM_PERIOD_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Send time (24h)</Label>
+                <Input
+                  type="time"
+                  value={sendTime}
+                  onChange={(e) => setSendTime(e.target.value)}
+                />
+                <p className="text-xs text-gray-500">
+                  {serverTime?.has_configured_timezone
+                    ? `In your configured timezone (${serverTime.configured_timezone_name}).`
+                    : 'In the server timezone — set a timezone in Developer Settings.'}{' '}
+                  Report covers the previous day/week/month.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Caption (optional)</Label>
+                <Input
+                  type="text"
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  placeholder='Defaults to e.g. "Daily Report — Business — 01 Jan 2026"'
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Telegram chat targets</Label>
+              <Textarea
+                value={targetChats}
+                onChange={(e) => setTargetChats(e.target.value)}
+                placeholder={'Comma or newline separated, e.g.\n123456789\n@mychannel'}
+                rows={3}
+              />
+              <p className="text-xs text-gray-500">
+                Numeric chat IDs for private chats/groups, or @channelusername for channels. The bot
+                must be added to each chat with send permission. Configure the bot token in Developer
+                Settings → Telegram.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-gray-50 px-3 py-2">
+              <div className="space-y-0.5 text-xs text-gray-600">
+                <div>
+                  <span className="font-medium text-gray-800">Scheduler time:</span>{' '}
+                  {serverTime ? (
+                    <span>{serverTime.configured_time} ({serverTime.configured_timezone_name || serverTime.configured_timezone || 'server-default'})</span>
+                  ) : (
+                    <span className="text-gray-400">Loading…</span>
+                  )}
+                </div>
+                <div>
+                  <span className="font-medium text-gray-800">Last sent (any):</span> {lastSentLabel()}
+                  {settings?.last_sent_error && (
+                    <span className="ml-2 block text-red-600">{settings.last_sent_error}</span>
+                  )}
+                </div>
+                <div>
+                  <span className="font-medium text-gray-800">Last scheduled send:</span> {lastScheduledLabel()}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void sendNow()}
+                  disabled={sending || !settings?.target_chats}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  {sending ? 'Sending…' : 'Send now (test)'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void save()}
+                  disabled={saving}
+                >
+                  {saving ? 'Saving…' : 'Save settings'}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function DailyReportPage() {
   const [reportDate, setReportDate] = useState(todayISO)
   const [report, setReport] = useState<DailyReport | null>(null)
@@ -1029,6 +1289,11 @@ export default function DailyReportPage() {
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`
   }
 
+  const telegramText = (text: string) => {
+    if (!text) return
+    window.open(buildTelegramShareURL(text), '_blank', 'noopener,noreferrer')
+  }
+
   const exportCsv = async () => {
     try {
       const res = await apiFetch(`/dashboard/daily-report/export?date=${reportDate}`)
@@ -1091,6 +1356,10 @@ export default function DailyReportPage() {
               <CalendarRange className="h-3.5 w-3.5" />
               Periodic reports
             </TabsTrigger>
+            <TabsTrigger value="settings" className="gap-1.5">
+              <Settings className="h-3.5 w-3.5" />
+              Settings
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="daily">
@@ -1142,6 +1411,15 @@ export default function DailyReportPage() {
                     <Mail className="mr-2 h-4 w-4" />
                     Email
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => telegramText(shareText)}
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    Telegram
+                  </Button>
                   <Button type="button" variant="outline" size="sm" onClick={() => void copyText(shareText)}>
                     <Copy className="mr-2 h-4 w-4" />
                     Copy
@@ -1190,8 +1468,6 @@ export default function DailyReportPage() {
                 )}
               </CardContent>
             </Card>
-
-            <ReportEmailSettingsCard />
           </TabsContent>
 
           <TabsContent value="periodic" className="space-y-4">
@@ -1331,6 +1607,15 @@ export default function DailyReportPage() {
                       type="button"
                       variant="outline"
                       size="sm"
+                      onClick={() => telegramText(periodShareText)}
+                    >
+                      <Send className="mr-2 h-4 w-4" />
+                      Telegram
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => void copyText(periodShareText)}
                     >
                       <Copy className="mr-2 h-4 w-4" />
@@ -1393,6 +1678,16 @@ export default function DailyReportPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="settings" className="space-y-4">
+            <div className="rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              <span className="font-medium">Report sharing settings.</span> Configure automatic
+              delivery of the daily/periodic report PDF via email and Telegram. Each automation runs
+              on its own schedule using the timezone set in Developer Settings.
+            </div>
+            <ReportEmailSettingsCard />
+            <ReportTelegramSettingsCard />
           </TabsContent>
         </Tabs>
       </div>

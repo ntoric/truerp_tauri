@@ -33,6 +33,7 @@ import {
   Globe,
   Store,
   Clock,
+  Send,
 } from 'lucide-react'
 import { canManageUsers, isSuperAdmin } from '@/lib/roles'
 
@@ -153,6 +154,7 @@ export const navItems: NavItem[] = [
       { name: 'SMS Marketing', href: '/sms-marketing', icon: MessageSquare },
       { name: 'Email Marketing', href: '/email-marketing', icon: Mail },
       { name: 'WhatsApp Marketing', href: '/whatsapp-marketing', icon: MessageSquare },
+      { name: 'Telegram Marketing', href: '/telegram-marketing', icon: Send },
       { name: 'Loyalty Program', href: '/loyalty', icon: Gift },
     ],
   },

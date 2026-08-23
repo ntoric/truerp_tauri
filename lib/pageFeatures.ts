@@ -37,6 +37,7 @@ export const TOGGLEABLE_PAGES: ToggleablePage[] = [
   { key: '/sms-marketing', label: 'SMS Marketing', group: 'Marketing' },
   { key: '/email-marketing', label: 'Email Marketing', group: 'Marketing' },
   { key: '/whatsapp-marketing', label: 'WhatsApp Marketing', group: 'Marketing' },
+  { key: '/telegram-marketing', label: 'Telegram Marketing', group: 'Marketing' },
   { key: '/loyalty', label: 'Loyalty Program', group: 'Marketing' },
   { key: '/stores', label: 'Stores', group: 'Security' },
   { key: '/user-management', label: 'User Management', group: 'Security' },
