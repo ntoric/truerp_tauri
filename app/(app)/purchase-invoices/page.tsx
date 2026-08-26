@@ -6,6 +6,12 @@ import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate, asArray } from '@/lib/utils'
@@ -82,7 +88,6 @@ export default function PurchaseInvoicesPage() {
   const [filter, setFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [actionMenu, setActionMenu] = useState<string | null>(null)
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set())
   const [labelModal, setLabelModal] = useState<string | null>(null)
   const [labelConfig, setLabelConfig] = useState({
@@ -274,7 +279,6 @@ export default function PurchaseInvoicesPage() {
     } catch (err) {
       console.error(err)
     }
-    setActionMenu(null)
   }
 
   const handleDeleteBill = async (id: string) => {
@@ -291,7 +295,6 @@ export default function PurchaseInvoicesPage() {
     } catch (err) {
       console.error(err)
     }
-    setActionMenu(null)
   }
 
   const toggleSelectBill = (id: string) => {
@@ -817,57 +820,44 @@ export default function PurchaseInvoicesPage() {
                         <td className="py-3">{getStatusBadge(bill.status)}</td>
                         <td className="py-3">{getStockStatusBadge(bill.stock_status)}</td>
                         <td className="py-3">
-                          <div className="relative">
-                            <button
-                              onClick={() => setActionMenu(actionMenu === bill.id ? null : bill.id)}
-                              className="p-1 hover:bg-gray-100 rounded"
-                            >
-                              <MoreVertical className="h-4 w-4 text-gray-500" />
-                            </button>
-                            {actionMenu === bill.id && (
-                              <div className="absolute right-0 top-full z-10 mt-1 w-40 rounded-md border bg-white shadow-lg">
-                                <div className="py-1">
-                                  <Link
-                                    href={`/purchase-invoices/view?id=${bill.id}`}
-                                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                    onClick={() => setActionMenu(null)}
-                                  >
-                                    <Eye className="h-4 w-4" /> View
-                                  </Link>
-                                  <Link
-                                    href={`/purchase-invoices/create?id=${bill.id}`}
-                                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                    onClick={() => setActionMenu(null)}
-                                  >
-                                    <Edit className="h-4 w-4" /> Edit
-                                  </Link>
-                                  <button
-                                    onClick={() => {
-                                      handlePrintLabels(bill.id)
-                                      setActionMenu(null)
-                                    }}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    <Printer className="h-4 w-4" /> Print Labels
-                                  </button>
-                                  {bill.status !== 'paid' && (
-                                    <button
-                                      onClick={() => handleMarkPaid(bill.id)}
-                                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                    >
-                                      <X className="h-4 w-4" /> Mark as Paid
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => handleDeleteBill(bill.id)}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-gray-100"
-                                  >
-                                    <Trash2 className="h-4 w-4" /> Delete
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="z-[70]">
+                              <DropdownMenuItem asChild>
+                                <Link href={`/purchase-invoices/view?id=${bill.id}`} className="flex items-center">
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem asChild>
+                                <Link href={`/purchase-invoices/create?id=${bill.id}`} className="flex items-center">
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Edit
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handlePrintLabels(bill.id)}>
+                                <Printer className="mr-2 h-4 w-4" />
+                                Print Labels
+                              </DropdownMenuItem>
+                              {bill.status !== 'paid' && (
+                                <DropdownMenuItem onClick={() => handleMarkPaid(bill.id)}>
+                                  <X className="mr-2 h-4 w-4" />
+                                  Mark as Paid
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteBill(bill.id)}
+                                className="text-red-600"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </td>
                       </tr>
                     ))}

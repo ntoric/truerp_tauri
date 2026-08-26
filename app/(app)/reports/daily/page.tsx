@@ -163,6 +163,8 @@ function methodAppearance(method: string): { icon: LucideIcon; className: string
       return { icon: Landmark, className: 'bg-indigo-100 text-indigo-800' }
     case 'cheque':
       return { icon: ScrollText, className: 'bg-orange-100 text-orange-800' }
+    case 'initial_investment':
+      return { icon: Landmark, className: 'bg-amber-100 text-amber-800' }
     default:
       return { icon: Wallet, className: 'bg-slate-100 text-slate-800' }
   }

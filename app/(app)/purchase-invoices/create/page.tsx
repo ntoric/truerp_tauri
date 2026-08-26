@@ -32,7 +32,7 @@ import { ProductCombobox } from '@/components/ui/ProductCombobox'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
-import { PAYMENT_METHODS } from '@/lib/paymentSplits'
+import { PAYMENT_METHODS, isInitialInvestmentMethod } from '@/lib/paymentSplits'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
 import ItemsEmptyState, { type PastedItemRow } from '@/components/ItemsEmptyState'
 
@@ -227,6 +227,8 @@ export default function CreatePurchaseInvoicePage() {
   const clientBillIdRef = useRef<string>(typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `cbid-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   const draftAutosaveInFlightRef = useRef(false)
   const draftAutosaveQueuedRef = useRef(false)
+  const savingRef = useRef(false)
+  const savedBillIdRef = useRef<string | null>(editId ?? null)
   const skipNextBillFetchRef = useRef(false)
   const formHydratedRef = useRef(!editId)
   const suppressAutosaveRef = useRef(false)
@@ -293,6 +295,7 @@ export default function CreatePurchaseInvoicePage() {
   useEffect(() => {
     if (editId) {
       setSavedBillId(editId)
+      savedBillIdRef.current = editId
     }
   }, [editId])
 
@@ -455,6 +458,7 @@ export default function CreatePurchaseInvoicePage() {
         setPaidFrom(bill.payment_mode || 'cash')
         setBillStatus(bill.status || '')
         setSavedBillId(bill.id || editId)
+        savedBillIdRef.current = bill.id || editId
         setAutosaveEnabled((bill.status || '') === 'draft')
         const billItems = bill.items || []
         // Prefer persisted flag; if missing (older bills), treat all-zero tax lines as exempt
@@ -1249,7 +1253,7 @@ export default function CreatePurchaseInvoicePage() {
   }
 
   const persistDraftSilently = async () => {
-    if (!autosaveEnabled || saving || loading) return
+    if (!autosaveEnabled || saving || loading || savingRef.current) return
 
     const readyItems = items.filter((item) => isItemReadyForDraft(item))
     const hasAnyLine = items.some(
@@ -1265,18 +1269,20 @@ export default function CreatePurchaseInvoicePage() {
     }
 
     // New drafts need at least one line; existing drafts may sync an empty list after removals.
-    if (readyItems.length === 0 && !savedBillId) return
+    if (readyItems.length === 0 && !savedBillIdRef.current) return
 
     if (draftAutosaveInFlightRef.current) {
       draftAutosaveQueuedRef.current = true
       return
     }
 
+    const billIdAtStart = savedBillIdRef.current
+    if (savingRef.current) return
+
     draftAutosaveInFlightRef.current = true
     setDraftSaveStatus('saving')
     setDraftSaveError('')
 
-    const billIdAtStart = savedBillId
     const resolvedBillNumber = billNumber || `PINV-${Date.now()}`
     if (!billNumber) {
       setBillNumber(resolvedBillNumber)
@@ -1323,8 +1329,9 @@ export default function CreatePurchaseInvoicePage() {
       const bill = await res.json().catch(() => null)
       const newId = bill?.id as string | undefined
       setBillStatus('draft')
-      setAutosaveEnabled(true)
+      if (!savingRef.current) setAutosaveEnabled(true)
       if (newId && !billIdAtStart) {
+        savedBillIdRef.current = newId
         setSavedBillId(newId)
         skipNextBillFetchRef.current = true
         formHydratedRef.current = true
@@ -1337,9 +1344,11 @@ export default function CreatePurchaseInvoicePage() {
       setDraftSaveError(err instanceof Error ? err.message : 'Draft autosave failed')
     } finally {
       draftAutosaveInFlightRef.current = false
-      if (draftAutosaveQueuedRef.current) {
+      if (draftAutosaveQueuedRef.current && !savingRef.current) {
         draftAutosaveQueuedRef.current = false
         setDraftSaveTick((tick) => tick + 1)
+      } else {
+        draftAutosaveQueuedRef.current = false
       }
     }
   }
@@ -1386,14 +1395,25 @@ export default function CreatePurchaseInvoicePage() {
     draftSaveTick,
   ])
 
+  const waitForInFlightDraftAutosave = async () => {
+    const started = Date.now()
+    while (draftAutosaveInFlightRef.current && Date.now() - started < 20000) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent, asDraft = false) => {
     e.preventDefault()
+    if (savingRef.current) return
+    savingRef.current = true
     if (!vendorId) {
+      savingRef.current = false
       setError('vendor_id', 'Please select a vendor')
       showErrorToast('Please select a vendor')
       return
     }
     if (!asDraft && items.some(i => !i.description)) {
+      savingRef.current = false
       setError('items', 'Please fill all item details')
       showErrorToast('Please fill all item details')
       return
@@ -1402,6 +1422,7 @@ export default function CreatePurchaseInvoicePage() {
       return itemNeedsBatch(i) && !String(i.batch_no || '').trim()
     })
     if (!asDraft && missingBatch) {
+      savingRef.current = false
       setError('items', `Batch number is required for ${missingBatch.description || 'batched product'}`)
       showErrorToast(`Batch number is required for ${missingBatch.description || 'batched product'}`)
       return
@@ -1411,13 +1432,19 @@ export default function CreatePurchaseInvoicePage() {
       return !item.description.trim() || parseItemNumber(item.quantity) <= 0
     })
     if (!asDraft && invalidNewProduct) {
+      savingRef.current = false
       setError('items', `Please fill product name and quantity for new item`)
       showErrorToast('Please fill product name and quantity for new item')
       return
     }
     setSaving(true)
     if (!asDraft) setAutosaveEnabled(false)
+    draftAutosaveQueuedRef.current = false
     try {
+      // Wait out an in-flight draft PUT/POST so Save does not overlap it.
+      // Overlapping PUTs used to insert a second copy of every line item.
+      await waitForInFlightDraftAutosave()
+
       // New-item products are no longer created up front via POST /products.
       // The bill payload carries is_new_item + category + client_item_ref for
       // each new line, and the backend creates the products atomically inside
@@ -1425,7 +1452,7 @@ export default function CreatePurchaseInvoicePage() {
       // "multiple reloads" symptom) and makes the whole save idempotent.
       const itemsToSave = [...items]
 
-      const billId = savedBillId || editId
+      const billId = savedBillIdRef.current || savedBillId || editId
       const url = billId ? `/purchase/bills/${billId}` : '/purchase/bills'
       const method = billId ? 'PUT' : 'POST'
       const { resolvedBillNumber, body } = buildBillPayload(asDraft, itemsToSave)
@@ -1458,6 +1485,7 @@ export default function CreatePurchaseInvoicePage() {
       if (!asDraft) setAutosaveEnabled(true)
       showErrorToast(err instanceof Error ? err.message : 'An error occurred')
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
@@ -2189,8 +2217,10 @@ export default function CreatePurchaseInvoicePage() {
                   </select>
                   <p className="text-xs text-muted-foreground">
                     {effectiveAmountPaid > 0
-                      ? `${formatCurrency(effectiveAmountPaid)} will be deducted from ${getDepositHint(paidFrom, bankAccounts)} (configure under Cash & Bank → Payment method accounts).`
-                      : 'Select the payment method to pay from when recording a payment.'}
+                      ? isInitialInvestmentMethod(paidFrom)
+                        ? `${formatCurrency(effectiveAmountPaid)} will be recorded as owner's capital (Initial Investment) and will not affect cash or bank balances.`
+                        : `${formatCurrency(effectiveAmountPaid)} will be deducted from ${getDepositHint(paidFrom, bankAccounts)} (configure under Cash & Bank → Payment method accounts).`
+                      : 'Select Initial Investment for opening stock so cash in-hand is not reduced, or choose another method to pay from.'}
                   </p>
                 </div>
                 <div className="min-w-0 space-y-2">

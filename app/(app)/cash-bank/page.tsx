@@ -38,14 +38,17 @@ import {
   BarChart3,
   ChevronDown,
   ChevronUp,
+  Landmark,
 } from 'lucide-react'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
 import { isSuperAdmin } from '@/lib/roles'
+import { isInitialInvestmentMethod } from '@/lib/paymentSplits'
 
 const CASH_IN_HAND_VALUE = 'cash'
+const OWNER_EQUITY_VALUE = 'owner_equity'
 
 function accountIdForApi(selected: string): string | null {
-  if (!selected || selected === CASH_IN_HAND_VALUE) return null
+  if (!selected || selected === CASH_IN_HAND_VALUE || selected === OWNER_EQUITY_VALUE) return null
   return selected
 }
 
@@ -78,6 +81,7 @@ interface CashTransaction {
 interface CashBankSummary {
   total_balance: number
   cash_in_hand: number
+  initial_investment: number
   bank_accounts: BankAccount[]
   unlinked_count: number
   unlinked_amount: number
@@ -111,7 +115,9 @@ export default function CashBankPage() {
   useEffect(() => {
     const next: Record<string, string> = {}
     for (const row of paymentMethodMappings) {
-      next[row.payment_method] = row.bank_account_id || CASH_IN_HAND_VALUE
+      next[row.payment_method] = isInitialInvestmentMethod(row.payment_method)
+        ? OWNER_EQUITY_VALUE
+        : row.bank_account_id || CASH_IN_HAND_VALUE
     }
     setMappingAccounts(next)
   }, [paymentMethodMappings])
@@ -330,11 +336,9 @@ export default function CashBankPage() {
     try {
       const payload = paymentMethodMappings.map((row: PaymentMethodMapping) => ({
         payment_method: row.payment_method,
-        bank_account_id:
-          mappingAccounts[row.payment_method] &&
-          mappingAccounts[row.payment_method] !== CASH_IN_HAND_VALUE
-            ? mappingAccounts[row.payment_method]
-            : null,
+        bank_account_id: isInitialInvestmentMethod(row.payment_method)
+          ? null
+          : accountIdForApi(mappingAccounts[row.payment_method] || CASH_IN_HAND_VALUE),
       }))
       const res = await savePaymentMethodMappings(payload)
       if (res.ok) {
@@ -653,7 +657,7 @@ export default function CashBankPage() {
 
         {/* Summary Cards — 2 cols until xl so values aren't crushed beside the sidebar */}
         {showStats && (
-        <div id="cash-bank-stats" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div id="cash-bank-stats" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-start justify-between gap-3">
@@ -680,6 +684,22 @@ export default function CashBankPage() {
                 </div>
                 <div className="shrink-0 rounded-lg bg-green-50 p-2.5">
                   <IndianRupee className="h-5 w-5 text-green-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-500">Initial Investment</p>
+                  <p className="mt-1 break-words text-xl font-bold tabular-nums text-gray-900 xl:text-2xl">
+                    {formatCurrency(summary?.initial_investment || 0)}
+                  </p>
+                  <p className="text-xs text-gray-500">Capital investment</p>
+                </div>
+                <div className="shrink-0 rounded-lg bg-amber-50 p-2.5">
+                  <Landmark className="h-5 w-5 text-amber-700" />
                 </div>
               </div>
             </CardContent>
@@ -922,6 +942,7 @@ export default function CashBankPage() {
                   <CardTitle>Payment method accounts</CardTitle>
                   <p className="mt-1 text-sm text-gray-500">
                     Map each payment method used in Sales, Purchase, and POS to a Cash &amp; Bank account.
+                    Initial Investment settles against Owner&apos;s Equity and does not change cash or bank balances.
                   </p>
                 </div>
                 <Button onClick={handleSavePaymentMappings} disabled={savingMappings || paymentMethodMappings.length === 0}>
@@ -937,26 +958,43 @@ export default function CashBankPage() {
                       <div key={row.payment_method} className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center border rounded-lg p-3">
                         <div>
                           <p className="font-medium text-gray-900">{row.label}</p>
-                          <p className="text-xs text-gray-500">{row.payment_method}</p>
+                          <p className="text-xs text-gray-500">
+                            {isInitialInvestmentMethod(row.payment_method)
+                              ? 'Used for opening stock and capital contributions. Does not affect cash in-hand.'
+                              : row.payment_method}
+                          </p>
                         </div>
-                        <Select
-                          value={mappingAccounts[row.payment_method] ?? CASH_IN_HAND_VALUE}
-                          onValueChange={(value) =>
-                            setMappingAccounts((prev) => ({ ...prev, [row.payment_method]: value }))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select account" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={CASH_IN_HAND_VALUE}>Cash in-hand</SelectItem>
-                            {summary?.bank_accounts.map((acc) => (
-                              <SelectItem key={acc.id} value={acc.id}>
-                                {acc.account_name} — {acc.bank_name}
+                        {isInitialInvestmentMethod(row.payment_method) ? (
+                          <Select value={OWNER_EQUITY_VALUE} disabled>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={OWNER_EQUITY_VALUE}>
+                                Owner&apos;s Equity — no cash movement
                               </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Select
+                            value={mappingAccounts[row.payment_method] ?? CASH_IN_HAND_VALUE}
+                            onValueChange={(value) =>
+                              setMappingAccounts((prev) => ({ ...prev, [row.payment_method]: value }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select account" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={CASH_IN_HAND_VALUE}>Cash in-hand</SelectItem>
+                              {summary?.bank_accounts.map((acc) => (
+                                <SelectItem key={acc.id} value={acc.id}>
+                                  {acc.account_name} — {acc.bank_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                     ))}
                   </div>

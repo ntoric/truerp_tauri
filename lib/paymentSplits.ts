@@ -4,9 +4,16 @@ export const PAYMENT_METHODS = [
   { value: 'card', label: 'Card' },
   { value: 'bank_transfer', label: 'Bank Transfer' },
   { value: 'cheque', label: 'Cheque' },
+  { value: 'initial_investment', label: 'Initial Investment' },
 ] as const
 
+export const INITIAL_INVESTMENT_METHOD = 'initial_investment'
+
 export type PaymentMethodValue = (typeof PAYMENT_METHODS)[number]['value']
+
+export function isInitialInvestmentMethod(mode?: string | null): boolean {
+  return (mode || '').trim().toLowerCase() === INITIAL_INVESTMENT_METHOD
+}
 
 export interface PaymentSplit {
   mode: string

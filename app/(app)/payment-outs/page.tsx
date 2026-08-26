@@ -24,6 +24,7 @@ import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import { PAYMENT_METHODS, formatPaymentMethod } from '@/lib/paymentSplits'
 
 interface PaymentOut {
   id: string
@@ -380,12 +381,13 @@ export default function PaymentOutsPage() {
       bank_transfer: 'bg-purple-100 text-purple-700',
       cheque: 'bg-orange-100 text-orange-700',
       card: 'bg-pink-100 text-pink-700',
+      initial_investment: 'bg-amber-100 text-amber-800',
     }
     return (
       <span
         className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${colors[mode] || 'bg-gray-100 text-gray-700'}`}
       >
-        {mode.replace('_', ' ')}
+        {formatPaymentMethod(mode)}
       </span>
     )
   }
@@ -532,11 +534,11 @@ export default function PaymentOutsPage() {
                           <SelectValue placeholder="Select mode" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="cash">Cash</SelectItem>
-                          <SelectItem value="upi">UPI</SelectItem>
-                          <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                          <SelectItem value="cheque">Cheque</SelectItem>
-                          <SelectItem value="card">Card</SelectItem>
+                          {PAYMENT_METHODS.map((method) => (
+                            <SelectItem key={method.value} value={method.value}>
+                              {method.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FieldError message={fieldErrors.mode} />
@@ -623,11 +625,11 @@ export default function PaymentOutsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Modes</SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="upi">UPI</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="cheque">Cheque</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
+                  {PAYMENT_METHODS.map((method) => (
+                    <SelectItem key={method.value} value={method.value}>
+                      {method.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Input

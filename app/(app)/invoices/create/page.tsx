@@ -43,6 +43,7 @@ import {
   PAYMENT_METHODS,
   appendPaymentSplit,
   formatPaymentMethod,
+  isInitialInvestmentMethod,
   splitsFromInvoice,
   sumPaymentSplits,
 } from '@/lib/paymentSplits'
@@ -1868,7 +1869,9 @@ export default function CreateInvoicePage() {
                 })}
                 <p className="text-xs text-muted-foreground">
                   {paymentSplits.length === 1
-                    ? `Amount received is credited to: ${getDepositHint(paymentMode, bankAccounts)} (configure under Cash & Bank → Payment method accounts)`
+                    ? isInitialInvestmentMethod(paymentMode)
+                      ? 'Amount received is recorded against Owner\'s Equity and will not affect cash or bank balances.'
+                      : `Amount received is credited to: ${getDepositHint(paymentMode, bankAccounts)} (configure under Cash & Bank → Payment method accounts)`
                     : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${getDepositHint(split.mode, bankAccounts)}`).join(' · ')}
                 </p>
                 {PAYMENT_METHODS.length > paymentSplits.length && (
