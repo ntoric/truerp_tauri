@@ -101,6 +101,7 @@ interface POSTab {
   draftId?: string
   discountType: 'amount' | 'percent'
   discountValue: string
+  additionalCharges: string
 }
 
 interface POSDraft {
@@ -344,7 +345,7 @@ export default function POSPage() {
   const [parties, setParties] = useState<Party[]>([])
   const [walkInCustomer, setWalkInCustomer] = useState<Party | null>(null)
   const [tabs, setTabs] = useState<POSTab[]>([
-    { id: 'tab-1', title: 'New Order', cart: [], selectedParty: null, notes: '', isDraft: false, discountType: 'amount', discountValue: '' }
+    { id: 'tab-1', title: 'New Order', cart: [], selectedParty: null, notes: '', isDraft: false, discountType: 'amount', discountValue: '', additionalCharges: '' }
   ])
   const [activeTabId, setActiveTabId] = useState('tab-1')
   const [searchTerm, setSearchTerm] = useState('')
@@ -656,7 +657,7 @@ export default function POSPage() {
     const finishClose = async () => {
       await offlineStorage.closePOSSession(session.id)
       setSession(null)
-      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '' })
+      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', additionalCharges: '' })
       setIsEditingCustomer(false)
       resetPayment()
       window.location.href = '/dashboard'
@@ -957,12 +958,14 @@ export default function POSPage() {
   const getSaleDiscount = () =>
     computeSaleDiscount(getCartTotal(), activeTab.discountType || 'amount', activeTab.discountValue || '')
 
+  const getAdditionalCharges = () => Math.max(0, parseMoney(activeTab.additionalCharges || ''))
+
   const getLoyaltyDiscount = (saleDiscount = getSaleDiscount()) => {
     if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
     const { discount } = computeLoyaltyDiscount(
       loyaltySettings,
       activeTab.selectedParty.loyalty_points ?? 0,
-      Math.max(0, getCartTotal() - saleDiscount),
+      Math.max(0, getCartTotal() - saleDiscount + getAdditionalCharges()),
       loyaltyPointsToRedeem
     )
     return discount
@@ -970,7 +973,7 @@ export default function POSPage() {
 
   const getExactTotal = () => {
     const saleDiscount = getSaleDiscount()
-    return getCartTotal() - saleDiscount - getLoyaltyDiscount(saleDiscount)
+    return getCartTotal() - saleDiscount + getAdditionalCharges() - getLoyaltyDiscount(saleDiscount)
   }
 
   const getRoundedTotal = () => Math.max(0, Math.round(getExactTotal()))
@@ -994,6 +997,7 @@ export default function POSPage() {
 
   const applyPosDiscountChange = (nextValue: string, nextType: 'amount' | 'percent' = activeTab.discountType || 'amount') => {
     const cartTotal = getCartTotal()
+    const addCharges = getAdditionalCharges()
     const prevSale = getSaleDiscount()
     const nextSale = computeSaleDiscount(cartTotal, nextType, nextValue)
     const prevLoyalty = getLoyaltyDiscount(prevSale)
@@ -1002,7 +1006,7 @@ export default function POSPage() {
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
         activeTab.selectedParty.loyalty_points ?? 0,
-        Math.max(0, cartTotal - nextSale),
+        Math.max(0, cartTotal - nextSale + addCharges),
         loyaltyPointsToRedeem
       )
       return discount
@@ -1010,8 +1014,8 @@ export default function POSPage() {
     prevLoyaltyDiscountRef.current = nextLoyalty
     updateTab(activeTabId, { discountType: nextType, discountValue: nextValue })
     syncReceivedToPayable(
-      Math.max(0, Math.round(cartTotal - prevSale - prevLoyalty)),
-      Math.max(0, Math.round(cartTotal - nextSale - nextLoyalty)),
+      Math.max(0, Math.round(cartTotal - prevSale + addCharges - prevLoyalty)),
+      Math.max(0, Math.round(cartTotal - nextSale + addCharges - nextLoyalty)),
       nextSale - prevSale + (nextLoyalty - prevLoyalty)
     )
   }
@@ -1019,7 +1023,8 @@ export default function POSPage() {
   const applyPosLoyaltyChange = (nextPoints: number) => {
     const cartTotal = getCartTotal()
     const saleDiscount = getSaleDiscount()
-    const billTotal = Math.max(0, cartTotal - saleDiscount)
+    const addCharges = getAdditionalCharges()
+    const billTotal = Math.max(0, cartTotal - saleDiscount + addCharges)
     const { discount: nextDiscount } = computeLoyaltyDiscount(
       loyaltySettings,
       activeTab.selectedParty?.loyalty_points ?? 0,
@@ -1034,6 +1039,31 @@ export default function POSPage() {
       Math.max(0, Math.round(billTotal - prevDiscount)),
       Math.max(0, Math.round(billTotal - nextDiscount)),
       delta
+    )
+  }
+
+  const applyPosAdditionalChargesChange = (nextValue: string) => {
+    const cartTotal = getCartTotal()
+    const saleDiscount = getSaleDiscount()
+    const prevAddCharges = getAdditionalCharges()
+    const nextAddCharges = Math.max(0, parseMoney(nextValue))
+    const prevLoyalty = getLoyaltyDiscount(saleDiscount)
+    const nextLoyalty = (() => {
+      if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+      const { discount } = computeLoyaltyDiscount(
+        loyaltySettings,
+        activeTab.selectedParty.loyalty_points ?? 0,
+        Math.max(0, cartTotal - saleDiscount + nextAddCharges),
+        loyaltyPointsToRedeem
+      )
+      return discount
+    })()
+    prevLoyaltyDiscountRef.current = nextLoyalty
+    updateTab(activeTabId, { additionalCharges: nextValue })
+    syncReceivedToPayable(
+      Math.max(0, Math.round(cartTotal - saleDiscount + prevAddCharges - prevLoyalty)),
+      Math.max(0, Math.round(cartTotal - saleDiscount + nextAddCharges - nextLoyalty)),
+      nextAddCharges - prevAddCharges + (nextLoyalty - prevLoyalty)
     )
   }
 
@@ -1121,6 +1151,7 @@ export default function POSPage() {
       isDraft: false,
       discountType: 'amount',
       discountValue: '',
+      additionalCharges: '',
     }
     setTabs([...tabs, newTab])
     setActiveTabId(newTab.id)
@@ -1157,6 +1188,7 @@ export default function POSPage() {
         items: activeTab.cart,
         discountType: activeTab.discountType || 'amount',
         discountValue: activeTab.discountValue || '',
+        additionalCharges: activeTab.additionalCharges || '',
       }),
       party_id: activeTab.selectedParty?.id,
       notes: activeTab.notes,
@@ -1191,7 +1223,7 @@ export default function POSPage() {
 
   const loadDraft = async (draft: POSDraft) => {
     try {
-      const parsed = JSON.parse(draft.cart_data) as CartItem[] | { items?: CartItem[]; discountType?: string; discountValue?: string }
+      const parsed = JSON.parse(draft.cart_data) as CartItem[] | { items?: CartItem[]; discountType?: string; discountValue?: string; additionalCharges?: string }
       const rawItems = Array.isArray(parsed) ? parsed : (parsed.items || [])
       const cartData = rawItems.map((item) => ({
         ...item,
@@ -1200,7 +1232,8 @@ export default function POSPage() {
       const party = parties.find(p => p.id === draft.party_id)
       const discountType = !Array.isArray(parsed) && parsed.discountType === 'percent' ? 'percent' as const : 'amount' as const
       const discountValue = !Array.isArray(parsed) && typeof parsed.discountValue === 'string' ? parsed.discountValue : ''
-      
+      const additionalCharges = !Array.isArray(parsed) && typeof parsed.additionalCharges === 'string' ? parsed.additionalCharges : ''
+
       const newTab: POSTab = {
         id: `draft-${draft.id}`,
         title: draft.title,
@@ -1211,6 +1244,7 @@ export default function POSPage() {
         draftId: draft.id,
         discountType,
         discountValue,
+        additionalCharges,
       }
       
       setTabs([...tabs, newTab])
@@ -1339,7 +1373,7 @@ export default function POSPage() {
     const saleDiscount = getSaleDiscount()
     const loyaltyDiscountValue = getLoyaltyDiscount(saleDiscount)
     const loyaltyEarned = loyaltySettings?.is_enabled
-      ? estimatePointsEarned(loyaltySettings, Math.max(0, getCartTotal() - saleDiscount - loyaltyDiscountValue))
+      ? estimatePointsEarned(loyaltySettings, Math.max(0, getCartTotal() - saleDiscount + getAdditionalCharges() - loyaltyDiscountValue))
       : 0
     const loyaltyBalanceAfter =
       loyaltySettings?.is_enabled && activeTab.selectedParty
@@ -1373,6 +1407,7 @@ export default function POSPage() {
         session_local_only: session?.local_only,
         session_opening_cash: session?.opening_cash,
         ...(saleDiscount > 0 ? { invoice_discount: saleDiscount } : {}),
+        ...(getAdditionalCharges() > 0 ? { additional_charges: getAdditionalCharges() } : {}),
         ...(loyaltyPointsToRedeem > 0 ? { loyalty_points_redeemed: loyaltyPointsToRedeem } : {}),
         items: cartSnapshot.map((item) => ({
           product_id: item.product.id,
@@ -1405,7 +1440,7 @@ export default function POSPage() {
         await offlineStorage.decrementLocalStock(item.product.id, item.quantity, item.batch_no)
       }
 
-      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '' })
+      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', additionalCharges: '' })
       setIsEditingCustomer(false)
       setEditingQty(null)
       setPaymentSplits([{ mode: 'upi', amount: '' }])
@@ -1437,6 +1472,7 @@ export default function POSPage() {
               payment_splits: checkoutSplits,
               amount_paid: amountPaid,
               invoice_discount: saleDiscount,
+              additional_charges: sale.additional_charges,
               tax_total: sale.tax_total,
               round_off: sale.round_off,
               total: roundedTotal,
@@ -2254,6 +2290,24 @@ export default function POSPage() {
                   <span>−{formatCurrency(getSaleDiscount())}</span>
                 </div>
               )}
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-600 shrink-0">Addl Charges</span>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={activeTab.additionalCharges || ''}
+                  onChange={(e) => applyPosAdditionalChargesChange(limitDecimalInput(e.target.value))}
+                  className="ml-auto h-7 w-20 px-1 text-right text-xs"
+                  aria-label="Additional charges"
+                />
+              </div>
+              {getAdditionalCharges() > 0 && (
+                <div className="flex justify-between text-xs text-gray-600">
+                  <span>Additional Charges</span>
+                  <span>+{formatCurrency(getAdditionalCharges())}</span>
+                </div>
+              )}
               {getRoundOff() !== 0 && (
                 <div className="flex justify-between text-xs text-gray-500">
                   <span>Round Off</span>
@@ -2287,9 +2341,9 @@ export default function POSPage() {
                       −{formatCurrency(getLoyaltyDiscount())} loyalty discount
                     </p>
                   )}
-                  {estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() - getLoyaltyDiscount()) > 0 && (
+                  {estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() + getAdditionalCharges() - getLoyaltyDiscount()) > 0 && (
                     <p className="text-[10px] text-amber-800">
-                      Earn ~{estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() - getLoyaltyDiscount())} pts
+                      Earn ~{estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() + getAdditionalCharges() - getLoyaltyDiscount())} pts
                     </p>
                   )}
                 </div>

@@ -31,6 +31,7 @@ export interface POSReceiptSale {
   payment_splits?: PaymentSplit[]
   amount_paid?: number
   invoice_discount?: number
+  additional_charges?: number
   tax_total?: number
   round_off?: number
   total: number
@@ -150,6 +151,9 @@ export function buildPOSReceiptContent(
   lines.push(labelValue('Sub Total', money(subTotal), cols))
   if ((sale.invoice_discount || 0) > 0) {
     lines.push(labelValue('Discount', money(sale.invoice_discount || 0), cols))
+  }
+  if ((sale.additional_charges || 0) > 0) {
+    lines.push(labelValue('Addl Charges', money(sale.additional_charges || 0), cols))
   }
   if ((sale.tax_total || 0) > 0) {
     lines.push(labelValue('GST', money(sale.tax_total || 0), cols))

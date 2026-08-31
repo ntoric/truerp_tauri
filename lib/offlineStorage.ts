@@ -44,6 +44,7 @@ export interface POSSaleRecord {
   session_local_only?: boolean
   session_opening_cash?: number
   invoice_discount?: number
+  additional_charges?: number
   loyalty_points_redeemed?: number
   items: Array<{
     product_id: string

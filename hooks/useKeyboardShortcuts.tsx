@@ -34,6 +34,14 @@ function isTextareaTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLTextAreaElement
 }
 
+function isFormFieldTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  )
+}
+
 export function KeyboardShortcutsProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const { isPageEnabled } = usePageFeatures()
@@ -101,6 +109,9 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
         if (shortcut.action === 'form-cancel' && handlers.onCancel && !panelOpen) {
           const openDialog = document.querySelector('[role="dialog"][data-state="open"]')
           if (openDialog) return
+          // Ignore Escape triggered from inside a form field so users can
+          // blur/revert a single input without navigating away from the page.
+          if (isFormFieldTarget(event.target)) return
           event.preventDefault()
           handlers.onCancel()
           return

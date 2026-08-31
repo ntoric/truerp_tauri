@@ -41,6 +41,8 @@ interface Invoice {
   loyalty_points_earned?: number
   loyalty_points_redeemed?: number
   loyalty_discount?: number
+  payment_mode?: string
+  payment_splits?: { mode: string; amount: number }[]
 }
 
 interface InvoiceStats {
@@ -55,6 +57,19 @@ type SortDir = 'asc' | 'desc'
 
 function partyLabel(inv: Invoice) {
   return inv.party?.name || inv.customer?.name || 'N/A'
+}
+
+function compareInvoiceNumbers(a: string, b: string): number {
+  const matchA = a.match(/^(.*?)(\d+)$/)
+  const matchB = b.match(/^(.*?)(\d+)$/)
+  if (matchA && matchB) {
+    const prefixCmp = matchA[1].localeCompare(matchB[1], undefined, { sensitivity: 'base' })
+    if (prefixCmp !== 0) return prefixCmp
+    const numA = Number(matchA[2])
+    const numB = Number(matchB[2])
+    if (numA !== numB) return numA - numB
+  }
+  return a.localeCompare(b, undefined, { sensitivity: 'base' })
 }
 
 function SortableHeader({
@@ -223,17 +238,11 @@ export default function InvoicesPage() {
     return [...filtered].sort((a, b) => {
       let cmp = 0
       if (sortKey === 'invoice_number') {
-        cmp = a.invoice_number.localeCompare(b.invoice_number, undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        })
+        cmp = compareInvoiceNumbers(a.invoice_number, b.invoice_number)
       } else if (sortKey === 'date') {
         cmp = (a.date || '').localeCompare(b.date || '')
         if (cmp === 0) {
-          cmp = a.invoice_number.localeCompare(b.invoice_number, undefined, {
-            numeric: true,
-            sensitivity: 'base',
-          })
+          cmp = compareInvoiceNumbers(a.invoice_number, b.invoice_number)
         }
       } else {
         cmp = (a.status || '').localeCompare(b.status || '', undefined, { sensitivity: 'base' })
@@ -686,6 +695,7 @@ export default function InvoicesPage() {
                       <th className="pb-3 font-medium">Due In</th>
                       <th className="pb-3 font-medium">Amount</th>
                       <SortableHeader label="Status" column="status" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                      <th className="pb-3 font-medium">Payment</th>
                       <th className="pb-3 font-medium">Actions</th>
                     </tr>
                   </thead>
@@ -724,6 +734,11 @@ export default function InvoicesPage() {
                         <td className="py-3 text-gray-500">{getDueIn(inv.due_date)}</td>
                         <td className="py-3 font-medium text-gray-900">{formatCurrency(inv.total_amount)}</td>
                         <td className="py-3">{getStatusBadge(inv.status)}</td>
+                        <td className="py-3 text-gray-600">
+                          {inv.status === 'paid' || inv.payment_mode || (inv.payment_splits?.length ?? 0) > 0
+                            ? formatPaymentSplitsLabel(inv.payment_splits, inv.payment_mode)
+                            : '—'}
+                        </td>
                         <td className="py-3">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -762,7 +777,7 @@ export default function InvoicesPage() {
                     ))}
                     {filteredInvoices.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="py-8 text-center text-gray-500">
+                        <td colSpan={9} className="py-8 text-center text-gray-500">
                           No invoices found
                         </td>
                       </tr>
