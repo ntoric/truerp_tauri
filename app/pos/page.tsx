@@ -10,7 +10,7 @@ import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { formatCurrency, asArray } from '@/lib/utils'
 import { offlineStorage, POS_META_KEYS, type POSSaleRecord } from '@/lib/offlineStorage'
 import Link from 'next/link'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, Percent, Wifi, WifiOff, Eye } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, ChevronDown, Percent, Wifi, WifiOff, Eye, User } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
@@ -364,6 +364,8 @@ export default function POSPage() {
   const [customerSuggestions, setCustomerSuggestions] = useState<Party[]>([])
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
   const [isEditingCustomer, setIsEditingCustomer] = useState(false)
+  const [customerPanelOpen, setCustomerPanelOpen] = useState(false)
+  const [totalsExpanded, setTotalsExpanded] = useState(false)
   const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: string }[]>([
     { mode: 'upi', amount: '' },
   ])
@@ -1277,14 +1279,7 @@ export default function POSPage() {
     setCustomerSuggestions([])
     setShowCustomerSuggestions(false)
     setIsEditingCustomer(false)
-  }
-
-  const startEditingCustomer = () => {
-    setIsEditingCustomer(true)
-    setCustomerName('')
-    setCustomerPhone('')
-    setCustomerSuggestions([])
-    setShowCustomerSuggestions(false)
+    setCustomerPanelOpen(false)
   }
 
   const cancelEditingCustomer = () => {
@@ -1664,107 +1659,6 @@ export default function POSPage() {
         </div>
       </div>
 
-      {/* Compact Tab Bar */}
-      <div className="flex items-center gap-2 px-2 py-1 bg-white border-b min-w-0">
-        <div className="flex min-w-0 flex-1 items-center gap-0.5">
-          {canScrollTabsLeft && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => scrollTabs('left')}
-              className="h-7 w-7 shrink-0 p-0"
-              aria-label="Scroll tabs left"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-          )}
-          <div
-            ref={tabListRef}
-            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                data-tab-id={tab.id}
-                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded text-sm transition-colors ${
-                  activeTabId === tab.id
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                onClick={() => setActiveTabId(tab.id)}
-              >
-                <FileText className="h-3.5 w-3.5 shrink-0" />
-                <span className="font-medium">{tab.title}</span>
-                {tab.cart.length > 0 && (
-                  <span className="bg-white/20 text-white text-xs px-1.5 py-0.5 rounded">
-                    {tab.cart.length}
-                  </span>
-                )}
-                {tabs.length > 1 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      closeTab(tab.id)
-                    }}
-                    className="ml-0.5 hover:text-red-200"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </button>
-            ))}
-          </div>
-          {canScrollTabsRight && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => scrollTabs('right')}
-              className="h-7 w-7 shrink-0 p-0"
-              aria-label="Scroll tabs right"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={createNewTab}
-            className="h-7 px-2 text-xs"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            New
-          </Button>
-          <div className="relative w-36 min-w-0 sm:w-64 md:w-80 lg:w-96">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-            <Input
-              placeholder="Search products..."
-              className="h-7 pl-8 text-xs"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Keep scanner outside nested overflow-hidden so WKWebView can focus it */}
-      <div className="relative z-10 shrink-0 border-b bg-white p-3">
-        <BarcodeScannerInput
-          ref={barcodeInputRef}
-          captureGlobal={!showSessionModal && !showDraftModal}
-          onScan={handlePosItemCodeScan}
-          placeholder={
-            scaleSettings.barcode_scan_enabled
-              ? 'Scan scale or product barcode…'
-              : 'Scan product barcode…'
-          }
-          className="w-full"
-        />
-      </div>
-
       {/* Session Modal - Compact */}
       {showSessionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -1810,6 +1704,107 @@ export default function POSPage() {
       <div className="relative flex flex-1 overflow-hidden">
         {/* Products Section */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Compact Tab Bar */}
+          <div className="flex items-center gap-2 px-2 py-1 bg-white border-b min-w-0">
+            <div className="flex min-w-0 flex-1 items-center gap-0.5">
+              {canScrollTabsLeft && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => scrollTabs('left')}
+                  className="h-7 w-7 shrink-0 p-0"
+                  aria-label="Scroll tabs left"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              )}
+              <div
+                ref={tabListRef}
+                className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    data-tab-id={tab.id}
+                    className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded text-sm transition-colors ${
+                      activeTabId === tab.id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                    onClick={() => setActiveTabId(tab.id)}
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0" />
+                    <span className="font-medium">{tab.title}</span>
+                    {tab.cart.length > 0 && (
+                      <span className="bg-white/20 text-white text-xs px-1.5 py-0.5 rounded">
+                        {tab.cart.length}
+                      </span>
+                    )}
+                    {tabs.length > 1 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          closeTab(tab.id)
+                        }}
+                        className="ml-0.5 hover:text-red-200"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </button>
+                ))}
+              </div>
+              {canScrollTabsRight && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => scrollTabs('right')}
+                  className="h-7 w-7 shrink-0 p-0"
+                  aria-label="Scroll tabs right"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={createNewTab}
+                className="h-7 px-2 text-xs"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                New
+              </Button>
+              <div className="relative w-36 min-w-0 sm:w-64 md:w-80 lg:w-96">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <Input
+                  placeholder="Search products..."
+                  className="h-7 pl-8 text-xs"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Barcode scanner */}
+          <div className="relative z-10 shrink-0 border-b bg-white p-3">
+            <BarcodeScannerInput
+              ref={barcodeInputRef}
+              captureGlobal={!showSessionModal && !showDraftModal}
+              onScan={handlePosItemCodeScan}
+              placeholder={
+                scaleSettings.barcode_scan_enabled
+                  ? 'Scan scale or product barcode…'
+                  : 'Scan product barcode…'
+              }
+              className="w-full"
+            />
+          </div>
+
           {/* Products Grid */}
           <div className="flex-1 overflow-y-auto p-3">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-5">
@@ -1867,8 +1862,26 @@ export default function POSPage() {
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-gray-600" />
               <span className="font-semibold text-sm text-gray-900">Cart ({activeTab.cart.length})</span>
+              {activeTab.cart.length > 0 && (
+                <span className="text-xs text-gray-500">
+                  · {formatQty(activeTab.cart.reduce((sum, item) => sum + item.quantity, 0))} items
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCustomerPanelOpen((v) => !v)}
+                className={`h-7 px-2 text-xs ${customerPanelOpen ? 'bg-blue-100 text-blue-700 hover:bg-blue-100 hover:text-blue-700' : activeTab.selectedParty ? 'text-blue-600' : 'text-gray-600'}`}
+                aria-label="Customer"
+                title={activeTab.selectedParty ? activeTab.selectedParty.name : 'Select customer'}
+              >
+                <User className="h-4 w-4" />
+                {activeTab.selectedParty && (
+                  <span className="ml-1 max-w-[120px] truncate hidden sm:inline">{activeTab.selectedParty.name}</span>
+                )}
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"
@@ -1894,122 +1907,104 @@ export default function POSPage() {
             </div>
           </div>
 
-          {/* Customer Selection - Compact */}
-          <div className="p-2 border-b">
-            {activeTab.selectedParty && !isEditingCustomer ? (
-              <div className="flex items-center justify-between gap-2 p-2 bg-blue-50 rounded border border-blue-200">
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-900 text-xs break-words">{activeTab.selectedParty.name}</p>
-                  <p className="text-xs text-gray-500 break-words">
-                    {activeTab.selectedParty.phone || 'No phone'}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={startEditingCustomer}
-                  className="h-7 px-2 text-xs shrink-0"
-                >
-                  Change
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-medium text-gray-600">Select customer</p>
-                  <div className="flex items-center gap-1">
-                    {walkInCustomer && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={useWalkInCustomer}
-                        className="h-6 px-1.5 text-xs text-blue-600"
-                      >
-                        Use Walk-in
-                      </Button>
-                    )}
-                    {activeTab.selectedParty && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={cancelEditingCustomer}
-                        className="h-6 px-1.5 text-xs text-gray-500"
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {walkInCustomer && (
-                  <button
-                    type="button"
-                    onClick={() => selectCustomer(walkInCustomer)}
-                    className="w-full text-left p-2 rounded border border-dashed border-blue-200 bg-blue-50/50 hover:bg-blue-50 transition-colors"
+          {/* Customer Panel - toggled from header icon */}
+          {customerPanelOpen && (
+            <div className="p-2 border-b space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-gray-600">
+                  {activeTab.selectedParty ? 'Customer' : 'Select customer'}
+                </p>
+                <div className="flex items-center gap-1">
+                  {walkInCustomer && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={useWalkInCustomer}
+                      className="h-6 px-1.5 text-xs text-blue-600"
+                    >
+                      Use Walk-in
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setCustomerPanelOpen(false)}
+                    className="h-6 w-6 p-0 text-gray-500"
+                    aria-label="Close customer panel"
                   >
-                    <p className="font-medium text-gray-900 text-xs">{walkInCustomer.name}</p>
-                    <p className="text-xs text-gray-500">Default customer</p>
-                  </button>
-                )}
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+              {walkInCustomer && (
+                <button
+                  type="button"
+                  onClick={() => selectCustomer(walkInCustomer)}
+                  className="w-full text-left p-2 rounded border border-dashed border-blue-200 bg-blue-50/50 hover:bg-blue-50 transition-colors"
+                >
+                  <p className="font-medium text-gray-900 text-xs">{walkInCustomer.name}</p>
+                  <p className="text-xs text-gray-500">Default customer</p>
+                </button>
+              )}
+              <Input
+                placeholder="Customer name"
+                value={customerName}
+                onChange={(e) => {
+                  setCustomerName(e.target.value)
+                  searchCustomers()
+                  setShowCustomerSuggestions(true)
+                }}
+                onFocus={() => setShowCustomerSuggestions(true)}
+                className="h-8 text-xs"
+              />
+              <div className="relative">
                 <Input
-                  placeholder="Customer name"
-                  value={customerName}
+                  type="tel"
+                  placeholder="Mobile *"
+                  value={customerPhone}
                   onChange={(e) => {
-                    setCustomerName(e.target.value)
+                    setCustomerPhone(e.target.value)
                     searchCustomers()
                     setShowCustomerSuggestions(true)
                   }}
                   onFocus={() => setShowCustomerSuggestions(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && customerPhone.trim()) {
+                      createQuickCustomer()
+                    }
+                  }}
                   className="h-8 text-xs"
                 />
-                <div className="relative">
-                  <Input
-                    type="tel"
-                    placeholder="Mobile *"
-                    value={customerPhone}
-                    onChange={(e) => {
-                      setCustomerPhone(e.target.value)
-                      searchCustomers()
-                      setShowCustomerSuggestions(true)
-                    }}
-                    onFocus={() => setShowCustomerSuggestions(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && customerPhone.trim()) {
-                        createQuickCustomer()
-                      }
-                    }}
-                    className="h-8 text-xs"
-                  />
-                  {showCustomerSuggestions && customerSuggestions.length > 0 && (
-                    <div className="absolute z-10 mt-1 w-full border rounded bg-white shadow-lg max-h-40 overflow-y-auto">
-                      {customerSuggestions.map((party) => (
-                        <div
-                          key={party.id}
-                          className="p-2 hover:bg-gray-50 cursor-pointer border-b last:border-0"
-                          onClick={() => selectCustomer(party)}
-                        >
-                          <p className="font-medium text-gray-900 text-xs">{party.name}</p>
-                          <p className="text-xs text-gray-500">{party.phone}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {showCustomerSuggestions && (customerName.trim() || customerPhone.trim()) && customerSuggestions.length === 0 && (
-                    <div className="absolute z-10 mt-1 w-full border rounded bg-white shadow-lg p-2">
-                      <Button
-                        size="sm"
-                        onClick={createQuickCustomer}
-                        className="w-full h-7 text-xs"
-                        disabled={!customerPhone.trim()}
+                {showCustomerSuggestions && customerSuggestions.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full border rounded bg-white shadow-lg max-h-40 overflow-y-auto">
+                    {customerSuggestions.map((party) => (
+                      <div
+                        key={party.id}
+                        className="p-2 hover:bg-gray-50 cursor-pointer border-b last:border-0"
+                        onClick={() => selectCustomer(party)}
                       >
-                        <Plus className="mr-1 h-3 w-3" />
-                        Add New
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                        <p className="font-medium text-gray-900 text-xs">{party.name}</p>
+                        <p className="text-xs text-gray-500">{party.phone}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {showCustomerSuggestions && (customerName.trim() || customerPhone.trim()) && customerSuggestions.length === 0 && (
+                  <div className="absolute z-10 mt-1 w-full border rounded bg-white shadow-lg p-2">
+                    <Button
+                      size="sm"
+                      onClick={createQuickCustomer}
+                      className="w-full h-7 text-xs"
+                      disabled={!customerPhone.trim()}
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      Add New
+                    </Button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           <WeighingScalePanel
             enabled={scaleSettings.enabled}
@@ -2234,117 +2229,137 @@ export default function POSPage() {
           {/* Totals - Compact */}
           {activeTab.cart.length > 0 && (
             <div className="p-2 border-t bg-gray-50 space-y-1">
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-600">Subtotal</span>
-                <span className="font-medium">{formatCurrency(getCartTotal() - getTaxTotal())}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-600">Tax</span>
-                <span className="font-medium">{formatCurrency(getTaxTotal())}</span>
-              </div>
-              <div className="flex justify-between text-sm font-bold pt-1 border-t">
-                <span>Total</span>
-                <span className="text-blue-600">{formatCurrency(getCartTotal())}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-600 shrink-0">Discount</span>
-                <div className="ml-auto flex items-center gap-1">
-                  <div className="flex overflow-hidden rounded border border-gray-300">
-                    <button
-                      type="button"
-                      onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'amount')}
-                      className={`h-7 px-1.5 text-[10px] font-medium ${
-                        (activeTab.discountType || 'amount') === 'amount' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
-                      }`}
-                      aria-label="Discount as amount"
-                    >
-                      ₹
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'percent')}
-                      className={`h-7 px-1.5 text-[10px] font-medium ${
-                        activeTab.discountType === 'percent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
-                      }`}
-                      aria-label="Discount as percent"
-                    >
-                      <Percent className="h-3 w-3" />
-                    </button>
+              <button
+                type="button"
+                onClick={() => setTotalsExpanded((v) => !v)}
+                className="flex w-full items-center justify-between text-sm font-bold pt-1 border-t"
+                aria-expanded={totalsExpanded}
+                aria-controls="pos-totals-breakdown"
+              >
+                <span className="flex items-center gap-1">
+                  {totalsExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  Amount Payable
+                </span>
+                <span className="text-blue-600">{formatCurrency(getRoundedTotal())}</span>
+              </button>
+              {totalsExpanded && (
+                <div id="pos-totals-breakdown" className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Subtotal</span>
+                    <span className="font-medium">{formatCurrency(getCartTotal() - getTaxTotal())}</span>
                   </div>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder={(activeTab.discountType || 'amount') === 'percent' ? '%' : '0.00'}
-                    value={activeTab.discountValue || ''}
-                    onChange={(e) => applyPosDiscountChange(limitDecimalInput(e.target.value))}
-                    className="h-7 w-16 px-1 text-right text-xs"
-                    aria-label="Sale discount"
-                  />
-                </div>
-              </div>
-              {getSaleDiscount() > 0 && (
-                <div className="flex justify-between text-xs text-green-700">
-                  <span>
-                    {activeTab.discountType === 'percent' ? `${parseMoney(activeTab.discountValue)}% off` : 'Discount'}
-                  </span>
-                  <span>−{formatCurrency(getSaleDiscount())}</span>
-                </div>
-              )}
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-600 shrink-0">Addl Charges</span>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  value={activeTab.additionalCharges || ''}
-                  onChange={(e) => applyPosAdditionalChargesChange(limitDecimalInput(e.target.value))}
-                  className="ml-auto h-7 w-20 px-1 text-right text-xs"
-                  aria-label="Additional charges"
-                />
-              </div>
-              {getAdditionalCharges() > 0 && (
-                <div className="flex justify-between text-xs text-gray-600">
-                  <span>Additional Charges</span>
-                  <span>+{formatCurrency(getAdditionalCharges())}</span>
-                </div>
-              )}
-              {getRoundOff() !== 0 && (
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>Round Off</span>
-                  <span className="font-medium">
-                    {getRoundOff() > 0 ? '+' : ''}
-                    {formatCurrency(getRoundOff())}
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between text-xs text-gray-500">
-                <span>Payable</span>
-                <span className="font-medium">{formatCurrency(getRoundedTotal())}</span>
-              </div>
-              {loyaltySettings?.is_enabled && activeTab.selectedParty && (
-                <div className="rounded border border-amber-100 bg-amber-50/80 p-2 space-y-1">
-                  <div className="flex items-center gap-1 text-[10px] font-medium text-amber-900">
-                    <Gift className="h-3 w-3" />
-                    {(activeTab.selectedParty.loyalty_points ?? 0).toLocaleString()} pts
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Tax</span>
+                    <span className="font-medium">{formatCurrency(getTaxTotal())}</span>
                   </div>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={activeTab.selectedParty.loyalty_points ?? 0}
-                    placeholder="Redeem pts"
-                    className="h-7 text-xs"
-                    value={loyaltyPointsToRedeem || ''}
-                    onChange={(e) => applyPosLoyaltyChange(parseInt(e.target.value, 10) || 0)}
-                  />
-                  {getLoyaltyDiscount() > 0 && (
-                    <p className="text-[10px] text-green-700">
-                      −{formatCurrency(getLoyaltyDiscount())} loyalty discount
-                    </p>
+                  <div className="flex justify-between text-sm font-bold pt-1 border-t">
+                    <span>Total</span>
+                    <span className="text-blue-600">{formatCurrency(getCartTotal())}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 flex-1 items-center gap-1">
+                      <span className="text-xs text-gray-600 shrink-0">Discount</span>
+                      <div className="ml-auto flex items-center gap-1">
+                        <div className="flex overflow-hidden rounded border border-gray-300">
+                          <button
+                            type="button"
+                            onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'amount')}
+                            className={`h-7 px-1.5 text-[10px] font-medium ${
+                              (activeTab.discountType || 'amount') === 'amount' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
+                            }`}
+                            aria-label="Discount as amount"
+                          >
+                            ₹
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'percent')}
+                            className={`h-7 px-1.5 text-[10px] font-medium ${
+                              activeTab.discountType === 'percent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
+                            }`}
+                            aria-label="Discount as percent"
+                          >
+                            <Percent className="h-3 w-3" />
+                          </button>
+                        </div>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder={(activeTab.discountType || 'amount') === 'percent' ? '%' : '0.00'}
+                          value={activeTab.discountValue || ''}
+                          onChange={(e) => applyPosDiscountChange(limitDecimalInput(e.target.value))}
+                          className="h-7 w-14 px-1 text-right text-xs"
+                          aria-label="Sale discount"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex min-w-0 flex-1 items-center gap-1">
+                      <span className="text-xs text-gray-600 shrink-0">Addl Charges</span>
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={activeTab.additionalCharges || ''}
+                        onChange={(e) => applyPosAdditionalChargesChange(limitDecimalInput(e.target.value))}
+                        className="ml-auto h-7 w-16 px-1 text-right text-xs"
+                        aria-label="Additional charges"
+                      />
+                    </div>
+                  </div>
+                  {(getSaleDiscount() > 0 || getAdditionalCharges() > 0) && (
+                    <div className="flex justify-between text-xs">
+                      {getSaleDiscount() > 0 ? (
+                        <span className="text-green-700">
+                          {activeTab.discountType === 'percent' ? `${parseMoney(activeTab.discountValue)}% off` : 'Discount'}
+                        </span>
+                      ) : (
+                        <span />
+                      )}
+                      <div className="flex gap-3">
+                        {getSaleDiscount() > 0 && (
+                          <span className="text-green-700">−{formatCurrency(getSaleDiscount())}</span>
+                        )}
+                        {getAdditionalCharges() > 0 && (
+                          <span className="text-gray-600">+{formatCurrency(getAdditionalCharges())}</span>
+                        )}
+                      </div>
+                    </div>
                   )}
-                  {estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() + getAdditionalCharges() - getLoyaltyDiscount()) > 0 && (
-                    <p className="text-[10px] text-amber-800">
-                      Earn ~{estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() + getAdditionalCharges() - getLoyaltyDiscount())} pts
-                    </p>
+                  {getRoundOff() !== 0 && (
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>Round Off</span>
+                      <span className="font-medium">
+                        {getRoundOff() > 0 ? '+' : ''}
+                        {formatCurrency(getRoundOff())}
+                      </span>
+                    </div>
+                  )}
+                  {loyaltySettings?.is_enabled && activeTab.selectedParty && (
+                    <div className="rounded border border-amber-100 bg-amber-50/80 p-2 space-y-1">
+                      <div className="flex items-center gap-1 text-[10px] font-medium text-amber-900">
+                        <Gift className="h-3 w-3" />
+                        {(activeTab.selectedParty.loyalty_points ?? 0).toLocaleString()} pts
+                      </div>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={activeTab.selectedParty.loyalty_points ?? 0}
+                        placeholder="Redeem pts"
+                        className="h-7 text-xs"
+                        value={loyaltyPointsToRedeem || ''}
+                        onChange={(e) => applyPosLoyaltyChange(parseInt(e.target.value, 10) || 0)}
+                      />
+                      {getLoyaltyDiscount() > 0 && (
+                        <p className="text-[10px] text-green-700">
+                          −{formatCurrency(getLoyaltyDiscount())} loyalty discount
+                        </p>
+                      )}
+                      {estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() + getAdditionalCharges() - getLoyaltyDiscount()) > 0 && (
+                        <p className="text-[10px] text-amber-800">
+                          Earn ~{estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() + getAdditionalCharges() - getLoyaltyDiscount())} pts
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
