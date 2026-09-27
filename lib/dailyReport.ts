@@ -32,6 +32,15 @@ export interface ExpenseLine {
   sub_total: number
 }
 
+export interface PayrollLine {
+  id: string
+  payment_number: string
+  staff_name: string
+  date: string
+  payment_mode: string
+  net_salary: number
+}
+
 export interface DailyReport {
   date: string
   business_name: string
@@ -44,6 +53,9 @@ export interface DailyReport {
   payments_out: DailyReportMetric
   sales_returns: DailyReportMetric
   purchase_returns: DailyReportMetric
+  profit_distributions?: DailyReportMetric
+  payrolls?: DailyReportMetric
+  payroll_lines?: PayrollLine[]
   expense_lines?: ExpenseLine[]
   payments_by_method?: PaymentMethodTotal[]
   accounts_payable: DailyReportMetric
@@ -81,7 +93,7 @@ export const PERIODIC_REPORT_OPTIONS: { value: PeriodicReportPeriod; label: stri
   { value: 'custom', label: 'Custom range' },
 ]
 
-const metricRows: { key: keyof DailyReport; label: string; help: string }[] = [
+const metricRows: { key: keyof DailyReport; label: string; help: string; onlyIfNonZero?: boolean }[] = [
   {
     key: 'sales',
     label: 'Sales (Invoices)',
@@ -132,14 +144,32 @@ const metricRows: { key: keyof DailyReport; label: string; help: string }[] = [
     label: 'Purchase Returns',
     help: 'Goods returned to vendors in this period. These reduce net purchases.',
   },
+  {
+    key: 'profit_distributions',
+    label: 'Profit Distributions',
+    help: 'Profit payouts made to partners in this period.',
+    onlyIfNonZero: true,
+  },
+  {
+    key: 'payrolls',
+    label: 'Payroll',
+    help: 'Salary payments made to staff in this period, listed per staff member below.',
+    onlyIfNonZero: true,
+  },
 ]
+
+export function visibleMetricRows(report: DailyReport) {
+  return metricRows.filter(
+    (row) => !row.onlyIfNonZero || ((report[row.key] as DailyReportMetric | undefined)?.count ?? 0) > 0
+  )
+}
 
 export const dailyReportSummaryHelp: Record<string, string> = {
   accounts_payable_total:
     'Unpaid vendor balance across all open purchase bills, not only bills from this period.',
   gst_collected: 'GST collected on sales invoices in this period.',
   daily_profit:
-    'Accrual profit for this period: sales − purchases − expenses ± returns and notes. This is not cash in hand.',
+    'Accrual profit for this period: sales − expenses − sales returns and credit notes. Purchases are not deducted. This is not cash in hand.',
   product_profit:
     'Gross margin on items sold: taxable sale value minus product purchase cost, net of sales returns and credit notes.',
   net_cash_flow:
@@ -198,6 +228,20 @@ function appendExpenseLinesSection(lines: string[], report: DailyReport) {
   lines.push(`Total expenses: ${formatCurrency(report.expenses.total_amount)}`)
 }
 
+function appendPayrollLinesSection(lines: string[], report: DailyReport) {
+  const payrolls = report.payroll_lines ?? []
+  if (payrolls.length === 0) return
+  lines.push('', 'Payroll (per staff payment)', '--------')
+  for (const p of payrolls) {
+    const staff = p.staff_name || '-'
+    const mode = p.payment_mode || '-'
+    lines.push(
+      `${p.payment_number} · ${p.date} · ${staff} · ${mode} · ${formatCurrency(p.net_salary)}`
+    )
+  }
+  lines.push(`Total payroll: ${formatCurrency(report.payrolls?.total_amount ?? 0)}`)
+}
+
 function appendLoyaltySection(lines: string[], report: DailyReport) {
   const loyalty = report.loyalty
   if (!loyalty || !loyalty.enabled) return
@@ -224,7 +268,7 @@ export function buildDailyReportShareText(report: DailyReport, heading = 'Daily 
     '-------',
   ]
 
-  for (const row of metricRows) {
+  for (const row of visibleMetricRows(report)) {
     const metric = report[row.key]
     if (isMetric(metric)) {
       lines.push(
@@ -235,6 +279,7 @@ export function buildDailyReportShareText(report: DailyReport, heading = 'Daily 
 
   appendPaymentMethodSection(lines, report)
   appendExpenseLinesSection(lines, report)
+  appendPayrollLinesSection(lines, report)
   appendLoyaltySection(lines, report)
 
   lines.push(
@@ -267,7 +312,7 @@ export function buildPeriodReportShareText(report: PeriodReport): string {
     '-------',
   ]
 
-  for (const row of metricRows) {
+  for (const row of visibleMetricRows(report)) {
     const metric = report[row.key]
     if (isMetric(metric)) {
       lines.push(
@@ -278,6 +323,7 @@ export function buildPeriodReportShareText(report: PeriodReport): string {
 
   appendPaymentMethodSection(lines, report)
   appendExpenseLinesSection(lines, report)
+  appendPayrollLinesSection(lines, report)
   appendLoyaltySection(lines, report)
 
   lines.push(

@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
-import { usePagination } from '@/hooks/usePagination'
+import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
@@ -110,6 +110,7 @@ export default function CashBankPage() {
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [filterUnlinked, setFilterUnlinked] = useState(false)
   const [filterType, setFilterType] = useState('all')
+  const [filterAccount, setFilterAccount] = useState('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [addMoneyAccountId, setAddMoneyAccountId] = useState(CASH_IN_HAND_VALUE)
@@ -133,31 +134,88 @@ export default function CashBankPage() {
     setMappingAccounts(next)
   }, [paymentMethodMappings])
 
+  const [page, setPage] = useState(1)
+  const [transactionsTotal, setTransactionsTotal] = useState(0)
+  const [transactionsTotalIn, setTransactionsTotalIn] = useState(0)
+  const [transactionsTotalOut, setTransactionsTotalOut] = useState(0)
+  const pageSize = DEFAULT_PAGE_SIZE
+  const totalPages = Math.max(1, Math.ceil(transactionsTotal / pageSize))
+
   useEffect(() => {
     if (!authLoading && user) {
-      fetchData()
+      fetchSummary()
     }
-  }, [authLoading, user, filterUnlinked, filterType, startDate, endDate])
-
-  const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(transactions)
+  }, [authLoading, user])
 
   useEffect(() => {
-    resetPage()
-  }, [filterUnlinked, filterType, startDate, endDate])
+    if (!authLoading && user) {
+      fetchTransactions()
+    }
+  }, [authLoading, user, filterUnlinked, filterType, filterAccount, startDate, endDate, page])
 
-  const fetchData = async () => {
+  useEffect(() => {
+    setPage(1)
+  }, [filterUnlinked, filterType, filterAccount, startDate, endDate])
+
+  const buildTransactionParams = (targetPage: number, perPage: number) => {
+    const params = new URLSearchParams()
+    params.append('unlinked', String(filterUnlinked))
+    if (filterType !== 'all') params.append('transaction_type', filterType)
+    if (filterAccount !== 'all') params.append('account_id', filterAccount)
+    if (startDate) params.append('start_date', startDate)
+    if (endDate) params.append('end_date', endDate)
+    params.append('page', String(targetPage))
+    params.append('per_page', String(perPage))
+    return params
+  }
+
+  const fetchSummary = async () => {
     try {
-      const [summaryRes, transRes] = await Promise.all([
-        apiFetch('/cash-bank/summary'),
-        apiFetch(`/cash-bank/transactions?unlinked=${filterUnlinked}&transaction_type=${filterType === 'all' ? '' : filterType}&start_date=${startDate}&end_date=${endDate}`),
-      ])
-      if (summaryRes.ok) setSummary(await summaryRes.json())
-      if (transRes.ok) setTransactions(await transRes.json())
+      const res = await apiFetch('/cash-bank/summary')
+      if (res.ok) setSummary(await res.json())
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const fetchTransactions = async () => {
+    try {
+      const res = await apiFetch(`/cash-bank/transactions?${buildTransactionParams(page, pageSize).toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rows: CashTransaction[] = Array.isArray(data) ? data : data?.transactions ?? []
+        const nextTotal = typeof data?.total === 'number' ? data.total : rows.length
+        // The current page may no longer exist after deletions or filter changes.
+        const maxPage = Math.max(1, Math.ceil(nextTotal / pageSize))
+        if (page > maxPage) {
+          setPage(maxPage)
+          return
+        }
+        const moneyIn = (t: CashTransaction) =>
+          t.transaction_type === 'add' || t.transaction_type === 'transfer_in'
+        setTransactions(rows)
+        setTransactionsTotal(nextTotal)
+        setTransactionsTotalIn(
+          typeof data?.total_in === 'number'
+            ? data.total_in
+            : rows.reduce((sum, t) => sum + (moneyIn(t) ? t.amount : 0), 0)
+        )
+        setTransactionsTotalOut(
+          typeof data?.total_out === 'number'
+            ? data.total_out
+            : rows.reduce((sum, t) => sum + (moneyIn(t) ? 0 : t.amount), 0)
+        )
+      }
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchData = () => {
+    fetchSummary()
+    fetchTransactions()
   }
 
   const handleAddMoney = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -382,11 +440,22 @@ export default function CashBankPage() {
 
   const handleExport = async () => {
     try {
+      // Export every transaction matching the active filters, not just this page.
+      const res = await apiFetch(
+        `/cash-bank/transactions?${buildTransactionParams(1, 0).toString()}`,
+        { timeoutMs: 30000 }
+      )
+      if (!res.ok) {
+        notifyError('Failed to export transactions')
+        return
+      }
+      const data = await res.json()
+      const exportRows: CashTransaction[] = Array.isArray(data) ? data : data?.transactions ?? []
       await downloadCsv(
         `cash-bank-transactions-${accountingExportDateStamp()}.csv`,
         [
           ['Date', 'Type', 'Account', 'Amount', 'Description', 'Reference', 'Linked'],
-          ...transactions.map((t) => [
+          ...exportRows.map((t) => [
             formatDate(t.date),
             t.transaction_type,
             t.account?.account_name || 'Cash',
@@ -411,6 +480,11 @@ export default function CashBankPage() {
       </DashboardLayout>
     )
   }
+
+  // In/out totals come from the server and cover the whole filtered set.
+  const filteredTotalIn = transactionsTotalIn
+  const filteredTotalOut = transactionsTotalOut
+  const filteredNetTotal = filteredTotalIn - filteredTotalOut
 
   const getTransactionTypeBadge = (type: string) => {
     const variants: Record<string, string> = {
@@ -794,7 +868,15 @@ export default function CashBankPage() {
                 ) : (
                   <div className="space-y-3">
                     {summary?.bank_accounts.map((account) => (
-                      <div key={account.id} className="flex items-center justify-between rounded-lg border p-3">
+                      <div
+                        key={account.id}
+                        className="flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40"
+                        title="View transactions for this account"
+                        onClick={() => {
+                          setFilterAccount(account.id)
+                          setActiveTab('transactions')
+                        }}
+                      >
                         <div className="flex items-center gap-3">
                           <div className="rounded-lg bg-blue-50 p-2.5">
                             <Building2 className="h-5 w-5 text-blue-600" />
@@ -820,7 +902,10 @@ export default function CashBankPage() {
                           <Button
                             variant={account.is_primary ? 'secondary' : 'outline'}
                             size="sm"
-                            onClick={() => handleSetPrimary(account.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleSetPrimary(account.id)
+                            }}
                             disabled={account.is_primary}
                             title="Set as primary account for sales & purchases"
                           >
@@ -830,7 +915,10 @@ export default function CashBankPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleDeleteAccount(account.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteAccount(account.id)
+                            }}
                           >
                             <Trash2 className="h-4 w-4 text-red-600" />
                           </Button>
@@ -868,6 +956,20 @@ export default function CashBankPage() {
                       className="w-auto"
                     />
                   </div>
+                  <Select value={filterAccount} onValueChange={setFilterAccount}>
+                    <SelectTrigger className="w-[190px]">
+                      <SelectValue placeholder="Account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Accounts</SelectItem>
+                      <SelectItem value={CASH_IN_HAND_VALUE}>Cash in-hand</SelectItem>
+                      {summary?.bank_accounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.account_name} - {acc.bank_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select value={filterType} onValueChange={setFilterType}>
                     <SelectTrigger className="w-[150px]">
                       <SelectValue placeholder="Type" />
@@ -911,7 +1013,7 @@ export default function CashBankPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedItems.map((trans) => (
+                      {transactions.map((trans) => (
                         <tr key={trans.id} className="border-b last:border-0">
                           <td className="py-3 text-gray-600">{formatDate(trans.date)}</td>
                           <td className="py-3">{getTransactionTypeBadge(trans.transaction_type)}</td>
@@ -947,12 +1049,32 @@ export default function CashBankPage() {
                         </tr>
                       )}
                     </tbody>
+                    {transactionsTotal > 0 && (
+                      <tfoot>
+                        <tr className="border-t bg-gray-50 font-semibold">
+                          <td className="py-3 text-gray-700" colSpan={3}>
+                            Total ({transactionsTotal}{' '}
+                            {transactionsTotal === 1 ? 'transaction' : 'transactions'})
+                          </td>
+                          <td
+                            className={`py-3 ${
+                              filteredNetTotal >= 0 ? 'text-emerald-700' : 'text-red-700'
+                            }`}
+                          >
+                            {formatCurrency(filteredNetTotal)}
+                          </td>
+                          <td className="py-3 text-xs font-normal text-gray-500" colSpan={canDeleteTransactions ? 4 : 3}>
+                            In {formatCurrency(filteredTotalIn)} · Out {formatCurrency(filteredTotalOut)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
                 <PaginationControls
                   page={page}
                   totalPages={totalPages}
-                  totalItems={totalItems}
+                  totalItems={transactionsTotal}
                   pageSize={pageSize}
                   onPageChange={setPage}
                 />

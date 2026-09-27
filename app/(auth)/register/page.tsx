@@ -2,12 +2,13 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import BrandLogo from '@/components/BrandLogo'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { IndianRupee, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { cn } from '@/lib/utils'
@@ -53,13 +54,11 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-neutral-100 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-white">
-              <IndianRupee className="h-7 w-7" />
-            </div>
+            <BrandLogo iconClassName="h-14 w-14" wordmarkClassName="text-3xl" />
           </div>
           <CardTitle className="text-2xl font-bold">Create account</CardTitle>
           <CardDescription>Start your free TruERP trial</CardDescription>
@@ -135,13 +134,13 @@ export default function RegisterPage() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full bg-[#c81e3a] text-white hover:bg-[#a81830]" disabled={loading}>
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Create Account
             </Button>
             <p className="text-sm text-muted-foreground">
               Already have an account?{' '}
-              <Link href="/login" className="text-blue-600 hover:underline">
+              <Link href="/login" className="text-[#c81e3a] hover:underline">
                 Login
               </Link>
             </p>

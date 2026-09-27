@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageHeader from '@/components/layout/PageHeader'
@@ -61,6 +62,7 @@ interface PartyStats {
 }
 
 export default function PartiesPage() {
+  const router = useRouter()
   const {
     fieldErrors,
     setFieldErrors,
@@ -811,6 +813,14 @@ export default function PartiesPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => router.push(`/payments?create=true&party_id=${p.id}`)}>
+                                <ArrowDown className="mr-2 h-4 w-4" />
+                                Create Payment In
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => router.push(`/payment-outs?create=true&party_id=${p.id}`)}>
+                                <ArrowUp className="mr-2 h-4 w-4" />
+                                Create Payment Out
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleEditParty(p)}>
                                 <Edit className="mr-2 h-4 w-4" />
                                 Edit

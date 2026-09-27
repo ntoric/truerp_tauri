@@ -14,6 +14,7 @@ import { printHtmlDocument } from '@/lib/printDocument'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import EstimateConvertDialog from '@/components/EstimateConvertDialog'
+import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
 
 interface EstimateItem {
   id: string
@@ -49,6 +50,7 @@ interface Estimate {
   discount_total: number
   quotation_discount: number
   additional_charges: number
+  additional_charge_items?: AdditionalChargeItem[]
   tax_total: number
   cgst_total: number
   sgst_total: number
@@ -58,6 +60,7 @@ interface Estimate {
   is_inter_state: boolean
   notes: string
   terms: string
+  signature?: string
   converted_to_invoice_id?: string
   items: EstimateItem[]
 }
@@ -253,12 +256,12 @@ function EstimateViewContent() {
                   <span className="text-gray-600">Discount</span>
                   <span className="text-red-600">-{formatCurrency(estimate.discount_total + (estimate.quotation_discount || 0))}</span>
                 </div>
-                {estimate.additional_charges > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Additional Charges</span>
-                    <span>{formatCurrency(estimate.additional_charges)}</span>
+                {displayAdditionalChargeRows(estimate.additional_charge_items, estimate.additional_charges).map((charge, index) => (
+                  <div key={index} className="flex justify-between text-sm">
+                    <span className="text-gray-600">{charge.label}</span>
+                    <span>{formatCurrency(charge.amount)}</span>
                   </div>
-                )}
+                ))}
                 {estimate.is_inter_state ? (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">IGST</span>
@@ -301,6 +304,12 @@ function EstimateViewContent() {
               <div className="mt-4 border-t pt-4">
                 <p className="text-sm font-medium text-gray-500">Terms & Conditions</p>
                 <p className="text-sm text-gray-600 mt-1">{estimate.terms}</p>
+              </div>
+            )}
+            {estimate.signature && (
+              <div className="mt-4 flex flex-col items-end border-t pt-4">
+                <img src={estimate.signature} alt="Signature" className="max-h-20 max-w-[200px] object-contain" />
+                <p className="mt-1 text-sm text-gray-500">Authorized Signatory</p>
               </div>
             )}
           </CardContent>

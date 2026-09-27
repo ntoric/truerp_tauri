@@ -12,6 +12,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { ArrowLeft, Download, Edit, Loader2, ExternalLink, FileText, AlertCircle } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
 import { downloadPurchaseBillPdf } from '@/lib/printDocument'
+import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
 
 interface PurchaseBillItem {
   id: string
@@ -42,10 +43,14 @@ interface PurchaseBill {
   stock_status?: string
   sub_total: number
   tax_total: number
+  invoice_discount?: number
+  additional_charges?: number
+  additional_charge_items?: AdditionalChargeItem[]
   total_amount: number
   paid_amount: number
   balance_due: number
   notes: string
+  signature?: string
   source_url?: string
   source_html_url?: string
   items: PurchaseBillItem[]
@@ -270,6 +275,18 @@ function PurchaseBillViewContent() {
                     <span className="font-medium">{formatCurrency(bill.tax_total)}</span>
                   </div>
                 )}
+                {(bill.invoice_discount || 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Discount</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(bill.invoice_discount || 0)}</span>
+                  </div>
+                )}
+                {displayAdditionalChargeRows(bill.additional_charge_items, bill.additional_charges).map((charge, index) => (
+                  <div key={index} className="flex justify-between">
+                    <span className="text-gray-600">{charge.label}</span>
+                    <span className="font-medium">{formatCurrency(charge.amount)}</span>
+                  </div>
+                ))}
                 <div className="flex justify-between border-t pt-2 text-base font-bold">
                   <span>Total</span>
                   <span>{formatCurrency(bill.total_amount)}</span>
@@ -288,6 +305,13 @@ function PurchaseBillViewContent() {
             {bill.notes && (
               <div className="rounded-lg border bg-gray-50 p-4 text-sm text-gray-600">
                 <p><span className="font-medium">Notes:</span> {bill.notes}</p>
+              </div>
+            )}
+
+            {bill.signature && (
+              <div className="flex flex-col items-end rounded-lg border bg-gray-50 p-4">
+                <img src={bill.signature} alt="Signature" className="max-h-20 max-w-[200px] object-contain" />
+                <p className="mt-1 text-sm text-gray-500">Authorized Signatory</p>
               </div>
             )}
 

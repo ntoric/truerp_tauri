@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -21,8 +21,9 @@ import { formatPaymentMethod, formatPaymentSplitsLabel } from '@/lib/paymentSpli
 import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { downloadInvoicePdf } from '@/lib/printDocument'
+import { displayAdditionalChargeRows } from '@/lib/additionalCharges'
 import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2, Package, BarChart3, ChevronUp, ChevronDown, ArrowUpDown, Gift } from 'lucide-react'
-import { usePagination } from '@/hooks/usePagination'
+import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
@@ -52,24 +53,16 @@ interface InvoiceStats {
   cancelled: number
 }
 
+interface InvoiceListResponse {
+  invoices: Invoice[] | null
+  total: number
+}
+
 type InvoiceSortKey = 'invoice_number' | 'date' | 'status'
 type SortDir = 'asc' | 'desc'
 
 function partyLabel(inv: Invoice) {
   return inv.party?.name || inv.customer?.name || 'N/A'
-}
-
-function compareInvoiceNumbers(a: string, b: string): number {
-  const matchA = a.match(/^(.*?)(\d+)$/)
-  const matchB = b.match(/^(.*?)(\d+)$/)
-  if (matchA && matchB) {
-    const prefixCmp = matchA[1].localeCompare(matchB[1], undefined, { sensitivity: 'base' })
-    if (prefixCmp !== 0) return prefixCmp
-    const numA = Number(matchA[2])
-    const numB = Number(matchB[2])
-    if (numA !== numB) return numA - numB
-  }
-  return a.localeCompare(b, undefined, { sensitivity: 'base' })
 }
 
 function SortableHeader({
@@ -144,11 +137,16 @@ export default function InvoicesPage() {
   const [showStats, setShowStats] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filter, setFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [sortKey, setSortKey] = useState<InvoiceSortKey>('invoice_number')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const pageSize = DEFAULT_PAGE_SIZE
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [previewData, setPreviewData] = useState<any>(null)
@@ -165,9 +163,25 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     fetchInvoices()
+  }, [filter, dateFrom, dateTo, debouncedSearch, sortKey, sortDir, page])
+
+  useEffect(() => {
     fetchStats()
-    fetchLoyaltySettings()
   }, [filter, dateFrom, dateTo])
+
+  useEffect(() => {
+    fetchLoyaltySettings()
+  }, [])
+
+  // Debounce the search box so each keystroke doesn't hit the API.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim())
+      setPage(1)
+      setSelectedInvoices(new Set())
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   useEffect(() => {
     if (previewId) {
@@ -177,16 +191,34 @@ export default function InvoicesPage() {
     }
   }, [previewId])
 
+  const buildInvoiceParams = (targetPage: number, perPage: number) => {
+    const params = new URLSearchParams()
+    if (filter) params.append('status', filter)
+    if (dateFrom) params.append('from', dateFrom)
+    if (dateTo) params.append('to', dateTo)
+    if (debouncedSearch) params.append('search', debouncedSearch)
+    params.append('sort', sortKey)
+    params.append('order', sortDir)
+    params.append('page', String(targetPage))
+    params.append('per_page', String(perPage))
+    return params
+  }
+
   const fetchInvoices = async () => {
     try {
-      let url = '/invoices'
-      const params = new URLSearchParams()
-      if (filter) params.append('status', filter)
-      if (dateFrom) params.append('from', dateFrom)
-      if (dateTo) params.append('to', dateTo)
-      if (params.toString()) url += `?${params.toString()}`
-      const res = await apiFetch(url)
-      if (res.ok) setInvoices(await res.json())
+      const res = await apiFetch(`/invoices?${buildInvoiceParams(page, pageSize).toString()}`)
+      if (res.ok) {
+        const data: InvoiceListResponse = await res.json()
+        const rows = data.invoices ?? []
+        // The current page may no longer exist after deletions or filter changes.
+        const maxPage = Math.max(1, Math.ceil((data.total ?? 0) / pageSize))
+        if (page > maxPage) {
+          setPage(maxPage)
+          return
+        }
+        setInvoices(rows)
+        setTotal(data.total ?? 0)
+      }
     } catch (err) {
       console.error(err)
     } finally {
@@ -218,6 +250,11 @@ export default function InvoicesPage() {
     }
   }
 
+  const resetPageAndSelection = () => {
+    setPage(1)
+    setSelectedInvoices(new Set())
+  }
+
   const handleSort = (key: InvoiceSortKey) => {
     if (sortKey === key) {
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
@@ -225,42 +262,8 @@ export default function InvoicesPage() {
       setSortKey(key)
       setSortDir('desc')
     }
+    resetPageAndSelection()
   }
-
-  const filteredInvoices = useMemo(() => {
-    const query = search.toLowerCase()
-    const filtered = invoices.filter(
-      (inv) =>
-        inv.invoice_number.toLowerCase().includes(query) ||
-        partyLabel(inv).toLowerCase().includes(query)
-    )
-    const dir = sortDir === 'asc' ? 1 : -1
-    return [...filtered].sort((a, b) => {
-      let cmp = 0
-      if (sortKey === 'invoice_number') {
-        cmp = compareInvoiceNumbers(a.invoice_number, b.invoice_number)
-      } else if (sortKey === 'date') {
-        cmp = (a.date || '').localeCompare(b.date || '')
-        if (cmp === 0) {
-          cmp = compareInvoiceNumbers(a.invoice_number, b.invoice_number)
-        }
-      } else {
-        cmp = (a.status || '').localeCompare(b.status || '', undefined, { sensitivity: 'base' })
-      }
-      return cmp * dir
-    })
-  }, [invoices, search, sortKey, sortDir])
-
-  const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(filteredInvoices)
-
-  useEffect(() => {
-    resetPage()
-    setSelectedInvoices(new Set())
-  }, [search, filter, dateFrom, dateTo])
-
-  useEffect(() => {
-    resetPage()
-  }, [sortKey, sortDir])
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, string> = {
@@ -290,11 +293,14 @@ export default function InvoicesPage() {
 
   const handleExport = async () => {
     try {
+      // per_page=0 returns every matching row for the export.
+      const res = await apiFetch(`/invoices?${buildInvoiceParams(1, 0).toString()}`, { timeoutMs: 30000 })
+      const data: InvoiceListResponse = res.ok ? await res.json() : { invoices: [], total: 0 }
       await downloadCsv(
         `invoices_${accountingExportDateStamp()}.csv`,
         [
           ['Date', 'Invoice #', 'Party Name', 'Due In', 'Amount', 'Status'],
-          ...filteredInvoices.map((inv) => [
+          ...(data.invoices ?? []).map((inv) => [
             formatDate(inv.date),
             inv.invoice_number,
             partyLabel(inv),
@@ -454,15 +460,15 @@ export default function InvoicesPage() {
   }
 
   const toggleSelectAllInvoices = () => {
-    if (selectedInvoices.size === filteredInvoices.length) {
+    if (selectedInvoices.size === invoices.length) {
       setSelectedInvoices(new Set())
     } else {
-      setSelectedInvoices(new Set(filteredInvoices.map(inv => inv.id)))
+      setSelectedInvoices(new Set(invoices.map(inv => inv.id)))
     }
   }
 
   const handleBulkExportInvoices = async () => {
-    const selected = filteredInvoices.filter((inv) => selectedInvoices.has(inv.id))
+    const selected = invoices.filter((inv) => selectedInvoices.has(inv.id))
     try {
       await downloadCsv(
         `selected-invoices_${accountingExportDateStamp()}.csv`,
@@ -486,7 +492,7 @@ export default function InvoicesPage() {
   }
 
   const handleBulkCancelInvoices = async () => {
-    const eligible = filteredInvoices.filter(
+    const eligible = invoices.filter(
       inv => selectedInvoices.has(inv.id) && inv.status !== 'cancelled' && inv.status !== 'paid'
     )
     if (eligible.length === 0) return
@@ -629,7 +635,7 @@ export default function InvoicesPage() {
               </div>
               <select
                 value={filter}
-                onChange={(e) => setFilter(e.target.value)}
+                onChange={(e) => { setFilter(e.target.value); resetPageAndSelection() }}
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">All Status</option>
@@ -644,13 +650,13 @@ export default function InvoicesPage() {
                 type="date"
                 className="h-10 w-auto"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e) => { setDateFrom(e.target.value); resetPageAndSelection() }}
               />
               <Input
                 type="date"
                 className="h-10 w-auto"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e) => { setDateTo(e.target.value); resetPageAndSelection() }}
               />
             </div>
           </CardHeader>
@@ -685,7 +691,7 @@ export default function InvoicesPage() {
                         <input
                           type="checkbox"
                           className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          checked={filteredInvoices.length > 0 && selectedInvoices.size === filteredInvoices.length}
+                          checked={invoices.length > 0 && selectedInvoices.size === invoices.length}
                           onChange={toggleSelectAllInvoices}
                         />
                       </th>
@@ -700,7 +706,7 @@ export default function InvoicesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedItems.map((inv) => (
+                    {invoices.map((inv) => (
                       <tr key={inv.id} className="border-b last:border-0 hover:bg-gray-50">
                         <td className="py-3 pr-2">
                           <input
@@ -775,7 +781,7 @@ export default function InvoicesPage() {
                         </td>
                       </tr>
                     ))}
-                    {filteredInvoices.length === 0 && (
+                    {invoices.length === 0 && (
                       <tr>
                         <td colSpan={9} className="py-8 text-center text-gray-500">
                           No invoices found
@@ -791,9 +797,9 @@ export default function InvoicesPage() {
               <PaginationControls
                 page={page}
                 totalPages={totalPages}
-                totalItems={totalItems}
+                totalItems={total}
                 pageSize={pageSize}
-                onPageChange={setPage}
+                onPageChange={(p) => { setPage(p); setSelectedInvoices(new Set()) }}
               />
             )}
           </CardContent>
@@ -933,12 +939,12 @@ export default function InvoicesPage() {
                           <span className="font-medium text-red-600">-{formatCurrency(previewData.invoice_discount)}</span>
                         </div>
                       )}
-                      {previewData.additional_charges > 0 && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Additional Charges</span>
-                          <span className="font-medium">{formatCurrency(previewData.additional_charges)}</span>
+                      {displayAdditionalChargeRows(previewData.additional_charge_items, previewData.additional_charges).map((charge, index) => (
+                        <div key={index} className="flex justify-between">
+                          <span className="text-gray-600">{charge.label}</span>
+                          <span className="font-medium">{formatCurrency(charge.amount)}</span>
                         </div>
-                      )}
+                      ))}
                       {previewData.cgst_total > 0 && (
                         <div className="flex justify-between">
                           <span className="text-gray-600">CGST</span>
@@ -1018,6 +1024,13 @@ export default function InvoicesPage() {
                     <div className="space-y-2 rounded-lg border bg-gray-50 p-4 text-sm text-gray-600">
                       {previewData.notes && <p><span className="font-medium">Notes:</span> {previewData.notes}</p>}
                       {previewData.terms && <p><span className="font-medium">Terms:</span> {previewData.terms}</p>}
+                    </div>
+                  )}
+
+                  {previewData.signature && (
+                    <div className="flex flex-col items-end rounded-lg border bg-gray-50 p-4">
+                      <img src={previewData.signature} alt="Signature" className="max-h-20 max-w-[200px] object-contain" />
+                      <p className="mt-1 text-sm text-gray-500">Authorized Signatory</p>
                     </div>
                   )}
                 </div>

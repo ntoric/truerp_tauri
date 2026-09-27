@@ -20,8 +20,8 @@ import {
   buildDailyReportShareText,
   buildPeriodReportShareText,
   buildPeriodicReportQuery,
-  dailyReportSections,
   dailyReportSummaryHelp,
+  visibleMetricRows,
   downloadDailyReportJson,
   downloadDailyReportPdf,
   downloadPeriodReportJson,
@@ -38,6 +38,7 @@ import {
   type PeriodReport,
   type PaymentMethodTotal,
   type ExpenseLine,
+  type PayrollLine,
   type LoyaltyReportSummary,
   type DailyReportEmailSettings,
   type ReportEmailPeriod,
@@ -66,6 +67,7 @@ import {
   ScrollText,
   Receipt,
   Gift,
+  Users,
   type LucideIcon,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -347,6 +349,71 @@ function ExpensesTable({ report }: { report: DailyReport }) {
   )
 }
 
+function PayrollTable({ report }: { report: DailyReport }) {
+  const payrolls = report.payroll_lines ?? []
+  if (payrolls.length === 0) return null
+
+  const methodLabel = (mode: string): string => {
+    if (!mode) return '-'
+    const match = (report.payments_by_method ?? []).find((m) => m.method === mode)
+    if (match) return match.label
+    return mode
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+
+  return (
+    <div className="mt-6 overflow-hidden rounded-lg border border-green-200">
+      <div className="flex items-center gap-2 border-b border-green-200 bg-green-50 px-4 py-3">
+        <Users className="h-4 w-4 text-green-700" />
+        <h3 className="text-sm font-semibold text-green-900">Payroll</h3>
+        <span className="text-xs text-green-700">
+          {payrolls.length} {payrolls.length === 1 ? 'payment' : 'payments'} ·{' '}
+          {formatCurrency(report.payrolls?.total_amount ?? 0)}
+        </span>
+      </div>
+      <div className="table-scroll">
+        <table className="w-full text-sm">
+          <thead className="bg-green-50/60 text-left text-green-900">
+            <tr>
+              <th className="px-4 py-3 font-medium">Payment No.</th>
+              <th className="px-4 py-3 font-medium">Date</th>
+              <th className="px-4 py-3 font-medium">Staff</th>
+              <th className="px-4 py-3 font-medium">Mode</th>
+              <th className="px-4 py-3 font-medium text-right">Net Salary</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payrolls.map((line: PayrollLine) => (
+              <tr key={line.id} className="border-t border-green-100">
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  {line.payment_number || '-'}
+                </td>
+                <td className="px-4 py-3 text-gray-600">
+                  {line.date ? formatDate(line.date + 'T00:00:00') : '-'}
+                </td>
+                <td className="px-4 py-3 text-gray-900">{line.staff_name || '-'}</td>
+                <td className="px-4 py-3 text-gray-700">{methodLabel(line.payment_mode)}</td>
+                <td className="px-4 py-3 text-right font-semibold text-green-800">
+                  {formatCurrency(line.net_salary)}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t border-green-200 bg-green-50">
+              <td colSpan={4} className="px-4 py-3 font-semibold text-green-900">
+                Total ({payrolls.length} {payrolls.length === 1 ? 'payment' : 'payments'})
+              </td>
+              <td className="px-4 py-3 text-right font-semibold text-green-900">
+                {formatCurrency(report.payrolls?.total_amount ?? 0)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function LoyaltySummaryTable({ report }: { report: DailyReport }) {
   const loyalty = report.loyalty
   if (!loyalty || !loyalty.enabled) return null
@@ -475,7 +542,7 @@ function ReportSummaryBody({
           >
             {formatCurrency(report.daily_profit ?? 0)}
           </p>
-          <p className="text-xs text-gray-600">Sales − purchases − expenses ± returns</p>
+          <p className="text-xs text-gray-600">Sales − expenses − returns/notes</p>
         </div>
         <div
           className={cn(
@@ -539,7 +606,7 @@ function ReportSummaryBody({
             </tr>
           </thead>
           <tbody>
-            {dailyReportSections.map(({ key, label, help }) => {
+            {visibleMetricRows(report).map(({ key, label, help }) => {
               const metric = report[key] as DailyReport['sales']
               return (
                 <tr key={key} className="border-t">
@@ -630,10 +697,12 @@ function ReportSummaryBody({
 
       <ExpensesTable report={report} />
 
+      <PayrollTable report={report} />
+
       <LoyaltySummaryTable report={report} />
 
       <p className="mt-4 text-xs text-gray-500">
-        Period profit = sales − purchases − expenses ± returns/notes (accrual). Product profit =
+        Period profit = sales − expenses − sales returns/credit notes (accrual). Product profit =
         taxable sale value − product purchase cost on invoice lines, net of sales returns and credit
         notes. Purchase expense = full bill total; Payment out = amount paid; Accounts payable =
         unpaid balance. A separate Payments by method table lists Cash, UPI, Card, Bank Transfer,

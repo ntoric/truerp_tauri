@@ -24,9 +24,8 @@ import {
   DatePeriod,
   formatDateRangeLabel,
   getDateRangeForPeriod,
-  isDateWithinRange,
 } from '@/lib/dateFilter'
-import { usePagination } from '@/hooks/usePagination'
+import { DEFAULT_PAGE_SIZE, usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { isSuperAdmin } from '@/lib/roles'
@@ -213,8 +212,20 @@ export default function InventoryPage() {
   const [customToDate, setCustomToDate] = useState('')
   const [entryApprovalFilter, setEntryApprovalFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
   const [productSearchQuery, setProductSearchQuery] = useState('')
+  const [debouncedProductSearch, setDebouncedProductSearch] = useState('')
   const [approvingEntryId, setApprovingEntryId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
+  const [entriesPage, setEntriesPage] = useState(1)
+  const [entriesTotal, setEntriesTotal] = useState(0)
+  const [stocksPage, setStocksPage] = useState(1)
+  const [stocksTotal, setStocksTotal] = useState(0)
+  const [transfersPage, setTransfersPage] = useState(1)
+  const [transfersTotal, setTransfersTotal] = useState(0)
+  const [pendingEntriesCount, setPendingEntriesCount] = useState(0)
+  const pageSize = DEFAULT_PAGE_SIZE
+  const entriesTotalPages = Math.max(1, Math.ceil(entriesTotal / pageSize))
+  const stocksTotalPages = Math.max(1, Math.ceil(stocksTotal / pageSize))
+  const transfersTotalPages = Math.max(1, Math.ceil(transfersTotal / pageSize))
 
   const dateRange = useMemo(
     () => getDateRangeForPeriod(datePeriod, customFromDate, customToDate),
@@ -227,11 +238,6 @@ export default function InventoryPage() {
     datePeriod !== 'month' ||
     (datePeriod === 'custom' && Boolean(customFromDate || customToDate))
 
-  const pendingEntriesCount = useMemo(
-    () => entries.filter((entry) => (entry.approval_status || 'approved') === 'pending').length,
-    [entries]
-  )
-
   const entryNeedsBatching = useMemo(() => {
     const selectedItem = inventoryItems.find((item) => item.id === newEntry.selected_item_id)
     return Boolean(selectedItem?.type === 'product' && selectedItem.enable_batching)
@@ -243,73 +249,143 @@ export default function InventoryPage() {
     ),
     [balance, productSearchQuery]
   )
-  const filteredEntries = useMemo(
-    () => entries.filter((entry) => {
-      if (!isDateWithinRange(entry.entry_date, dateRange.from, dateRange.to)) return false
-      if (entryApprovalFilter !== 'all') {
-        const status = entry.approval_status || 'approved'
-        if (status !== entryApprovalFilter) return false
-      }
-      return matchesProductSearch(productSearchQuery, {
-        name: entry.product?.name,
-        sku: entry.product?.sku,
-        itemCode: entry.item_code,
-        itemName: entry.item_name,
-      })
-    }),
-    [entries, dateRange, entryApprovalFilter, productSearchQuery]
-  )
-  const filteredTransfers = useMemo(
-    () => transfers.filter((transfer) => isDateWithinRange(transfer.created_at, dateRange.from, dateRange.to)),
-    [transfers, dateRange]
-  )
-  const filteredStocks = useMemo(
-    () => stocks.filter((stock) =>
-      matchesProductSearch(productSearchQuery, { name: stock.product?.name, sku: stock.product?.sku })
-    ),
-    [stocks, productSearchQuery]
-  )
   // Inventory stocks always show current batch-level rows; date filter applies to entries/transfers only.
 
   const isProductSearchActive = productSearchQuery.trim().length > 0
 
-  useEffect(() => { if (!authLoading && user) fetchData() }, [authLoading, user])
+  useEffect(() => { if (!authLoading && user) fetchCoreData() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchInventoryItems() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchWarehouses() }, [authLoading, user])
+  useEffect(() => { if (!authLoading && user) fetchPendingCount() }, [authLoading, user])
+  useEffect(() => { if (!authLoading && user) fetchEntries() }, [authLoading, user, debouncedProductSearch, entryApprovalFilter, dateRange, entriesPage])
+  useEffect(() => { if (!authLoading && user) fetchStocks() }, [authLoading, user, debouncedProductSearch, stocksPage])
+  useEffect(() => { if (!authLoading && user) fetchTransfers() }, [authLoading, user, dateRange, transfersPage])
 
   const lowStockPagination = usePagination(lowStockAlerts)
   const balancePagination = usePagination(filteredBalance)
-  const entriesPagination = usePagination(filteredEntries)
-  const transfersPagination = usePagination(filteredTransfers)
-  const stocksPagination = usePagination(filteredStocks)
 
+  // Debounce the shared product search so each keystroke doesn't hit the API.
   useEffect(() => {
-    entriesPagination.resetPage()
-    transfersPagination.resetPage()
-  }, [datePeriod, customFromDate, customToDate, entryApprovalFilter])
-
-  useEffect(() => {
-    balancePagination.resetPage()
-    entriesPagination.resetPage()
-    stocksPagination.resetPage()
+    const timer = setTimeout(() => {
+      setDebouncedProductSearch(productSearchQuery.trim())
+      setEntriesPage(1)
+      setStocksPage(1)
+      balancePagination.resetPage()
+    }, 300)
+    return () => clearTimeout(timer)
   }, [productSearchQuery])
 
-  const fetchData = async () => {
+  useEffect(() => {
+    setEntriesPage(1)
+    setTransfersPage(1)
+  }, [datePeriod, customFromDate, customToDate, entryApprovalFilter])
+
+  const toYmd = (d: Date | null) =>
+    d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
+
+  // Balance rows and low-stock alerts are bounded by products x outlets, so
+  // they stay client-paginated; entries/stocks/transfers are server-paginated.
+  const fetchCoreData = async () => {
     try {
-      const [b, e, t, s, l] = await Promise.all([
+      const [b, l] = await Promise.all([
         apiFetch('/inventory/balance'),
-        apiFetch('/inventory/entries'),
-        apiFetch('/inventory/transfers'),
-        apiFetch('/inventory/stocks'),
         apiFetch('/inventory/alerts/low-stock')
       ])
       if (b.ok) { setBalance(asArray(await b.json())) }
-      if (e.ok) { setEntries(asArray(await e.json())) }
-      if (t.ok) { setTransfers(asArray(await t.json())) }
-      if (s.ok) { setStocks(asArray(await s.json())) }
       if (l.ok) { setLowStockAlerts(asArray(await l.json())) }
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
+  }
+
+  const fetchEntries = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (dateRange.from) params.append('from_date', toYmd(dateRange.from))
+      if (dateRange.to) params.append('to_date', toYmd(dateRange.to))
+      if (entryApprovalFilter !== 'all') params.append('approval_status', entryApprovalFilter)
+      if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      params.append('page', String(entriesPage))
+      params.append('per_page', String(pageSize))
+      const res = await apiFetch(`/inventory/entries?${params.toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rows = asArray<StockEntry>(data)
+        const nextTotal = typeof data?.total === 'number' ? data.total : rows.length
+        // The current page may no longer exist after deletions or filter changes.
+        const maxPage = Math.max(1, Math.ceil(nextTotal / pageSize))
+        if (entriesPage > maxPage) {
+          setEntriesPage(maxPage)
+          return
+        }
+        setEntries(rows)
+        setEntriesTotal(nextTotal)
+      }
+    } catch (err) { console.error(err) }
+  }
+
+  const fetchStocks = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      params.append('page', String(stocksPage))
+      params.append('per_page', String(pageSize))
+      const res = await apiFetch(`/inventory/stocks?${params.toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rows = asArray<InventoryStock>(data)
+        const nextTotal = typeof data?.total === 'number' ? data.total : rows.length
+        const maxPage = Math.max(1, Math.ceil(nextTotal / pageSize))
+        if (stocksPage > maxPage) {
+          setStocksPage(maxPage)
+          return
+        }
+        setStocks(rows)
+        setStocksTotal(nextTotal)
+      }
+    } catch (err) { console.error(err) }
+  }
+
+  const fetchTransfers = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (dateRange.from) params.append('from_date', toYmd(dateRange.from))
+      if (dateRange.to) params.append('to_date', toYmd(dateRange.to))
+      params.append('page', String(transfersPage))
+      params.append('per_page', String(pageSize))
+      const res = await apiFetch(`/inventory/transfers?${params.toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rows = asArray<StockTransfer>(data)
+        const nextTotal = typeof data?.total === 'number' ? data.total : rows.length
+        const maxPage = Math.max(1, Math.ceil(nextTotal / pageSize))
+        if (transfersPage > maxPage) {
+          setTransfersPage(maxPage)
+          return
+        }
+        setTransfers(rows)
+        setTransfersTotal(nextTotal)
+      }
+    } catch (err) { console.error(err) }
+  }
+
+  // The approval badge needs the pending count across all entries, not just
+  // the loaded page — a per_page=1 query returns it via `total`.
+  const fetchPendingCount = async () => {
+    try {
+      const res = await apiFetch('/inventory/entries?approval_status=pending&page=1&per_page=1')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingEntriesCount(typeof data?.total === 'number' ? data.total : asArray(data).length)
+      }
+    } catch (err) { console.error(err) }
+  }
+
+  const fetchData = () => {
+    fetchCoreData()
+    fetchEntries()
+    fetchStocks()
+    fetchTransfers()
+    fetchPendingCount()
   }
 
   const fetchInventoryItems = async () => {
@@ -1465,12 +1541,12 @@ export default function InventoryPage() {
                   <CardTitle>Stock Entries</CardTitle>
                   {isDateFilterActive && (
                     <p className="mt-1 text-sm text-gray-500">
-                      Filtered by {dateRangeLabel} · {filteredEntries.length} of {entries.length} entries
+                      Filtered by {dateRangeLabel} · {entriesTotal} entries
                     </p>
                   )}
                   {isProductSearchActive && !isDateFilterActive && (
                     <p className="mt-1 text-sm text-gray-500">
-                      {filteredEntries.length} of {entries.length} entries match your product search
+                      {entriesTotal} entries match your product search
                     </p>
                   )}
                   {pendingEntriesCount > 0 && (
@@ -1526,16 +1602,16 @@ export default function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {entriesPagination.paginatedItems.length === 0 ? (
+                  {entries.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={11} className="py-8 text-center text-gray-500">
-                        {entries.length === 0
-                          ? 'No stock entries found'
-                          : 'No stock entries found for the selected filters'}
+                        {isDateFilterActive || isProductSearchActive || entryApprovalFilter !== 'all'
+                          ? 'No stock entries found for the selected filters'
+                          : 'No stock entries found'}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    entriesPagination.paginatedItems.map((entry) => {
+                    entries.map((entry) => {
                       const approvalStatus = entry.approval_status || 'approved'
                       const isPending = approvalStatus === 'pending'
                       return (
@@ -1605,11 +1681,11 @@ export default function InventoryPage() {
                 </TableBody>
               </Table>
               <PaginationControls
-                page={entriesPagination.page}
-                totalPages={entriesPagination.totalPages}
-                totalItems={entriesPagination.totalItems}
-                pageSize={entriesPagination.pageSize}
-                onPageChange={entriesPagination.setPage}
+                page={entriesPage}
+                totalPages={entriesTotalPages}
+                totalItems={entriesTotal}
+                pageSize={pageSize}
+                onPageChange={setEntriesPage}
               />
             </ExpandableTableCard>
           </TabsContent>
@@ -1620,7 +1696,7 @@ export default function InventoryPage() {
               description={
                 isDateFilterActive ? (
                   <p className="text-sm text-gray-500">
-                    Filtered by {dateRangeLabel} · {filteredTransfers.length} of {transfers.length} transfers
+                    Filtered by {dateRangeLabel} · {transfersTotal} transfers
                   </p>
                 ) : undefined
               }
@@ -1637,16 +1713,16 @@ export default function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {transfersPagination.paginatedItems.length === 0 ? (
+                  {transfers.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                        {transfers.length === 0
-                          ? 'No stock transfers found'
-                          : 'No stock transfers found for the selected period'}
+                        {isDateFilterActive
+                          ? 'No stock transfers found for the selected period'
+                          : 'No stock transfers found'}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    transfersPagination.paginatedItems.map((transfer) => (
+                    transfers.map((transfer) => (
                       <TableRow key={transfer.id}>
                         <TableCell>{transfer.from_outlet_id || '-'}</TableCell>
                         <TableCell>{transfer.to_outlet_id}</TableCell>
@@ -1664,11 +1740,11 @@ export default function InventoryPage() {
                 </TableBody>
               </Table>
               <PaginationControls
-                page={transfersPagination.page}
-                totalPages={transfersPagination.totalPages}
-                totalItems={transfersPagination.totalItems}
-                pageSize={transfersPagination.pageSize}
-                onPageChange={transfersPagination.setPage}
+                page={transfersPage}
+                totalPages={transfersTotalPages}
+                totalItems={transfersTotal}
+                pageSize={pageSize}
+                onPageChange={setTransfersPage}
               />
             </ExpandableTableCard>
           </TabsContent>
@@ -1680,7 +1756,7 @@ export default function InventoryPage() {
                 <p className="text-sm text-gray-500">
                   Current stock by batch where batch tracking applies; one row per product when no batch is used.
                   {isProductSearchActive && (
-                    <> · {filteredStocks.length} of {stocks.length} records</>
+                    <> · {stocksTotal} records</>
                   )}
                 </p>
               }
@@ -1702,16 +1778,16 @@ export default function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {stocksPagination.paginatedItems.length === 0 ? (
+                  {stocks.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={11} className="py-8 text-center text-gray-500">
-                        {stocks.length === 0
-                          ? 'No inventory stock records'
-                          : 'No inventory stock records match your product search'}
+                        {isProductSearchActive
+                          ? 'No inventory stock records match your product search'
+                          : 'No inventory stock records'}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    stocksPagination.paginatedItems.map((stock) => (
+                    stocks.map((stock) => (
                       <TableRow key={stock.id}>
                         <TableCell className="font-medium">{stock.product?.name || '-'}</TableCell>
                         <TableCell>{stock.product?.sku || '-'}</TableCell>
@@ -1734,11 +1810,11 @@ export default function InventoryPage() {
                 </TableBody>
               </Table>
               <PaginationControls
-                page={stocksPagination.page}
-                totalPages={stocksPagination.totalPages}
-                totalItems={stocksPagination.totalItems}
-                pageSize={stocksPagination.pageSize}
-                onPageChange={stocksPagination.setPage}
+                page={stocksPage}
+                totalPages={stocksTotalPages}
+                totalItems={stocksTotal}
+                pageSize={pageSize}
+                onPageChange={setStocksPage}
               />
             </ExpandableTableCard>
           </TabsContent>

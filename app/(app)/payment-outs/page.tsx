@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
@@ -18,7 +19,7 @@ import {
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { Plus, Search, Download, MoreVertical, Trash2 } from 'lucide-react'
-import { usePagination } from '@/hooks/usePagination'
+import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
@@ -80,6 +81,8 @@ function billPartyId(bill: PurchaseBill) {
 }
 
 export default function PaymentOutsPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { confirm, confirmDialog } = useConfirmDialog()
   const {
     fieldErrors,
@@ -97,10 +100,15 @@ export default function PaymentOutsPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [vendorFilter, setVendorFilter] = useState('all')
   const [modeFilter, setModeFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const pageSize = DEFAULT_PAGE_SIZE
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const [dialogOpen, setDialogOpen] = useState(false)
   const [formData, setFormData] = useState(emptyForm)
 
@@ -111,7 +119,16 @@ export default function PaymentOutsPage() {
 
   useEffect(() => {
     fetchPaymentOuts()
-  }, [vendorFilter])
+  }, [debouncedSearch, vendorFilter, modeFilter, dateFrom, dateTo, page])
+
+  // Debounce the search box so each keystroke doesn't hit the API.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim())
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   function getVendorName(paymentOut: PaymentOut) {
     return paymentOut.party?.name || paymentOut.vendor?.name || '-'
@@ -125,48 +142,34 @@ export default function PaymentOutsPage() {
     return paymentOut.amount_paid - paymentOut.payment_out_discount
   }
 
-  const filteredPaymentOuts = paymentOuts.filter((paymentOut) => {
-    const query = search.toLowerCase()
-    const vendorName = getVendorName(paymentOut).toLowerCase()
-    const paymentDate = paymentOut.date.split('T')[0]
-
-    const matchesSearch =
-      !search ||
-      vendorName.includes(query) ||
-      paymentOut.purchase_bill?.bill_number?.toLowerCase().includes(query) ||
-      paymentOut.payment_out_number?.toLowerCase().includes(query) ||
-      paymentOut.reference?.toLowerCase().includes(query) ||
-      paymentOut.notes?.toLowerCase().includes(query) ||
-      paymentOut.mode?.toLowerCase().includes(query)
-
-    const matchesVendor =
-      vendorFilter === 'all' ||
-      paymentOut.party?.id === vendorFilter ||
-      paymentOut.vendor?.id === vendorFilter
-    const matchesMode = modeFilter === 'all' || paymentOut.mode === modeFilter
-    const matchesDateFrom = !dateFrom || paymentDate >= dateFrom
-    const matchesDateTo = !dateTo || paymentDate <= dateTo
-
-    return matchesSearch && matchesVendor && matchesMode && matchesDateFrom && matchesDateTo
-  })
-
-  const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } =
-    usePagination(filteredPaymentOuts)
-
-  useEffect(() => {
-    resetPage()
-  }, [search, vendorFilter, modeFilter, dateFrom, dateTo])
+  const buildPaymentOutParams = (targetPage: number, perPage: number) => {
+    const params = new URLSearchParams()
+    if (vendorFilter !== 'all') params.append('party_id', vendorFilter)
+    if (modeFilter !== 'all') params.append('mode', modeFilter)
+    if (dateFrom) params.append('from', dateFrom)
+    if (dateTo) params.append('to', dateTo)
+    if (debouncedSearch) params.append('search', debouncedSearch)
+    params.append('page', String(targetPage))
+    params.append('per_page', String(perPage))
+    return params
+  }
 
   const fetchPaymentOuts = async () => {
     try {
-      let url = '/payment-outs'
-      if (vendorFilter !== 'all') {
-        url += `?party_id=${vendorFilter}`
-      }
-      const res = await apiFetch(url)
+      const res = await apiFetch(`/payment-outs?${buildPaymentOutParams(page, pageSize).toString()}`)
       if (res.ok) {
         const data = await res.json()
-        setPaymentOuts(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [])
+        const rows: PaymentOut[] = Array.isArray(data)
+          ? data
+          : data?.payment_outs ?? (Array.isArray(data?.data) ? data.data : [])
+        // The current page may no longer exist after deletions or filter changes.
+        const maxPage = Math.max(1, Math.ceil((data.total ?? rows.length) / pageSize))
+        if (page > maxPage) {
+          setPage(maxPage)
+          return
+        }
+        setPaymentOuts(rows)
+        setTotal(data.total ?? rows.length)
       } else {
         showErrorToast('Unable to load payment outs', 'Load failed')
       }
@@ -183,7 +186,20 @@ export default function PaymentOutsPage() {
       const res = await apiFetch('/parties?party_type=vendor')
       if (res.ok) {
         const data = await res.json()
-        setVendors(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [])
+        const list: Vendor[] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : []
+        // When arriving from the parties page, the preselected party may not be
+        // a vendor — fetch it so it still appears in the dropdown.
+        const preselectId = searchParams.get('party_id')
+        if (preselectId && !list.some((v) => v.id === preselectId)) {
+          const partyRes = await apiFetch(`/parties/${preselectId}`)
+          if (partyRes.ok) {
+            const party = await partyRes.json()
+            if (party?.id) {
+              list.unshift({ id: party.id, name: party.name })
+            }
+          }
+        }
+        setVendors(list)
       } else {
         showErrorToast('Unable to load vendors', 'Load failed')
       }
@@ -217,6 +233,36 @@ export default function PaymentOutsPage() {
     setDialogOpen(open)
     if (!open) resetForm()
   }
+
+  const autoCreateHandled = useRef(false)
+  useEffect(() => {
+    if (autoCreateHandled.current) return
+    if (searchParams.get('create') !== 'true') return
+    autoCreateHandled.current = true
+    const partyId = searchParams.get('party_id')
+    if (partyId) {
+      setFormData((prev) => ({ ...prev, party_id: partyId }))
+      void (async () => {
+        try {
+          const res = await apiFetch(`/parties/${partyId}`)
+          if (res.ok) {
+            const party = await res.json()
+            if (party?.id) {
+              setVendors((prev) =>
+                prev.some((v) => v.id === party.id)
+                  ? prev
+                  : [{ id: party.id, name: party.name }, ...prev]
+              )
+            }
+          }
+        } catch (err) {
+          console.error(err)
+        }
+      })()
+    }
+    handleDialogOpenChange(true)
+    router.replace('/payment-outs', { scroll: false })
+  }, [searchParams, router])
 
   const handleVendorChange = (value: string) => {
     clearFieldError('party_id')
@@ -326,33 +372,48 @@ export default function PaymentOutsPage() {
   }
 
   const handleExport = async () => {
-    const rows: (string | number)[][] = [
-      [
-        'Date',
-        'Payment Out Number',
-        'Vendor',
-        'Bill #',
-        'Amount Paid',
-        'Discount',
-        'Net Amount',
-        'Mode',
-        'Reference',
-        'Notes',
-      ],
-      ...filteredPaymentOuts.map((paymentOut) => [
-        formatDate(paymentOut.date),
-        paymentOut.payment_out_number || '',
-        getVendorName(paymentOut),
-        getBillNumber(paymentOut),
-        paymentOut.amount_paid,
-        paymentOut.payment_out_discount,
-        getNetAmount(paymentOut),
-        paymentOut.mode,
-        paymentOut.reference || '',
-        paymentOut.notes || '',
-      ]),
-    ]
-    await downloadCsv(`payment_outs_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting payment outs' })
+    try {
+      // Export every row matching the active filters, not just the current page.
+      const res = await apiFetch(`/payment-outs?${buildPaymentOutParams(1, 0).toString()}`, { timeoutMs: 30000 })
+      if (!res.ok) {
+        showErrorToast('Unable to export payment outs', 'Export failed')
+        return
+      }
+      const data = await res.json()
+      const exportRows: PaymentOut[] = Array.isArray(data)
+        ? data
+        : data?.payment_outs ?? (Array.isArray(data?.data) ? data.data : [])
+      const rows: (string | number)[][] = [
+        [
+          'Date',
+          'Payment Out Number',
+          'Vendor',
+          'Bill #',
+          'Amount Paid',
+          'Discount',
+          'Net Amount',
+          'Mode',
+          'Reference',
+          'Notes',
+        ],
+        ...exportRows.map((paymentOut) => [
+          formatDate(paymentOut.date),
+          paymentOut.payment_out_number || '',
+          getVendorName(paymentOut),
+          getBillNumber(paymentOut),
+          paymentOut.amount_paid,
+          paymentOut.payment_out_discount,
+          getNetAmount(paymentOut),
+          paymentOut.mode,
+          paymentOut.reference || '',
+          paymentOut.notes || '',
+        ]),
+      ]
+      await downloadCsv(`payment_outs_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting payment outs' })
+    } catch (err) {
+      console.error(err)
+      showErrorToast('Failed to export payment outs. Please try again.')
+    }
   }
 
   const hasActiveFilters =
@@ -364,10 +425,12 @@ export default function PaymentOutsPage() {
 
   const clearFilters = () => {
     setSearch('')
+    setDebouncedSearch('')
     setVendorFilter('all')
     setModeFilter('all')
     setDateFrom('')
     setDateTo('')
+    setPage(1)
   }
 
   const filteredBills = bills.filter(
@@ -401,7 +464,7 @@ export default function PaymentOutsPage() {
             <Button
               variant="outline"
               onClick={handleExport}
-              disabled={loading || filteredPaymentOuts.length === 0}
+              disabled={loading || total === 0}
             >
               <Download className="mr-2 h-4 w-4" />
               Export
@@ -606,7 +669,13 @@ export default function PaymentOutsPage() {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <Select value={vendorFilter} onValueChange={setVendorFilter}>
+              <Select
+                value={vendorFilter}
+                onValueChange={(value) => {
+                  setVendorFilter(value)
+                  setPage(1)
+                }}
+              >
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Vendor" />
                 </SelectTrigger>
@@ -619,7 +688,13 @@ export default function PaymentOutsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={modeFilter} onValueChange={setModeFilter}>
+              <Select
+                value={modeFilter}
+                onValueChange={(value) => {
+                  setModeFilter(value)
+                  setPage(1)
+                }}
+              >
                 <SelectTrigger className="w-[170px]">
                   <SelectValue placeholder="Payment mode" />
                 </SelectTrigger>
@@ -636,14 +711,20 @@ export default function PaymentOutsPage() {
                 type="date"
                 className="h-10 w-auto"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e) => {
+                  setDateFrom(e.target.value)
+                  setPage(1)
+                }}
                 aria-label="From date"
               />
               <Input
                 type="date"
                 className="h-10 w-auto"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e) => {
+                  setDateTo(e.target.value)
+                  setPage(1)
+                }}
                 aria-label="To date"
               />
               {hasActiveFilters && (
@@ -680,17 +761,13 @@ export default function PaymentOutsPage() {
                     {paymentOuts.length === 0 ? (
                       <tr>
                         <td colSpan={11} className="py-8 text-center text-gray-500">
-                          No payment outs recorded yet
-                        </td>
-                      </tr>
-                    ) : filteredPaymentOuts.length === 0 ? (
-                      <tr>
-                        <td colSpan={11} className="py-8 text-center text-gray-500">
-                          No payment outs match your filters
+                          {hasActiveFilters
+                            ? 'No payment outs match your filters'
+                            : 'No payment outs recorded yet'}
                         </td>
                       </tr>
                     ) : (
-                      paginatedItems.map((p) => (
+                      paymentOuts.map((p) => (
                         <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
                           <td className="py-3 text-gray-600">{formatDate(p.date)}</td>
                           <td className="py-3 font-mono text-xs text-gray-600">{p.id.slice(0, 8)}...</td>
@@ -733,7 +810,7 @@ export default function PaymentOutsPage() {
               <PaginationControls
                 page={page}
                 totalPages={totalPages}
-                totalItems={totalItems}
+                totalItems={total}
                 pageSize={pageSize}
                 onPageChange={setPage}
               />

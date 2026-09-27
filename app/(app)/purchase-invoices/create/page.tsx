@@ -32,12 +32,20 @@ import { ProductCombobox } from '@/components/ui/ProductCombobox'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { INITIAL_INVESTMENT_METHOD, isInitialInvestmentMethod } from '@/lib/paymentSplits'
+import { fetchBusinessSignature } from '@/lib/businessSignature'
 import {
   CASH_IN_HAND_ACCOUNT,
   bankAccountIdForApi,
   useBankAccounts,
 } from '@/hooks/useBankAccounts'
 import ItemsEmptyState, { type PastedItemRow } from '@/components/ItemsEmptyState'
+import { AdditionalChargeItemsInput } from '@/components/AdditionalChargeItemsInput'
+import {
+  type AdditionalChargeItem,
+  hydrateAdditionalCharges,
+  sanitizeAdditionalChargeItems,
+  sumAdditionalChargeItems,
+} from '@/lib/additionalCharges'
 
 interface Vendor {
   id: string
@@ -168,7 +176,7 @@ export default function CreatePurchaseInvoicePage() {
   const [dueDate, setDueDate] = useState('')
   const [notes, setNotes] = useState('')
   const [terms, setTerms] = useState('')
-  const [additionalCharges, setAdditionalCharges] = useState(0)
+  const [chargeItems, setChargeItems] = useState<AdditionalChargeItem[]>([])
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
   const [taxExempt, setTaxExempt] = useState(true)
   const [autoRoundOff, setAutoRoundOff] = useState(true)
@@ -177,6 +185,7 @@ export default function CreatePurchaseInvoicePage() {
   const [paidFrom, setPaidFrom] = useState(CASH_IN_HAND_ACCOUNT)
   const { accounts: bankAccounts, loading: bankAccountsLoading } = useBankAccounts()
   const [signature, setSignature] = useState('')
+  const [businessSignature, setBusinessSignature] = useState('')
   const [items, setItems] = useState<PurchaseBillItem[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -443,6 +452,9 @@ export default function CreatePurchaseInvoicePage() {
           setWarehouseId((prev) => prev || defaultWh.id)
         }
       }
+      const bizSig = await fetchBusinessSignature()
+      setBusinessSignature(bizSig)
+      if (bizSig && !editId) setSignature((prev) => prev || bizSig)
     } catch (err) {
       console.error(err)
     } finally {
@@ -462,6 +474,9 @@ export default function CreatePurchaseInvoicePage() {
         setDueDate(bill.due_date?.split('T')[0] || '')
         setWarehouseId(bill.warehouse_id || '')
         setNotes(bill.notes || '')
+        setSignature(bill.signature || '')
+        setInvoiceDiscount(bill.invoice_discount || 0)
+        setChargeItems(hydrateAdditionalCharges(bill.additional_charge_items, bill.additional_charges || 0))
         const loadedPaid = bill.paid_amount || 0
         const loadedTotal = bill.total_amount || 0
         setAmountPaid(loadedPaid)
@@ -1188,7 +1203,8 @@ export default function CreatePurchaseInvoicePage() {
   const subTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
   const discountTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price * (item.discount / 100)), 0)
   const taxTotal = items.reduce((sum, item) => sum + item.tax_amount, 0)
-  
+  const additionalCharges = sumAdditionalChargeItems(chargeItems)
+
   let totalBeforeRound = subTotal - discountTotal + taxTotal - invoiceDiscount + additionalCharges
   let roundOff = 0
   if (autoRoundOff) {
@@ -1267,7 +1283,11 @@ export default function CreatePurchaseInvoicePage() {
         status,
         notes,
         terms,
+        signature,
         tax_exempt: taxExempt,
+        invoice_discount: parseMoney(invoiceDiscount),
+        additional_charges: parseMoney(additionalCharges),
+        additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
         // client_bill_id makes creation idempotent (also sent via
         // Idempotency-Key header). Included in the body as a fallback.
         client_bill_id: clientBillIdRef.current,
@@ -1333,7 +1353,11 @@ export default function CreatePurchaseInvoicePage() {
           status: 'draft',
           notes,
           terms,
+          signature,
           tax_exempt: taxExempt,
+          invoice_discount: parseMoney(invoiceDiscount),
+          additional_charges: parseMoney(additionalCharges),
+          additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
           client_bill_id: clientBillIdRef.current,
           items: items.flatMap((item, index) => {
             if (!isItemReadyForDraft(item)) return []
@@ -1652,6 +1676,7 @@ export default function CreatePurchaseInvoicePage() {
                   placeholder="Select Vendor"
                   searchPlaceholder="Search vendors..."
                   emptyMessage="No vendors found"
+                  clearable
                   onAddNew={() => setShowAddVendor(true)}
                   addNewLabel="Add New Vendor"
                   className={cn('w-full min-w-0', fieldErrors.vendor_id && 'border-red-500')}
@@ -2172,16 +2197,9 @@ export default function CreatePurchaseInvoicePage() {
                 <CardTitle>Additional Charges & Discount</CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="min-w-0 space-y-2">
+                <div className="min-w-0 space-y-2 sm:col-span-2">
                   <Label>Additional Charges</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={additionalCharges}
-                    onChange={(e) => setAdditionalCharges(Number(e.target.value))}
-                    className="w-full min-w-0"
-                  />
+                  <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} />
                 </div>
                 <div className="min-w-0 space-y-2">
                   <Label>Invoice Discount</Label>
@@ -2285,6 +2303,11 @@ export default function CreatePurchaseInvoicePage() {
                 <CardTitle>Signature</CardTitle>
               </CardHeader>
               <CardContent>
+                {signature && (
+                  <div className="mb-3">
+                    <img src={signature} alt="Signature" className="max-h-[150px] max-w-full rounded border bg-white object-contain" />
+                  </div>
+                )}
                 <canvas
                   ref={canvasRef}
                   width={400}
@@ -2297,6 +2320,9 @@ export default function CreatePurchaseInvoicePage() {
                 />
                 <div className="mt-2 flex gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={clearSignature}>Clear</Button>
+                  {businessSignature && signature !== businessSignature && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setSignature(businessSignature)}>Use Business Signature</Button>
+                  )}
                 </div>
               </CardContent>
 
@@ -2339,10 +2365,12 @@ export default function CreatePurchaseInvoicePage() {
                   <span className="text-gray-600">Invoice Discount</span>
                   <span className="font-medium text-red-600">-{formatCurrency(invoiceDiscount)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Additional Charges</span>
-                  <span className="font-medium">{formatCurrency(additionalCharges)}</span>
-                </div>
+                {chargeItems.filter((c) => Number(c.amount) > 0).map((charge, index) => (
+                  <div key={index} className="flex justify-between text-sm">
+                    <span className="text-gray-600">{charge.label.trim() || 'Additional Charge'}</span>
+                    <span className="font-medium">{formatCurrency(charge.amount)}</span>
+                  </div>
+                ))}
                 {!taxExempt && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Tax Total</span>

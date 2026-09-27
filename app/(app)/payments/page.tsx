@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
@@ -17,7 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, MoreVertical, Trash2, Search } from 'lucide-react'
-import { usePagination } from '@/hooks/usePagination'
+import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
@@ -65,6 +66,8 @@ const emptyForm = () => ({
 })
 
 export default function PaymentsPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { confirm, confirmDialog } = useConfirmDialog()
   const {
     fieldErrors,
@@ -84,15 +87,33 @@ export default function PaymentsPage() {
   const [formData, setFormData] = useState(emptyForm)
   const [selectedPayments, setSelectedPayments] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [partyFilter, setPartyFilter] = useState('all')
   const [modeFilter, setModeFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const pageSize = DEFAULT_PAGE_SIZE
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   useEffect(() => {
     fetchPayments()
+  }, [debouncedSearch, partyFilter, modeFilter, dateFrom, dateTo, page])
+
+  useEffect(() => {
     fetchParties()
   }, [])
+
+  // Debounce the search box so each keystroke doesn't hit the API.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim())
+      setPage(1)
+      setSelectedPayments(new Set())
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   const getPartyName = (payment: Payment) => {
     if (payment.party) return payment.party.name
@@ -100,41 +121,34 @@ export default function PaymentsPage() {
     return '-'
   }
 
-  const filteredPayments = payments.filter((payment) => {
-    const query = search.toLowerCase()
-    const partyName = getPartyName(payment).toLowerCase()
-    const paymentDate = payment.date.split('T')[0]
-
-    const matchesSearch =
-      !search ||
-      partyName.includes(query) ||
-      payment.payment_in_number?.toLowerCase().includes(query) ||
-      payment.reference?.toLowerCase().includes(query) ||
-      payment.notes?.toLowerCase().includes(query) ||
-      payment.id.toLowerCase().includes(query)
-
-    const matchesParty =
-      partyFilter === 'all' ||
-      payment.party?.id === partyFilter ||
-      payment.customer?.id === partyFilter
-    const matchesMode = modeFilter === 'all' || payment.mode === modeFilter
-    const matchesDateFrom = !dateFrom || paymentDate >= dateFrom
-    const matchesDateTo = !dateTo || paymentDate <= dateTo
-
-    return matchesSearch && matchesParty && matchesMode && matchesDateFrom && matchesDateTo
-  })
-
-  const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(filteredPayments)
-
-  useEffect(() => {
-    resetPage()
+  const resetPageAndSelection = () => {
+    setPage(1)
     setSelectedPayments(new Set())
-  }, [search, partyFilter, modeFilter, dateFrom, dateTo])
+  }
 
   const fetchPayments = async () => {
     try {
-      const res = await apiFetch('/payments')
-      if (res.ok) setPayments(await res.json())
+      const params = new URLSearchParams()
+      if (partyFilter !== 'all') params.append('party_id', partyFilter)
+      if (modeFilter !== 'all') params.append('mode', modeFilter)
+      if (dateFrom) params.append('from', dateFrom)
+      if (dateTo) params.append('to', dateTo)
+      if (debouncedSearch) params.append('search', debouncedSearch)
+      params.append('page', String(page))
+      params.append('per_page', String(pageSize))
+      const res = await apiFetch(`/payments?${params.toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rows: Payment[] = Array.isArray(data) ? data : data?.payments ?? []
+        // The current page may no longer exist after deletions or filter changes.
+        const maxPage = Math.max(1, Math.ceil((data.total ?? rows.length) / pageSize))
+        if (page > maxPage) {
+          setPage(maxPage)
+          return
+        }
+        setPayments(rows)
+        setTotal(data.total ?? rows.length)
+      }
     } catch (err) {
       console.error(err)
     } finally {
@@ -147,7 +161,20 @@ export default function PaymentsPage() {
       const res = await apiFetch('/parties?party_type=customer')
       if (res.ok) {
         const data = await res.json()
-        setParties(Array.isArray(data) ? data : [])
+        const list: Party[] = Array.isArray(data) ? data : []
+        // When arriving from the parties page, the preselected party may not be
+        // a customer — fetch it so it still appears in the dropdown.
+        const preselectId = searchParams.get('party_id')
+        if (preselectId && !list.some((p) => p.id === preselectId)) {
+          const partyRes = await apiFetch(`/parties/${preselectId}`)
+          if (partyRes.ok) {
+            const party = await partyRes.json()
+            if (party?.id) {
+              list.unshift({ id: party.id, name: party.name, party_type: party.party_type })
+            }
+          }
+        }
+        setParties(list)
       }
     } catch (err) {
       console.error(err)
@@ -182,6 +209,36 @@ export default function PaymentsPage() {
       console.error(err)
     }
   }
+
+  const autoCreateHandled = useRef(false)
+  useEffect(() => {
+    if (autoCreateHandled.current) return
+    if (searchParams.get('create') !== 'true') return
+    autoCreateHandled.current = true
+    const partyId = searchParams.get('party_id')
+    if (partyId) {
+      setFormData((prev) => ({ ...prev, party_id: partyId }))
+      void (async () => {
+        try {
+          const res = await apiFetch(`/parties/${partyId}`)
+          if (res.ok) {
+            const party = await res.json()
+            if (party?.id) {
+              setParties((prev) =>
+                prev.some((p) => p.id === party.id)
+                  ? prev
+                  : [{ id: party.id, name: party.name, party_type: party.party_type }, ...prev]
+              )
+            }
+          }
+        } catch (err) {
+          console.error(err)
+        }
+      })()
+    }
+    handleDialogOpenChange(true)
+    router.replace('/payments', { scroll: false })
+  }, [searchParams, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -271,10 +328,12 @@ export default function PaymentsPage() {
 
   const clearFilters = () => {
     setSearch('')
+    setDebouncedSearch('')
     setPartyFilter('all')
     setModeFilter('all')
     setDateFrom('')
     setDateTo('')
+    resetPageAndSelection()
   }
 
   const hasActiveFilters =
@@ -294,10 +353,10 @@ export default function PaymentsPage() {
   }
 
   const toggleSelectAllPayments = () => {
-    if (selectedPayments.size === filteredPayments.length) {
+    if (selectedPayments.size === payments.length) {
       setSelectedPayments(new Set())
     } else {
-      setSelectedPayments(new Set(filteredPayments.map(p => p.id)))
+      setSelectedPayments(new Set(payments.map(p => p.id)))
     }
   }
 
@@ -480,7 +539,13 @@ export default function PaymentsPage() {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <Select value={partyFilter} onValueChange={setPartyFilter}>
+              <Select
+                value={partyFilter}
+                onValueChange={(value) => {
+                  setPartyFilter(value)
+                  resetPageAndSelection()
+                }}
+              >
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Party" />
                 </SelectTrigger>
@@ -493,7 +558,13 @@ export default function PaymentsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={modeFilter} onValueChange={setModeFilter}>
+              <Select
+                value={modeFilter}
+                onValueChange={(value) => {
+                  setModeFilter(value)
+                  resetPageAndSelection()
+                }}
+              >
                 <SelectTrigger className="w-[170px]">
                   <SelectValue placeholder="Payment mode" />
                 </SelectTrigger>
@@ -510,14 +581,20 @@ export default function PaymentsPage() {
                 type="date"
                 className="h-10 w-auto"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e) => {
+                  setDateFrom(e.target.value)
+                  resetPageAndSelection()
+                }}
                 aria-label="From date"
               />
               <Input
                 type="date"
                 className="h-10 w-auto"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e) => {
+                  setDateTo(e.target.value)
+                  resetPageAndSelection()
+                }}
                 aria-label="To date"
               />
               {hasActiveFilters && (
@@ -552,7 +629,7 @@ export default function PaymentsPage() {
                         <input
                           type="checkbox"
                           className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          checked={filteredPayments.length > 0 && selectedPayments.size === filteredPayments.length}
+                          checked={payments.length > 0 && selectedPayments.size === payments.length}
                           onChange={toggleSelectAllPayments}
                         />
                       </th>
@@ -568,7 +645,7 @@ export default function PaymentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedItems.map((p) => (
+                    {payments.map((p) => (
                       <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
                         <td className="py-3 pr-2">
                           <input
@@ -611,7 +688,7 @@ export default function PaymentsPage() {
                         </td>
                       </tr>
                     ))}
-                    {filteredPayments.length === 0 && (
+                    {payments.length === 0 && (
                       <tr>
                         <td colSpan={10} className="py-8 text-center text-gray-500">
                           {hasActiveFilters ? 'No payments match your filters' : 'No payments recorded yet'}
@@ -627,9 +704,12 @@ export default function PaymentsPage() {
               <PaginationControls
                 page={page}
                 totalPages={totalPages}
-                totalItems={totalItems}
+                totalItems={total}
                 pageSize={pageSize}
-                onPageChange={setPage}
+                onPageChange={(p) => {
+                  setPage(p)
+                  setSelectedPayments(new Set())
+                }}
               />
             )}
           </CardContent>

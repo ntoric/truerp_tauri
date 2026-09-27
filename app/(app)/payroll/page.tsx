@@ -76,6 +76,23 @@ interface Payroll {
   updated_at?: string
 }
 
+interface PayrollCalc {
+  salary: number
+  salary_type: string
+  working_days: number
+  present_days: number
+  absent_days: number
+  half_days: number
+  paid_leave_days: number
+  weekly_off_days: number
+  payable_days: number
+  calculated_salary: number
+  period_deductions: number
+  advance_recovery: number
+  advance_count: number
+  estimated_net: number
+}
+
 interface PayrollStats {
   total_payments: number
   total_payrolls: number
@@ -143,6 +160,10 @@ export default function PayrollPage() {
     reference: '',
     notes: ''
   })
+  const [advanceRecovery, setAdvanceRecovery] = useState(0)
+  const [advanceRecoveryCount, setAdvanceRecoveryCount] = useState(0)
+  const [payrollCalc, setPayrollCalc] = useState<PayrollCalc | null>(null)
+  const [calcLoading, setCalcLoading] = useState(false)
   const [editFormData, setEditFormData] = useState({
     payment_date: '',
     deductions: 0,
@@ -168,6 +189,35 @@ export default function PayrollPage() {
       return prev.paid_from === preferred ? prev : { ...prev, paid_from: preferred }
     })
   }, [bankAccounts, primaryAccount])
+
+  // Prefill the attendance-based salary calculation for the selected staff +
+  // period (same computation the backend applies on create, including
+  // outstanding advance recovery and period deductions).
+  useEffect(() => {
+    if (!isDialogOpen || !formData.staff_id || !formData.start_date || !formData.end_date) {
+      setPayrollCalc(null)
+      setAdvanceRecovery(0)
+      setAdvanceRecoveryCount(0)
+      return
+    }
+    let cancelled = false
+    setCalcLoading(true)
+    apiFetch(`/payroll/calculate?staff_id=${formData.staff_id}&start_date=${formData.start_date}&end_date=${formData.end_date}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          if (!cancelled) setPayrollCalc(null)
+          return
+        }
+        const data: PayrollCalc = await res.json()
+        if (cancelled) return
+        setPayrollCalc(data)
+        setAdvanceRecovery(data.advance_recovery || 0)
+        setAdvanceRecoveryCount(data.advance_count || 0)
+      })
+      .catch((err) => console.error(err))
+      .finally(() => { if (!cancelled) setCalcLoading(false) })
+    return () => { cancelled = true }
+  }, [isDialogOpen, formData.staff_id, formData.start_date, formData.end_date])
 
   const filteredPayrolls = payrolls.filter((payroll) => {
     const query = search.toLowerCase()
@@ -271,6 +321,9 @@ export default function PayrollPage() {
       reference: '',
       notes: ''
     })
+    setAdvanceRecovery(0)
+    setAdvanceRecoveryCount(0)
+    setPayrollCalc(null)
   }
 
   const handleEdit = (payroll: Payroll) => {
@@ -385,6 +438,16 @@ export default function PayrollPage() {
   }
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val)
+
+  // Attendance-based salary preview — mirrors the backend calc. When no
+  // attendance exists for the period the full basic salary is payable.
+  const selectedStaffType = staffs.find((s) => s.id === formData.staff_id)?.salary_type || payrollCalc?.salary_type || 'monthly'
+  const calcDailyRate = selectedStaffType === 'monthly' ? formData.basic_salary / 30 : formData.basic_salary
+  const calculatedPayable = payrollCalc && payrollCalc.working_days > 0
+    ? payrollCalc.payable_days * calcDailyRate
+    : formData.basic_salary
+  const periodDeductions = payrollCalc?.period_deductions || 0
+  const estimatedNet = Math.max(0, calculatedPayable - formData.deductions - periodDeductions - advanceRecovery + formData.bonus)
 
   const handleExport = async () => {
     const exportList =
@@ -777,18 +840,60 @@ export default function PayrollPage() {
                 <div className="space-y-2"><Label>Start Date *</Label><Input type="date" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /></div>
                 <div className="space-y-2"><Label>End Date *</Label><Input type="date" value={formData.end_date} onChange={(e) => setFormData({...formData, end_date: e.target.value})} /></div>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2"><Label>Basic Salary</Label><Input type="number" value={formData.basic_salary} onChange={(e) => setFormData({...formData, basic_salary: parseFloat(e.target.value) || 0})} /></div>
                 <div className="space-y-2"><Label>Deductions</Label><Input type="number" value={formData.deductions} onChange={(e) => setFormData({...formData, deductions: parseFloat(e.target.value) || 0})} /></div>
                 <div className="space-y-2"><Label>Bonus</Label><Input type="number" value={formData.bonus} onChange={(e) => setFormData({...formData, bonus: parseFloat(e.target.value) || 0})} /></div>
+                <div className="space-y-2">
+                  <Label>Advance Salary</Label>
+                  <Input type="number" value={advanceRecovery} readOnly disabled className="bg-gray-50" />
+                  <p className="text-xs text-muted-foreground">
+                    {advanceRecoveryCount > 0
+                      ? `${advanceRecoveryCount} outstanding advance${advanceRecoveryCount === 1 ? '' : 's'} will be deducted`
+                      : 'No outstanding advances to deduct'}
+                  </p>
+                </div>
               </div>
+              {formData.staff_id && (
+                <div className="rounded-md border bg-blue-50 px-3 py-2 text-sm space-y-1">
+                  {calcLoading ? (
+                    <p className="text-blue-800">Calculating salary from attendance...</p>
+                  ) : payrollCalc && payrollCalc.working_days > 0 ? (
+                    <>
+                      <p className="font-medium text-blue-900">
+                        Attendance: {payrollCalc.payable_days} payable of {payrollCalc.working_days} recorded days
+                      </p>
+                      <p className="text-xs text-blue-800">
+                        Present {payrollCalc.present_days} · Absent {payrollCalc.absent_days} · Half-day {payrollCalc.half_days} · Paid leave {payrollCalc.paid_leave_days} · Weekly off {payrollCalc.weekly_off_days}
+                      </p>
+                      <p className="text-blue-900">
+                        Calculated salary: <span className="font-semibold">{formatCurrency(calculatedPayable)}</span>
+                        <span className="ml-1 text-xs text-blue-800">
+                          ({formatCurrency(formData.basic_salary)}{selectedStaffType === 'monthly' ? ' ÷ 30' : ''} × {payrollCalc.payable_days} payable days)
+                        </span>
+                      </p>
+                    </>
+                  ) : payrollCalc ? (
+                    <p className="text-blue-900">
+                      No attendance recorded in this period — full basic salary payable.
+                    </p>
+                  ) : (
+                    <p className="text-blue-800">Salary calculation unavailable.</p>
+                  )}
+                  {periodDeductions > 0 && (
+                    <p className="text-xs text-blue-800">Period deductions auto-applied: {formatCurrency(periodDeductions)}</p>
+                  )}
+                </div>
+              )}
               <div className="rounded-md border bg-gray-50 px-3 py-2 text-sm">
                 <span className="text-gray-600">Estimated net: </span>
                 <span className="font-semibold tabular-nums">
-                  {formatCurrency(Math.max(0, formData.basic_salary - formData.deductions + formData.bonus))}
+                  {formatCurrency(estimatedNet)}
                 </span>
                 <span className="mt-0.5 block text-xs text-gray-500">
-                  Final net may adjust if attendance, deductions, or advances exist for the period.
+                  {payrollCalc && payrollCalc.working_days > 0
+                    ? 'Calculated salary minus deductions and advance recovery, plus bonus.'
+                    : 'Basic salary minus deductions and advance recovery, plus bonus.'}
                 </span>
               </div>
               <div className="space-y-2"><Label>Reference</Label><Input value={formData.reference} onChange={(e) => setFormData({...formData, reference: e.target.value})} placeholder="Transaction ID, Cheque No, etc." /></div>

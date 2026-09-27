@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { cn, formatCurrency } from '@/lib/utils'
 import { limitDecimalInput, parseItemNumber, parseMoney, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
 import { Plus, Trash2, Loader2, Save, Search, X, Edit2, Package, FileText, Gift, Scale, Printer, Copy, ChevronRight } from 'lucide-react'
@@ -20,6 +21,7 @@ import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
 import { ProductCombobox } from '@/components/ui/ProductCombobox'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { fetchPrintSettings, printDocument, printHtmlDocument } from '@/lib/printDocument'
+import { fetchBusinessSignature } from '@/lib/businessSignature'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
@@ -48,6 +50,13 @@ import {
   splitsFromInvoice,
   sumPaymentSplits,
 } from '@/lib/paymentSplits'
+import { AdditionalChargeItemsInput } from '@/components/AdditionalChargeItemsInput'
+import {
+  type AdditionalChargeItem,
+  hydrateAdditionalCharges,
+  sanitizeAdditionalChargeItems,
+  sumAdditionalChargeItems,
+} from '@/lib/additionalCharges'
 
 interface Party {
   id: string
@@ -144,7 +153,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const [notes, setNotes] = useState('')
   const [terms, setTerms] = useState('')
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
-  const [additionalCharges, setAdditionalCharges] = useState(0)
+  const [chargeItems, setChargeItems] = useState<AdditionalChargeItem[]>([])
   const [autoRoundOff, setAutoRoundOff] = useState(true)
   const [amountPaidEdited, setAmountPaidEdited] = useState(false)
   const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: number }[]>([
@@ -153,6 +162,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const { accounts: bankAccounts } = useBankAccounts()
   const { getDepositHint } = usePaymentMethodMappings()
   const [signature, setSignature] = useState('')
+  const [businessSignature, setBusinessSignature] = useState('')
   const [items, setItems] = useState<InvoiceItem[]>([
     { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false, batch_no: '', exp_date: '', enable_batching: false }
   ] as InvoiceItem[])
@@ -324,6 +334,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setPdfTemplate(s.template || 'classic')
         if (!terms && s.default_terms) setTerms(s.default_terms)
       }
+      const bizSig = await fetchBusinessSignature()
+      setBusinessSignature(bizSig)
+      if (bizSig && !editId) setSignature(prev => prev || bizSig)
     } catch (err) {
       console.error(err)
     } finally {
@@ -886,7 +899,8 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const sgstTotal = items.reduce((sum, item) => sum + item.sgst, 0)
   const igstTotal = items.reduce((sum, item) => sum + item.igst, 0)
   const taxTotal = cgstTotal + sgstTotal + igstTotal
-  
+  const additionalCharges = sumAdditionalChargeItems(chargeItems)
+
   const preLoyaltyTotal = subTotal - discountTotal + taxTotal - invoiceDiscount + additionalCharges
   const { discount: loyaltyDiscount } = computeLoyaltyDiscount(
     loyaltySettings,
@@ -1003,7 +1017,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       if (data.notes != null) setNotes(String(data.notes))
       if (data.terms != null) setTerms(String(data.terms))
       if (data.invoice_discount != null) setInvoiceDiscount(Number(data.invoice_discount))
-      if (data.additional_charges != null) setAdditionalCharges(Number(data.additional_charges))
+      if (data.additional_charge_items != null || data.additional_charges != null) {
+        setChargeItems(hydrateAdditionalCharges(data.additional_charge_items, Number(data.additional_charges) || 0))
+      }
       if (Array.isArray(data.items) && data.items.length > 0) {
         setItems(
           data.items.map((item: InvoiceItem) => ({
@@ -1044,7 +1060,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setNotes(invoice.notes || '')
         setTerms(invoice.terms || '')
         setInvoiceDiscount(invoice.invoice_discount ?? invoice.quotation_discount ?? 0)
-        setAdditionalCharges(invoice.additional_charges || 0)
+        setChargeItems(hydrateAdditionalCharges(invoice.additional_charge_items, invoice.additional_charges || 0))
         const loadedPaid = invoice.amount_paid || 0
         const loadedTotal = invoice.total_amount || 0
         const loadedSplits = splitsFromInvoice(invoice)
@@ -1144,6 +1160,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           terms,
           quotation_discount: parseMoney(invoiceDiscount),
           additional_charges: parseMoney(additionalCharges),
+          additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
           signature,
           items: items.map(item => ({
             product_id: item.product_id || undefined,
@@ -1231,6 +1248,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           terms,
           invoice_discount: parseMoney(invoiceDiscount),
           additional_charges: parseMoney(additionalCharges),
+          additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
           ...( !editId && loyaltyPointsToRedeem > 0
             ? { loyalty_points_redeemed: loyaltyPointsToRedeem }
             : {}),
@@ -1298,7 +1316,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       const title = `${docName} - ${parties.find(p => p.id === partyId)?.name || 'Untitled'}`
       const formData = {
         invoiceNumber, partyId, date, paymentTerms, dueDate, isInterState,
-        notes, terms, invoiceDiscount, additionalCharges, autoRoundOff,
+        notes, terms, invoiceDiscount, additionalCharges, additionalChargeItems: chargeItems, autoRoundOff,
         amountPaid: effectiveAmountPaid, amountPaidEdited, paymentMode, paymentSplits, signature, items
       }
       const res = await apiFetch('/drafts', {
@@ -1331,7 +1349,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setNotes(draftData.notes || '')
         setTerms(draftData.terms || '')
         setInvoiceDiscount(draftData.invoiceDiscount || 0)
-        setAdditionalCharges(draftData.additionalCharges || 0)
+        setChargeItems(hydrateAdditionalCharges(draftData.additionalChargeItems, draftData.additionalCharges || 0))
         setAutoRoundOff(draftData.autoRoundOff !== undefined ? draftData.autoRoundOff : true)
         const draftSplits = Array.isArray(draftData.paymentSplits) && draftData.paymentSplits.length
           ? draftData.paymentSplits
@@ -1342,7 +1360,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             ? draftData.amountPaidEdited
             : draftSplits.length > 1 || (draftData.amountPaid || 0) > 0
         )
-        setSignature(draftData.signature || '')
+        setSignature(draftData.signature || businessSignature || '')
         setItems(draftData.items || [])
         setShowDraftsModal(false)
       }
@@ -1418,21 +1436,19 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
               <div className="space-y-2 md:col-span-2 xl:col-span-1">
                 <Label>Party *</Label>
                 <div className="flex min-w-0 items-center gap-2">
-                  <select
+                  <SearchableSelect
                     value={partyId}
-                    onChange={(e) => {
+                    onValueChange={(value) => {
                       clearFieldError('party_id')
-                      setPartyId(e.target.value)
+                      setPartyId(value)
                     }}
-                    className={cn(
-                      'flex h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm',
-                      fieldErrors.party_id && 'border-red-500'
-                    )}
-                    required
-                  >
-                    <option value="">Select Party</option>
-                    {parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                    options={parties.map((p) => ({ value: p.id, label: p.name }))}
+                    placeholder="Select Party"
+                    searchPlaceholder="Search parties..."
+                    emptyMessage="No parties found"
+                    clearable
+                    className={cn('h-10 flex-1', fieldErrors.party_id && 'border-red-500')}
+                  />
                   <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => setShowAddParty(true)}>
                     <Plus className="h-4 w-4" />
                   </Button>
@@ -1971,9 +1987,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                 <CardTitle>Additional Charges & Discount</CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
+                <div className="col-span-2 space-y-2">
                   <Label>Additional Charges</Label>
-                  <Input type="number" min="0" step="0.01" value={additionalCharges} onChange={(e) => setAdditionalCharges(Number(e.target.value))} />
+                  <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} />
                 </div>
                 <div className="space-y-2">
                   <Label>Invoice Discount</Label>
@@ -2081,6 +2097,11 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                 <CardTitle>Signature</CardTitle>
               </CardHeader>
               <CardContent>
+                {signature && (
+                  <div className="mb-3">
+                    <img src={signature} alt="Signature" className="max-h-[150px] max-w-full rounded border bg-white object-contain" />
+                  </div>
+                )}
                 <canvas
                   ref={canvasRef}
                   width={400}
@@ -2093,6 +2114,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                 />
                 <div className="mt-2 flex gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={clearSignature}>Clear</Button>
+                  {businessSignature && signature !== businessSignature && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setSignature(businessSignature)}>Use Business Signature</Button>
+                  )}
                 </div>
               </CardContent>
 
@@ -2135,10 +2159,12 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   <span className="text-gray-600">{docName} Discount</span>
                   <span className="font-medium text-red-600">-{formatCurrency(invoiceDiscount)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Additional Charges</span>
-                  <span className="font-medium">{formatCurrency(additionalCharges)}</span>
-                </div>
+                {chargeItems.filter((c) => Number(c.amount) > 0).map((charge, index) => (
+                  <div key={index} className="flex justify-between text-sm">
+                    <span className="text-gray-600">{charge.label.trim() || 'Additional Charge'}</span>
+                    <span className="font-medium">{formatCurrency(charge.amount)}</span>
+                  </div>
+                ))}
                 {!editId && !isEstimateOnly && loyaltySettings?.is_enabled && selectedParty && (
                   <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-3 space-y-2">
                     <div className="flex items-center gap-2 text-sm font-medium text-amber-900">

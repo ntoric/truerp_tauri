@@ -1,6 +1,7 @@
 import { thermalWidthMM, type ThermalPrintSize } from '@/lib/printSizes'
 import { formatQty } from '@/lib/numbers'
 import { formatPaymentSplitsLabel, type PaymentSplit } from '@/lib/paymentSplits'
+import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
 
 export interface POSReceiptBusiness {
   name?: string
@@ -32,6 +33,7 @@ export interface POSReceiptSale {
   amount_paid?: number
   invoice_discount?: number
   additional_charges?: number
+  additional_charge_items?: AdditionalChargeItem[]
   tax_total?: number
   round_off?: number
   total: number
@@ -152,8 +154,8 @@ export function buildPOSReceiptContent(
   if ((sale.invoice_discount || 0) > 0) {
     lines.push(labelValue('Discount', money(sale.invoice_discount || 0), cols))
   }
-  if ((sale.additional_charges || 0) > 0) {
-    lines.push(labelValue('Addl Charges', money(sale.additional_charges || 0), cols))
+  for (const charge of displayAdditionalChargeRows(sale.additional_charge_items, sale.additional_charges)) {
+    lines.push(labelValue(truncate(charge.label, Math.max(8, cols - 10)), money(charge.amount), cols))
   }
   if ((sale.tax_total || 0) > 0) {
     lines.push(labelValue('GST', money(sale.tax_total || 0), cols))

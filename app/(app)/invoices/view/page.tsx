@@ -20,6 +20,7 @@ import InvoiceCustomFieldsForm, {
 } from '@/components/InvoiceCustomFieldsForm'
 import { downloadInvoicePdf } from '@/lib/printDocument'
 import { notifyError } from '@/lib/notify'
+import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
 
 interface InvoiceItem {
@@ -54,12 +55,17 @@ interface Invoice {
   status: string
   sub_total: number
   discount_total: number
+  invoice_discount?: number
+  additional_charges?: number
+  additional_charge_items?: AdditionalChargeItem[]
+  round_off?: number
   cgst_total: number
   sgst_total: number
   igst_total: number
   total_amount: number
   is_inter_state: boolean
   notes: string
+  signature?: string
   source_url?: string
   custom_fields?: string
   pdf_template?: string
@@ -276,6 +282,18 @@ function InvoiceViewContent() {
                     <span className="text-gray-600">Discount</span>
                     <span className="text-red-600">-{formatCurrency(invoice.discount_total)}</span>
                   </div>
+                  {(invoice.invoice_discount || 0) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Invoice Discount</span>
+                      <span className="text-red-600">-{formatCurrency(invoice.invoice_discount || 0)}</span>
+                    </div>
+                  )}
+                  {displayAdditionalChargeRows(invoice.additional_charge_items, invoice.additional_charges).map((charge, index) => (
+                    <div key={index} className="flex justify-between text-sm">
+                      <span className="text-gray-600">{charge.label}</span>
+                      <span>{formatCurrency(charge.amount)}</span>
+                    </div>
+                  ))}
                   {invoice.is_inter_state ? (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">IGST</span>
@@ -292,6 +310,12 @@ function InvoiceViewContent() {
                         <span>{formatCurrency(invoice.sgst_total)}</span>
                       </div>
                     </>
+                  )}
+                  {(invoice.round_off || 0) !== 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Round Off</span>
+                      <span>{formatCurrency(invoice.round_off || 0)}</span>
+                    </div>
                   )}
                   <div className="border-t pt-2 mt-2">
                     <div className="flex justify-between text-lg font-bold">
@@ -348,6 +372,13 @@ function InvoiceViewContent() {
                       <p className="text-sm text-gray-600 mt-1">{displayNotes}</p>
                     </div>
                   )}
+                </div>
+              )}
+
+              {invoice.signature && (
+                <div className="mt-8 flex flex-col items-end border-t pt-4">
+                  <img src={invoice.signature} alt="Signature" className="max-h-20 max-w-[200px] object-contain" />
+                  <p className="mt-1 text-sm text-gray-500">Authorized Signatory</p>
                 </div>
               )}
 

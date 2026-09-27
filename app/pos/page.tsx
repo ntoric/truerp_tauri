@@ -1468,6 +1468,7 @@ export default function POSPage() {
               amount_paid: amountPaid,
               invoice_discount: saleDiscount,
               additional_charges: sale.additional_charges,
+              additional_charge_items: sale.additional_charge_items,
               tax_total: sale.tax_total,
               round_off: sale.round_off,
               total: roundedTotal,

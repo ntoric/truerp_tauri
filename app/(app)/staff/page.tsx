@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
@@ -18,7 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Pencil, Trash2, Search, MoreVertical, Power, Download } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, MoreVertical, Power, Download, Wallet } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
@@ -50,6 +51,7 @@ interface Staff {
 }
 
 export default function StaffPage() {
+  const router = useRouter()
   const { user, loading: authLoading } = useAuth()
   const { confirm, confirmDialog } = useConfirmDialog()
   const [staffs, setStaffs] = useState<Staff[]>([])
@@ -62,6 +64,10 @@ export default function StaffPage() {
   const [selectedStaff, setSelectedStaff] = useState<Set<string>>(new Set())
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null)
+  const [advanceStaff, setAdvanceStaff] = useState<Staff | null>(null)
+  const [advanceDate, setAdvanceDate] = useState(new Date().toISOString().split('T')[0])
+  const [advanceAmount, setAdvanceAmount] = useState('')
+  const [advanceSaving, setAdvanceSaving] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -205,6 +211,51 @@ export default function StaffPage() {
         fetchStaffs()
       }
     } catch (err) { console.error(err) }
+  }
+
+  const openAdvanceDialog = (s: Staff) => {
+    setAdvanceStaff(s)
+    setAdvanceDate(new Date().toISOString().split('T')[0])
+    setAdvanceAmount('')
+  }
+
+  const handlePayAdvance = async () => {
+    if (!advanceStaff) return
+    const amount = parseFloat(advanceAmount)
+    if (!advanceDate) {
+      notifyError('Advance date is required')
+      return
+    }
+    if (!amount || amount <= 0) {
+      notifyError('Enter a valid advance amount')
+      return
+    }
+    setAdvanceSaving(true)
+    try {
+      const res = await apiFetch('/staff/advances', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          staff_id: advanceStaff.id,
+          amount,
+          advance_date: new Date(advanceDate).toISOString(),
+          reason: 'Advance salary',
+          payment_mode: 'cash',
+        }),
+      })
+      if (res.ok) {
+        notifySuccess(`Advance salary of ${formatCurrency(amount)} recorded for ${advanceStaff.name}`)
+        setAdvanceStaff(null)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to record advance salary')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to record advance salary')
+    } finally {
+      setAdvanceSaving(false)
+    }
   }
 
   const handleSelectStaff = (id: string) => {
@@ -483,8 +534,12 @@ export default function StaffPage() {
               </TableHeader>
               <TableBody>
                 {paginatedItems.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell>
+                  <TableRow
+                    key={s.id}
+                    className="cursor-pointer"
+                    onClick={() => router.push(`/staff/${s.id}`)}
+                  >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selectedStaff.has(s.id)}
                         onCheckedChange={() => handleSelectStaff(s.id)}
@@ -506,7 +561,7 @@ export default function StaffPage() {
                     <TableCell className="whitespace-nowrap text-gray-600">
                       {s.updated_at ? formatDate(s.updated_at) : '—'}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -517,6 +572,10 @@ export default function StaffPage() {
                           <DropdownMenuItem onClick={() => handleEdit(s)}>
                             <Pencil className="mr-2 h-4 w-4" />
                             Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openAdvanceDialog(s)}>
+                            <Wallet className="mr-2 h-4 w-4" />
+                            Pay Advance Salary
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleToggleActive(s)}>
                             <Power className="mr-2 h-4 w-4" />
@@ -576,6 +635,29 @@ export default function StaffPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
               <Button onClick={handleSubmit}>{editingStaff ? 'Update' : 'Create'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={advanceStaff !== null} onOpenChange={(open) => { if (!open) setAdvanceStaff(null) }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader><DialogTitle>Pay Advance Salary — {advanceStaff?.name}</DialogTitle></DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label>Advance Date *</Label>
+                <Input type="date" value={advanceDate} onChange={(e) => setAdvanceDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Amount *</Label>
+                <Input type="number" min="0" step="0.01" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} placeholder="0.00" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                The advance is recorded as a Staff Advance expense paid from cash in-hand, and is automatically deducted from the next payroll for this staff member.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAdvanceStaff(null)} disabled={advanceSaving}>Cancel</Button>
+              <Button onClick={handlePayAdvance} disabled={advanceSaving}>{advanceSaving ? 'Saving...' : 'Pay Advance'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -3,10 +3,8 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import {
-  ChevronDown,
-  ChevronRight,
-} from 'lucide-react'
+import { CaretDown, CaretRight } from '@phosphor-icons/react'
+import BrandLogo from '@/components/BrandLogo'
 import { useAuth } from '@/hooks/useAuth'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
 import { cn } from '@/lib/utils'
@@ -102,16 +100,7 @@ export default function Sidebar() {
             className={cn('flex items-center', isExpanded ? 'gap-2' : 'justify-center')}
             title="TruERP"
           >
-            <img
-              src="/logo.png"
-              alt="TruERP"
-              className="h-7 w-7 object-contain"
-              width={28}
-              height={28}
-            />
-            {isExpanded && (
-              <span className="whitespace-nowrap text-base font-bold text-gray-900">TruERP</span>
-            )}
+            <BrandLogo showWordmark={isExpanded} iconClassName="h-8 w-8" wordmarkClassName="text-base" />
           </Link>
         </div>
 
@@ -122,6 +111,7 @@ export default function Sidebar() {
           )}
         >
           {visibleNavItems.map((item) => {
+            const accent = item.accent ?? '#2563eb'
             if (item.children) {
               const Icon = item.icon
               const isGroupOpen = isExpanded && expandedItems.has(item.name)
@@ -138,20 +128,23 @@ export default function Sidebar() {
                     className={cn(
                       'flex w-full items-center rounded-md py-2.5 text-[15px] font-medium transition-colors outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0',
                       isExpanded ? 'justify-between px-2.5' : 'justify-center px-2',
-                      hasActiveChild
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'text-gray-700 hover:bg-gray-50'
+                      !hasActiveChild && 'text-gray-700 hover:bg-gray-50'
                     )}
+                    style={
+                      hasActiveChild
+                        ? { backgroundColor: `${accent}14`, color: accent }
+                        : undefined
+                    }
                   >
                     <div className={cn('flex items-center', isExpanded ? 'gap-3' : '')}>
-                      <Icon className={cn('h-6 w-6 shrink-0', hasActiveChild ? 'text-blue-600' : 'text-gray-500')} />
+                      <Icon size={24} weight="duotone" color={accent} className="shrink-0" />
                       {isExpanded && <span className="whitespace-nowrap">{item.name}</span>}
                     </div>
                     {isExpanded &&
                       (expandedItems.has(item.name) ? (
-                        <ChevronDown className="h-5 w-5 shrink-0 text-gray-500" />
+                        <CaretDown size={18} weight="bold" className="shrink-0 text-gray-400" />
                       ) : (
-                        <ChevronRight className="h-5 w-5 shrink-0 text-gray-500" />
+                        <CaretRight size={18} weight="bold" className="shrink-0 text-gray-400" />
                       ))}
                   </button>
                   {isGroupOpen && (
@@ -169,12 +162,19 @@ export default function Sidebar() {
                             onClick={(e) => e.currentTarget.blur()}
                             className={cn(
                               'flex items-center gap-3 rounded-md px-2.5 py-2 text-[15px] font-medium transition-colors outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0',
-                              isChildActive
-                                ? 'bg-blue-50 text-blue-700'
-                                : 'text-gray-600 hover:bg-gray-50'
+                              !isChildActive && 'text-gray-600 hover:bg-gray-50'
                             )}
+                            style={
+                              isChildActive
+                                ? { backgroundColor: `${accent}14`, color: accent }
+                                : undefined
+                            }
                           >
-                            <ChildIcon className={cn('h-5 w-5', isChildActive ? 'text-blue-600' : 'text-gray-400')} />
+                            <ChildIcon
+                              size={20}
+                              weight="duotone"
+                              color={isChildActive ? accent : '#94a3b8'}
+                            />
                             <span className="whitespace-nowrap">{child.name}</span>
                           </Link>
                         )
@@ -199,12 +199,15 @@ export default function Sidebar() {
                 className={cn(
                   'flex items-center rounded-md py-2.5 text-[15px] font-medium transition-colors outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0',
                   isExpanded ? 'gap-3 px-2.5' : 'justify-center px-2',
-                  isActive
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-700 hover:bg-gray-50'
+                  !isActive && 'text-gray-700 hover:bg-gray-50'
                 )}
+                style={
+                  isActive
+                    ? { backgroundColor: `${accent}14`, color: accent }
+                    : undefined
+                }
               >
-                <Icon className={cn('h-6 w-6 shrink-0', isActive ? 'text-blue-600' : 'text-gray-500')} />
+                <Icon size={24} weight="duotone" color={accent} className="shrink-0" />
                 {isExpanded && <span className="whitespace-nowrap">{item.name}</span>}
               </Link>
             )

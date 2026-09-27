@@ -45,6 +45,7 @@ export interface POSSaleRecord {
   session_opening_cash?: number
   invoice_discount?: number
   additional_charges?: number
+  additional_charge_items?: Array<{ label: string; amount: number }>
   loyalty_points_redeemed?: number
   items: Array<{
     product_id: string
