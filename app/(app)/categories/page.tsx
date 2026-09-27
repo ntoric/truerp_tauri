@@ -35,8 +35,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { cn, formatDate } from '@/lib/utils'
-import { usePagination } from '@/hooks/usePagination'
+import { asArray, cn, formatDate } from '@/lib/utils'
+import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
@@ -69,17 +69,30 @@ export default function CategoriesPage() {
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set())
   const [formData, setFormData] = useState({ name: '', description: '', is_active: true })
 
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const pageSize = DEFAULT_PAGE_SIZE
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
   useEffect(() => {
     if (!authLoading && user) fetchCategories()
-  }, [authLoading, user])
+  }, [authLoading, user, page])
   useEffect(() => { if (showDraftsModal && user) fetchDrafts() }, [showDraftsModal, user])
-
-  const { page, setPage, totalPages, totalItems, paginatedItems, pageSize } = usePagination(categories)
 
   const fetchCategories = async () => {
     try {
-      const res = await apiFetch('/categories')
-      if (res.ok) setCategories(await res.json())
+      const res = await apiFetch(`/categories?page=${page}&per_page=${pageSize}`)
+      if (res.ok) {
+        const data = await res.json()
+        // The current page may no longer exist after deletions.
+        const maxPage = Math.max(1, Math.ceil((data.total ?? 0) / pageSize))
+        if (page > maxPage) {
+          setPage(maxPage)
+          return
+        }
+        setCategories(asArray<Category>(data.categories))
+        setTotal(data.total ?? 0)
+      }
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
   }
@@ -221,10 +234,16 @@ export default function CategoriesPage() {
   }
 
   const handleExport = async () => {
+    // The paginated fetch only holds the current page; exports need every row.
+    let allCategories: Category[] = []
+    try {
+      const res = await apiFetch('/categories')
+      if (res.ok) allCategories = asArray<Category>(await res.json())
+    } catch (err) { console.error(err) }
     const exportList =
       selectedCategories.size > 0
-        ? categories.filter((cat) => selectedCategories.has(cat.id))
-        : categories
+        ? allCategories.filter((cat) => selectedCategories.has(cat.id))
+        : allCategories
     if (exportList.length === 0) {
       notifyError('No categories to export')
       return
@@ -379,7 +398,7 @@ export default function CategoriesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedItems.map((cat) => (
+                {categories.map((cat) => (
                   <TableRow key={cat.id}>
                     <TableCell>
                       <Checkbox
@@ -433,9 +452,9 @@ export default function CategoriesPage() {
             <PaginationControls
               page={page}
               totalPages={totalPages}
-              totalItems={totalItems}
+              totalItems={total}
               pageSize={pageSize}
-              onPageChange={setPage}
+              onPageChange={(p) => { setPage(p); setSelectedCategories(new Set()) }}
             />
           </CardContent>
         </Card>

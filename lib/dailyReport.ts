@@ -146,8 +146,8 @@ const metricRows: { key: keyof DailyReport; label: string; help: string; onlyIfN
   },
   {
     key: 'profit_distributions',
-    label: 'Profit Distributions',
-    help: 'Profit payouts made to partners in this period.',
+    label: 'Profit Distribution Deduction',
+    help: 'Profit payouts made to partners in this period. Shown as a deduction from cash/bank, not an operating expense — it does not reduce period profit.',
     onlyIfNonZero: true,
   },
   {
@@ -173,7 +173,7 @@ export const dailyReportSummaryHelp: Record<string, string> = {
   product_profit:
     'Gross margin on items sold: taxable sale value minus product purchase cost, net of sales returns and credit notes.',
   net_cash_flow:
-    'Cash movement for this period: payments received − payment out − expenses.',
+    'Cash movement for this period: payments received − payment out − expenses − profit distributions.',
   loyalty_points_earned:
     'Loyalty points credited to customers from sales in this period (earn transactions).',
   loyalty_points_redeemed:

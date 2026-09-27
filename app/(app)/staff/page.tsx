@@ -55,6 +55,7 @@ export default function StaffPage() {
   const { user, loading: authLoading } = useAuth()
   const { confirm, confirmDialog } = useConfirmDialog()
   const [staffs, setStaffs] = useState<Staff[]>([])
+  const [balances, setBalances] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -90,8 +91,12 @@ export default function StaffPage() {
 
   const fetchStaffs = async () => {
     try {
-      const res = await apiFetch('/staff')
-      if (res.ok) setStaffs(await res.json())
+      const [staffRes, balanceRes] = await Promise.all([
+        apiFetch('/staff'),
+        apiFetch('/staff/balances'),
+      ])
+      if (staffRes.ok) setStaffs(await staffRes.json())
+      if (balanceRes.ok) setBalances(await balanceRes.json())
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
   }
@@ -373,6 +378,7 @@ export default function StaffPage() {
         'Joining Date',
         'Salary',
         'Salary Type',
+        'Balance Due',
         'Status',
         'Address',
         'Bank Name',
@@ -393,6 +399,7 @@ export default function StaffPage() {
         s.joining_date ? formatDate(s.joining_date) : '',
         s.salary,
         formatSalaryType(s.salary_type),
+        balances[s.id] ?? '',
         s.is_active ? 'Active' : 'Inactive',
         s.address || '',
         s.bank_name || '',
@@ -526,6 +533,7 @@ export default function StaffPage() {
                   <TableHead>Designation</TableHead>
                   <TableHead>Department</TableHead>
                   <TableHead>Salary</TableHead>
+                  <TableHead className="text-right">Balance Due</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Added Date</TableHead>
                   <TableHead>Updated Date</TableHead>
@@ -550,6 +558,23 @@ export default function StaffPage() {
                     <TableCell>{s.designation}</TableCell>
                     <TableCell>{s.department}</TableCell>
                     <TableCell>{formatCurrency(s.salary)}/{s.salary_type === 'monthly' ? 'mo' : s.salary_type === 'daily' ? 'day' : 'hr'}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
+                      {balances[s.id] === undefined ? (
+                        '—'
+                      ) : (
+                        <span
+                          className={
+                            balances[s.id] < 0
+                              ? 'font-medium text-red-600'
+                              : balances[s.id] > 0
+                                ? 'font-medium text-green-600'
+                                : 'text-gray-500'
+                          }
+                        >
+                          {formatCurrency(balances[s.id])}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <span className={`px-2 py-1 rounded-full text-xs ${s.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                         {s.is_active ? 'Active' : 'Inactive'}
@@ -590,7 +615,7 @@ export default function StaffPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {filteredStaffs.length === 0 && <TableRow><TableCell colSpan={10} className="text-center py-8 text-gray-500">No staff found</TableCell></TableRow>}
+                {filteredStaffs.length === 0 && <TableRow><TableCell colSpan={11} className="text-center py-8 text-gray-500">No staff found</TableCell></TableRow>}
               </TableBody>
             </Table>
             <PaginationControls

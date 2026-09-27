@@ -574,7 +574,10 @@ export default function CashBankPage() {
       expense: 'bg-amber-100 text-amber-700',
       profit_distribution: 'bg-teal-100 text-teal-700',
     }
-    return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[type] || 'bg-gray-100 text-gray-700'}`}>{type.replace('_', ' ')}</span>
+    const labels: Record<string, string> = {
+      profit_distribution: 'profit distribution deduction',
+    }
+    return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[type] || 'bg-gray-100 text-gray-700'}`}>{labels[type] || type.replace('_', ' ')}</span>
   }
 
   return (

@@ -25,6 +25,7 @@ import {
   Mail, MessageSquare, Send, Loader2, CheckCircle, XCircle,
   Smartphone, Save, LayoutGrid, Sparkles, Clock,
   DatabaseBackup, Upload, FileArchive, FileUp, FileDown, AlertTriangle, Store,
+  Database,
 } from 'lucide-react'
 import { getServerTime, type ServerTimeInfo } from '@/lib/dailyReport'
 
@@ -531,6 +532,27 @@ interface DeveloperSettings {
   timezone: string
 }
 
+// GET/PUT /api/v1/developer-settings/db-maintenance payload shape.
+interface DBMaintenanceSettings {
+  id: string
+  is_enabled: boolean
+  run_time: string
+  vacuum_full: boolean
+  last_run_at?: string | null
+  last_run_status?: string
+  last_run_error?: string
+  last_run_tables?: number
+  last_run_duration_ms?: number
+}
+
+interface DBMaintenanceInfo {
+  settings: DBMaintenanceSettings
+  running: boolean
+  ist_time: string
+  ist_timezone: string
+  next_run_at: string
+}
+
 export default function DeveloperSettingsPage() {
   const { user, loading: authLoading } = useAuth()
   const { setPagesLocal, refresh: refreshPageFeatures } = usePageFeatures()
@@ -565,6 +587,14 @@ export default function DeveloperSettingsPage() {
     enable_ai_bill_parsing: false,
     gemini_api_key: '',
   })
+  const [dbMaint, setDbMaint] = useState<DBMaintenanceSettings>({
+    id: '',
+    is_enabled: false,
+    run_time: '01:00',
+    vacuum_full: false,
+  })
+  const [dbMaintInfo, setDbMaintInfo] = useState<DBMaintenanceInfo | null>(null)
+  const [dbMaintBusy, setDbMaintBusy] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -603,10 +633,11 @@ export default function DeveloperSettingsPage() {
 
   const fetchSettings = async () => {
     try {
-      const [settingsRes, pagesRes, businessRes] = await Promise.all([
+      const [settingsRes, pagesRes, businessRes, maintRes] = await Promise.all([
         apiFetch('/developer-settings'),
         apiFetch('/page-features'),
         apiFetch('/business'),
+        apiFetch('/developer-settings/db-maintenance'),
       ])
       if (settingsRes.ok) {
         const data = await settingsRes.json()
@@ -619,6 +650,11 @@ export default function DeveloperSettingsPage() {
       if (businessRes.ok) {
         const data = await businessRes.json()
         setAiSettings(data)
+      }
+      if (maintRes.ok) {
+        const data: DBMaintenanceInfo = await maintRes.json()
+        setDbMaintInfo(data)
+        if (data.settings) setDbMaint(data.settings)
       }
     } catch (err) {
       console.error(err)
@@ -656,6 +692,24 @@ export default function DeveloperSettingsPage() {
           notifySuccess('AI settings saved successfully')
         } else {
           notifyError('Failed to save AI settings')
+        }
+      } else if (activeTab === 'maintenance') {
+        const res = await apiFetch('/developer-settings/db-maintenance', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            is_enabled: dbMaint.is_enabled,
+            run_time: dbMaint.run_time,
+            vacuum_full: dbMaint.vacuum_full,
+          }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setDbMaint(data)
+          notifySuccess('Maintenance settings saved successfully')
+        } else {
+          const data = await res.json().catch(() => ({}))
+          notifyError(data.error || 'Failed to save maintenance settings')
         }
       } else {
         const res = await apiFetch('/developer-settings', {

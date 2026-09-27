@@ -23,6 +23,7 @@ import {
   ChartBar,
   CalendarDots,
   ChartLineUp,
+  Scales,
   Calculator,
   FileCode,
   IdentificationCard,
@@ -135,6 +136,7 @@ export const navItems: NavItem[] = [
     accent: '#9333ea',
     children: [
       { name: 'Daily Report', href: '/reports/daily', icon: CalendarDots },
+      { name: 'Profit & Loss', href: '/reports/profit-loss', icon: Scales },
       { name: 'Reports & Analytics', href: '/reports', icon: ChartLineUp },
     ],
   },

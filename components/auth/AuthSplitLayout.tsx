@@ -2,7 +2,7 @@
 
 import { ReactNode } from 'react'
 import BrandLogo from '@/components/BrandLogo'
-import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 
 export default function AuthSplitLayout({
   headline,
@@ -37,10 +37,6 @@ export default function AuthSplitLayout({
       <section className="flex items-center justify-center px-6 py-12 sm:px-10 md:py-16" aria-labelledby="login-heading">
         <div className="w-full max-w-[360px]">
           {children}
-          <a href="https://www.runerail.com/" target="_blank" rel="noopener noreferrer" className="mt-7 inline-flex items-center gap-2 rounded-sm text-[13px] text-[#5b5c6b] transition-colors hover:text-[#c81e3a]">
-            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-            Back to RuneRail<span className="sr-only"> (opens in a new tab)</span>
-          </a>
         </div>
       </section>
       <style jsx>{`

@@ -525,7 +525,7 @@ function ReportSummaryBody({
           icon={Wallet}
           label="Net cash flow"
           value={formatCurrency(report.net_cash_flow)}
-          hint="Payments in − out − expenses"
+          hint="Payments in − out − expenses − profit distributions"
         />
       </div>
 
@@ -638,8 +638,10 @@ function ReportSummaryBody({
         Period profit = sales − expenses − sales returns/credit notes (accrual). Product profit =
         taxable sale value − product purchase cost on invoice lines, net of sales returns and credit
         notes. Purchase expense = full bill total; Payment out = amount paid; Accounts payable =
-        unpaid balance. A separate Payments by method table lists Cash, UPI, Card, Bank Transfer,
-        and Cheque received vs paid. Cancelled documents are excluded from counts.
+        unpaid balance. Profit distributions are paid out to partners and reduce cash/bank and net
+        cash flow, but are not expenses and do not reduce period profit. A separate Payments by
+        method table lists Cash, UPI, Card, Bank Transfer, and Cheque received vs paid. Cancelled
+        documents are excluded from counts.
       </p>
     </>
   )
@@ -1080,9 +1082,17 @@ export default function DailyReportPage() {
           <div>
             <h1 className="app-page-title">Business Reports</h1>
           </div>
-          <Link href="/reports" className="text-sm font-medium text-blue-600 hover:underline">
-            Analytics reports
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/reports/profit-loss"
+              className="text-sm font-medium text-blue-600 hover:underline"
+            >
+              Profit &amp; loss
+            </Link>
+            <Link href="/reports" className="text-sm font-medium text-blue-600 hover:underline">
+              Analytics reports
+            </Link>
+          </div>
         </div>
 
         <Tabs defaultValue="daily" className="space-y-4">

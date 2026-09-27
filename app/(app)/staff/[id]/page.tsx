@@ -88,6 +88,16 @@ interface Attendance {
   notes: string
 }
 
+interface StaffBalance {
+  balance: number
+  payable_from_payrolls: number
+  earned_unpaid: number
+  uncovered_payable_days: number
+  salary_paid: number
+  advances_pending: number
+  deductions_pending: number
+}
+
 const ATTENDANCE_BADGES: Record<string, string> = {
   present: 'bg-green-100 text-green-700',
   absent: 'bg-red-100 text-red-700',
@@ -141,6 +151,7 @@ export default function StaffDetailPage() {
   const [advances, setAdvances] = useState<StaffAdvance[]>([])
   const [deductions, setDeductions] = useState<StaffDeduction[]>([])
   const [attendances, setAttendances] = useState<Attendance[]>([])
+  const [staffBalance, setStaffBalance] = useState<StaffBalance | null>(null)
   const [loading, setLoading] = useState(true)
   const [attendanceLoading, setAttendanceLoading] = useState(true)
   const [attendanceMonth, setAttendanceMonth] = useState(() =>
@@ -150,11 +161,12 @@ export default function StaffDetailPage() {
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [staffRes, payrollRes, advanceRes, deductionRes] = await Promise.all([
+        const [staffRes, payrollRes, advanceRes, deductionRes, balanceRes] = await Promise.all([
           apiFetch(`/staff/${staffId}`),
           apiFetch(`/payroll?staff_id=${staffId}`),
           apiFetch(`/staff/advances?staff_id=${staffId}`),
           apiFetch(`/staff/deductions?staff_id=${staffId}`),
+          apiFetch(`/staff/${staffId}/balance`),
         ])
         if (staffRes.ok) {
           setStaff(await staffRes.json())
@@ -172,6 +184,7 @@ export default function StaffDetailPage() {
           const data = await deductionRes.json()
           setDeductions(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [])
         }
+        if (balanceRes.ok) setStaffBalance(await balanceRes.json())
       } catch (err) {
         console.error(err)
         notifyError('Failed to load staff details')
@@ -276,6 +289,71 @@ export default function StaffDetailPage() {
             </CardContent>
           </Card>
         </div>
+
+        {staffBalance && (
+          <Card className={staffBalance.balance < 0 ? 'border-red-200 bg-red-50/40' : ''}>
+            <CardContent className="p-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Current Balance</p>
+                  <p
+                    className={`mt-1 text-2xl font-bold tabular-nums ${
+                      staffBalance.balance < 0 ? 'text-red-600' : 'text-gray-900'
+                    }`}
+                  >
+                    {formatCurrency(staffBalance.balance)}
+                  </p>
+                  <p
+                    className={`text-xs font-medium ${
+                      staffBalance.balance < 0 ? 'text-red-600' : 'text-gray-500'
+                    }`}
+                  >
+                    {staffBalance.balance < 0
+                      ? 'Payback due from staff'
+                      : staffBalance.balance > 0
+                        ? 'To be paid to staff'
+                        : 'Settled'}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-3 lg:grid-cols-5">
+                  <div>
+                    <p className="text-xs text-gray-500">Earned (unpaid days)</p>
+                    <p className="font-medium tabular-nums text-gray-900">
+                      {formatCurrency(staffBalance.earned_unpaid)}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {staffBalance.uncovered_payable_days} payable days
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Payroll payable</p>
+                    <p className="font-medium tabular-nums text-gray-900">
+                      {formatCurrency(staffBalance.payable_from_payrolls)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Salary paid</p>
+                    <p className="font-medium tabular-nums text-gray-900">
+                      -{formatCurrency(staffBalance.salary_paid)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Advances pending</p>
+                    <p className="font-medium tabular-nums text-red-600">
+                      -{formatCurrency(staffBalance.advances_pending)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Deductions pending</p>
+                    <p className="font-medium tabular-nums text-red-600">
+                      -{formatCurrency(staffBalance.deductions_pending)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader className="pb-4">

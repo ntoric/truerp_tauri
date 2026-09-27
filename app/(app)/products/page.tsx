@@ -30,7 +30,7 @@ import { isProductGstEnabled } from '@/lib/numbers'
 import { runWithExportProgress } from '@/lib/exportProgress'
 import ProductImageField from '@/components/ProductImageField'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
-import { usePagination } from '@/hooks/usePagination'
+import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
@@ -113,6 +113,11 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const pageSize = DEFAULT_PAGE_SIZE
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDraftsModal, setShowDraftsModal] = useState(false)
@@ -186,13 +191,17 @@ export default function ProductsPage() {
     }
   }, [searchParams, router])
   useEffect(() => { if (!authLoading && user) fetchBusinessSettings() }, [authLoading, user])
-  useEffect(() => { if (!authLoading && user) fetchProducts() }, [authLoading, user, selectedCategory, searchQuery])
+  useEffect(() => { if (!authLoading && user) fetchProducts() }, [authLoading, user, selectedCategory, debouncedSearch, page])
 
-  const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(products)
-
+  // Debounce the search box so each keystroke doesn't hit the API.
   useEffect(() => {
-    resetPage()
-  }, [selectedCategory, searchQuery])
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim())
+      setPage(1)
+      setSelectedItems(new Set())
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
   useEffect(() => { if (showDraftsModal && user) fetchDrafts() }, [showDraftsModal, user])
   useEffect(() => { if (!authLoading && user) fetchInventoryItems() }, [authLoading, user])
 
@@ -292,10 +301,20 @@ export default function ProductsPage() {
     try {
       const params = new URLSearchParams()
       if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
-      if (searchQuery) params.append('search', searchQuery)
+      if (debouncedSearch) params.append('search', debouncedSearch)
+      params.append('page', String(page))
+      params.append('per_page', String(pageSize))
       const res = await apiFetch(`/products?${params.toString()}`)
       if (res.ok) {
-        setProducts(asArray(await res.json()))
+        const data = await res.json()
+        // The current page may no longer exist after deletions or filter changes.
+        const maxPage = Math.max(1, Math.ceil((data.total ?? 0) / pageSize))
+        if (page > maxPage) {
+          setPage(maxPage)
+          return
+        }
+        setProducts(asArray<Product>(data.products))
+        setTotal(data.total ?? 0)
       }
     } catch (err) { console.error(err) }
   }
@@ -435,7 +454,7 @@ export default function ProductsPage() {
         update(10, 'Fetching products…')
         const params = new URLSearchParams()
         if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
-        if (searchQuery) params.append('search', searchQuery)
+        if (debouncedSearch) params.append('search', debouncedSearch)
         const res = await apiFetch(`/products/export/csv?${params.toString()}`)
         if (!res.ok) {
           throw new Error('Failed to export products CSV')
@@ -461,7 +480,7 @@ export default function ProductsPage() {
         update(10, 'Fetching products…')
         const params = new URLSearchParams()
         if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
-        if (searchQuery) params.append('search', searchQuery)
+        if (debouncedSearch) params.append('search', debouncedSearch)
         const res = await apiFetch(`/products/export/excel?${params.toString()}`)
         if (!res.ok) {
           throw new Error('Failed to export products Excel')
@@ -1282,7 +1301,7 @@ export default function ProductsPage() {
                   className="pl-9"
                 />
               </div>
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <Select value={selectedCategory} onValueChange={(value) => { setSelectedCategory(value); setPage(1); setSelectedItems(new Set()) }}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="All Categories" />
                 </SelectTrigger>
@@ -1332,7 +1351,7 @@ export default function ProductsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedItems.map((p) => (
+                {products.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell>
                       <Checkbox
@@ -1384,9 +1403,9 @@ export default function ProductsPage() {
             <PaginationControls
               page={page}
               totalPages={totalPages}
-              totalItems={totalItems}
+              totalItems={total}
               pageSize={pageSize}
-              onPageChange={setPage}
+              onPageChange={(p) => { setPage(p); setSelectedItems(new Set()) }}
             />
           </CardContent>
         </Card>
