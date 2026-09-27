@@ -7,6 +7,7 @@ import PageHeader from '@/components/layout/PageHeader'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { formatCurrency } from '@/lib/utils'
 import {
+  type LucideIcon,
   TrendingUp,
   FileText,
   Users,
@@ -114,12 +115,19 @@ export default function DashboardPage() {
   const periodLabel = PERIOD_LABELS[period]
 
   const statCards = useMemo(
-    () => [
+    (): {
+      title: string
+      value: string | number
+      icon: LucideIcon
+      color: 'primary' | 'success' | 'warning' | 'danger' | 'info'
+      highlight?: boolean
+    }[] => [
       {
         title: `${periodLabel} Sales`,
         value: formatCurrency(stats?.total_sales || 0),
         icon: TrendingUp,
         color: 'success' as const,
+        highlight: true,
       },
       {
         title: `${periodLabel} Invoices`,
@@ -207,6 +215,7 @@ export default function DashboardPage() {
               value={card.value}
               icon={card.icon}
               color={card.color}
+              highlight={card.highlight}
             />
           ))}
         </div>

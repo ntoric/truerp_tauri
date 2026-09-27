@@ -2,11 +2,11 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import AuthSplitLayout from '@/components/auth/AuthSplitLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, CheckCircle2, IndianRupee, Loader2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { API_BASE, cn } from '@/lib/utils'
@@ -131,168 +131,175 @@ export default function ForgotPasswordPage() {
     done: 'Your password has been reset successfully',
   }[step]
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
-          <div className="flex justify-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-white">
-              <IndianRupee className="h-7 w-7" />
-            </div>
-          </div>
-          <CardTitle className="text-2xl font-bold">Forgot password</CardTitle>
-          <CardDescription>{stepDescription}</CardDescription>
-        </CardHeader>
+  const stepTitle = {
+    email: 'Forgot password?',
+    otp: 'Check your email',
+    password: 'Set a new password',
+    done: 'Password updated',
+  }[step]
 
-        {step === 'done' ? (
-          <CardContent className="space-y-4">
-            <div className="flex flex-col items-center gap-3 rounded-lg bg-green-50 p-4 text-center text-sm text-green-700">
-              <CheckCircle2 className="h-8 w-8" />
-              <p>Your password has been updated. You can now log in with your new password.</p>
+  const stepNumber = step === 'done' ? 0 : { email: 1, otp: 2, password: 3 }[step]
+
+  return (
+    <AuthSplitLayout
+      headline={<>Locked out?<br />We’ll get you back in.</>}
+      benefits={['Verify with a 6-digit code', 'Choose a new password', 'Get back to your business']}
+    >
+      {step !== 'done' && (
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#c81e3a]">Step {stepNumber} of 3</p>
+      )}
+      <h2 id="login-heading" className="mt-2 text-[28px] font-semibold leading-tight tracking-tight">{stepTitle}</h2>
+      <p className="mb-8 mt-2 text-sm leading-6 text-[#5b5c6b]">{stepDescription}</p>
+
+      {step === 'done' ? (
+        <div className="space-y-4">
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-center text-sm text-emerald-800">
+            <CheckCircle2 className="h-8 w-8" />
+            <p>Your password has been updated. You can now log in with your new password.</p>
+          </div>
+          <Button asChild className="w-full">
+            <Link href="/login">Go to login</Link>
+          </Button>
+        </div>
+      ) : step === 'email' ? (
+        <form onSubmit={handleEmailSubmit} className="space-y-5" aria-busy={loading}>
+          {error && (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-800">
+              {error}
             </div>
-            <Button asChild className="w-full">
-              <Link href="/login">Go to login</Link>
-            </Button>
-          </CardContent>
-        ) : step === 'email' ? (
-          <form onSubmit={handleEmailSubmit}>
-            <CardContent className="space-y-4">
-              {error && (
-                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => {
-                    clearFieldError('email')
-                    setEmail(e.target.value)
-                  }}
-                  className={cn(fieldErrors.email && 'border-red-500')}
-                  required
-                />
-                <FieldError message={fieldErrors.email} />
-              </div>
-            </CardContent>
-            <CardFooter className="flex flex-col gap-4">
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Send verification code
-              </Button>
-              <p className="text-sm text-muted-foreground">
-                Remember your password?{' '}
-                <Link href="/login" className="text-blue-600 hover:underline">
-                  Login
-                </Link>
-              </p>
-            </CardFooter>
-          </form>
-        ) : step === 'otp' ? (
-          <form onSubmit={handleOtpSubmit}>
-            <CardContent className="space-y-4">
-              {error && (
-                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="otp">Verification code</Label>
-                <Input
-                  id="otp"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="000000"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => {
-                    clearFieldError('otp')
-                    setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))
-                  }}
-                  className={cn(fieldErrors.otp && 'border-red-500', 'tracking-widest text-center text-lg')}
-                  required
-                />
-                <FieldError message={fieldErrors.otp} />
-              </div>
-            </CardContent>
-            <CardFooter className="flex flex-col gap-4">
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Verify code
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                disabled={loading}
-                onClick={() => {
-                  setError('')
-                  setOtp('')
-                  setFieldErrors({})
-                  setStep('email')
-                }}
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Use a different email
-              </Button>
-            </CardFooter>
-          </form>
-        ) : (
-          <form onSubmit={handlePasswordSubmit}>
-            <CardContent className="space-y-4">
-              {error && (
-                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="password">New password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => {
-                    clearFieldError('password')
-                    setPassword(e.target.value)
-                  }}
-                  className={cn(fieldErrors.password && 'border-red-500')}
-                  required
-                  minLength={6}
-                />
-                <FieldError message={fieldErrors.password} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm new password</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  placeholder="••••••••"
-                  value={confirmPassword}
-                  onChange={(e) => {
-                    clearFieldError('confirmPassword')
-                    setConfirmPassword(e.target.value)
-                  }}
-                  className={cn(fieldErrors.confirmPassword && 'border-red-500')}
-                  required
-                  minLength={6}
-                />
-                <FieldError message={fieldErrors.confirmPassword} />
-              </div>
-            </CardContent>
-            <CardFooter className="flex flex-col gap-4">
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Reset password
-              </Button>
-              <p className="text-sm text-muted-foreground">
-                <Link href="/login" className="text-blue-600 hover:underline">
-                  Back to login
-                </Link>
-              </p>
-            </CardFooter>
-          </form>
-        )}
-      </Card>
-    </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="email" className="text-xs font-semibold text-[#5b5c6b]">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
+              disabled={loading}
+              onChange={(e) => {
+                clearFieldError('email')
+                setEmail(e.target.value)
+              }}
+              className={cn('border-[#e4e6ef] bg-white', fieldErrors.email && 'border-red-500')}
+              required
+            />
+            <FieldError message={fieldErrors.email} />
+          </div>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Send verification code
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            Remember your password?{' '}
+            <Link href="/login" className="text-[#c81e3a] underline-offset-4 hover:underline">
+              Login
+            </Link>
+          </p>
+        </form>
+      ) : step === 'otp' ? (
+        <form onSubmit={handleOtpSubmit} className="space-y-5" aria-busy={loading}>
+          {error && (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-800">
+              {error}
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="otp" className="text-xs font-semibold text-[#5b5c6b]">Verification code</Label>
+            <Input
+              id="otp"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="000000"
+              maxLength={6}
+              value={otp}
+              disabled={loading}
+              onChange={(e) => {
+                clearFieldError('otp')
+                setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))
+              }}
+              className={cn('border-[#e4e6ef] bg-white', fieldErrors.otp && 'border-red-500', 'tracking-widest text-center text-lg')}
+              required
+            />
+            <FieldError message={fieldErrors.otp} />
+          </div>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Verify code
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={loading}
+            onClick={() => {
+              setError('')
+              setOtp('')
+              setFieldErrors({})
+              setStep('email')
+            }}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Use a different email
+          </Button>
+        </form>
+      ) : (
+        <form onSubmit={handlePasswordSubmit} className="space-y-5" aria-busy={loading}>
+          {error && (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-800">
+              {error}
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="password" className="text-xs font-semibold text-[#5b5c6b]">New password</Label>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              value={password}
+              disabled={loading}
+              onChange={(e) => {
+                clearFieldError('password')
+                setPassword(e.target.value)
+              }}
+              className={cn('border-[#e4e6ef] bg-white', fieldErrors.password && 'border-red-500')}
+              required
+              minLength={6}
+            />
+            <FieldError message={fieldErrors.password} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword" className="text-xs font-semibold text-[#5b5c6b]">Confirm new password</Label>
+            <Input
+              id="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              value={confirmPassword}
+              disabled={loading}
+              onChange={(e) => {
+                clearFieldError('confirmPassword')
+                setConfirmPassword(e.target.value)
+              }}
+              className={cn('border-[#e4e6ef] bg-white', fieldErrors.confirmPassword && 'border-red-500')}
+              required
+              minLength={6}
+            />
+            <FieldError message={fieldErrors.confirmPassword} />
+          </div>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Reset password
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            <Link href="/login" className="text-[#c81e3a] underline-offset-4 hover:underline">
+              Back to login
+            </Link>
+          </p>
+        </form>
+      )}
+    </AuthSplitLayout>
   )
 }

@@ -5,6 +5,7 @@ export type ThemeShade = (typeof THEME_SHADES)[number]
 export type ThemeScale = Record<ThemeShade, string>
 
 export const COLOR_THEME_IDS = [
+  'runerail',
   'blue',
   'sky',
   'teal',
@@ -34,15 +35,34 @@ export interface StoredColorTheme {
   vars: Record<string, string>
 }
 
-export const DEFAULT_COLOR_THEME_ID: ColorThemeId = 'blue'
-export const DEFAULT_CUSTOM_HEX = '#2563eb'
+export const DEFAULT_COLOR_THEME_ID: ColorThemeId = 'runerail'
+export const DEFAULT_CUSTOM_HEX = '#c81e3a'
 
 /** HSL channels as "H S% L%" — matches shadcn CSS variable convention. */
 export const COLOR_THEMES: ColorThemeDefinition[] = [
   {
+    id: 'runerail',
+    label: 'RuneRail',
+    description: 'Brand default',
+    swatch: '#c81e3a',
+    scale: {
+      50: '355 100% 97%',
+      100: '355 93% 94%',
+      200: '354 90% 88%',
+      300: '353 86% 78%',
+      400: '351 80% 64%',
+      500: '350 74% 53%',
+      600: '350 74% 45%',
+      700: '350 76% 38%',
+      800: '350 72% 31%',
+      900: '349 66% 25%',
+      950: '350 80% 14%',
+    },
+  },
+  {
     id: 'blue',
     label: 'Blue',
-    description: 'Default',
+    description: 'Classic',
     swatch: '#2563eb',
     scale: {
       50: '214 100% 97%',
@@ -293,7 +313,7 @@ export function scaleFromHex(hex: string): ThemeScale {
 
 export function resolveThemeScale(id: ColorThemeId, customHex = DEFAULT_CUSTOM_HEX): ThemeScale {
   if (id === 'custom') return scaleFromHex(customHex)
-  return THEME_BY_ID.get(id)?.scale ?? THEME_BY_ID.get('blue')!.scale
+  return THEME_BY_ID.get(id)?.scale ?? THEME_BY_ID.get(DEFAULT_COLOR_THEME_ID as Exclude<ColorThemeId, 'custom'>)!.scale
 }
 
 function lightnessOf(hsl: string): number {

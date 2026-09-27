@@ -333,7 +333,6 @@ export default function BottomMenubar() {
             <nav className="grid grid-cols-2 gap-1 p-2 sm:grid-cols-3">
               {moreLinks.map((link) => {
                 const Icon = link.icon
-                const accent = link.accent ?? '#2563eb'
                 const active = isNavChildActive(pathname, link.href) || pathname === link.href
                 return (
                   <Link
@@ -342,11 +341,10 @@ export default function BottomMenubar() {
                     onClick={() => setMoreOpen(false)}
                     className={cn(
                       'flex items-center gap-2 rounded-lg px-2.5 py-2.5 text-sm font-medium',
-                      !active && 'text-slate-700 hover:bg-slate-50'
+                      active ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
                     )}
-                    style={active ? { backgroundColor: `${accent}14`, color: accent } : undefined}
                   >
-                    <Icon size={16} weight="duotone" color={active ? accent : '#64748b'} className="shrink-0" />
+                    <Icon size={16} weight="duotone" color={active ? 'currentColor' : '#64748b'} className="shrink-0" />
                     <span className="truncate">{link.name}</span>
                   </Link>
                 )
@@ -372,10 +370,10 @@ export default function BottomMenubar() {
                     onClick={() => setMoreOpen(false)}
                     className={cn(
                       'flex w-11 shrink-0 items-center justify-center',
-                      active ? 'text-blue-700' : 'text-slate-500'
+                      active ? 'text-blue-600' : 'text-slate-500'
                     )}
                   >
-                    <Icon size={20} weight="duotone" color={active ? tab.accent : '#64748b'} />
+                    <Icon size={20} weight="duotone" color={active ? 'currentColor' : '#64748b'} />
                   </Link>
                 </MenubarItemTooltip>
               )

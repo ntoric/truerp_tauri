@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import BrandLogo from '@/components/BrandLogo'
 import { useAuth } from '@/hooks/useAuth'
 import { useStore } from '@/hooks/useStore'
 import { LogOut, Settings, ShoppingCart, Store, User } from 'lucide-react'
@@ -29,8 +30,9 @@ export default function Header() {
   const switchableStores = stores.filter((s) => s.is_active)
 
   return (
-    <header className="sticky top-0 z-30 flex h-[var(--app-header-h)] items-center justify-between border-b bg-white px-3 sm:px-4 lg:px-5">
+    <header className="sticky top-0 z-30 flex h-[var(--app-header-h)] items-center justify-between border-b border-neutral-200 bg-white px-3 sm:px-4 lg:px-5">
       <div className="flex min-w-0 items-center gap-2">
+        <Link href="/dashboard" className="shrink-0 md:hidden" aria-label="TruERP dashboard"><BrandLogo showWordmark={false} iconClassName="h-7 w-7" /></Link>
         {canSwitchStores && switchableStores.length > 0 ? (
           <div className="flex min-w-0 items-center gap-1.5">
             <Store className="h-3.5 w-3.5 shrink-0 text-slate-500" />
@@ -73,7 +75,7 @@ export default function Header() {
               className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               aria-label="Account menu"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-white">
                 <User className="h-4 w-4" />
               </div>
               <div className="hidden md:block text-left">

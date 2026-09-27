@@ -16,32 +16,32 @@ interface AlertWidgetProps {
 
 const variantClasses = {
   warning: {
-    bg: 'bg-yellow-50',
-    border: 'border-yellow-200',
-    icon: 'text-yellow-600',
-    text: 'text-yellow-800',
-    action: 'text-yellow-700 hover:text-yellow-800',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200 border-l-amber-500',
+    icon: 'text-amber-600',
+    text: 'text-amber-900',
+    action: 'text-amber-800 hover:text-amber-900',
   },
   danger: {
-    bg: 'bg-red-50',
-    border: 'border-red-200',
-    icon: 'text-red-600',
-    text: 'text-red-800',
-    action: 'text-red-700 hover:text-red-800',
+    bg: 'bg-[#fff1f2]',
+    border: 'border-[#fecdd3] border-l-[#c81e3a]',
+    icon: 'text-[#c81e3a]',
+    text: 'text-[#7f1d1d]',
+    action: 'text-[#c81e3a] hover:text-[#991b1b]',
   },
   info: {
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    icon: 'text-blue-600',
-    text: 'text-blue-800',
+    bg: 'bg-white',
+    border: 'border-[#e4e6ef] border-l-[#111111]',
+    icon: 'text-[#111111]',
+    text: 'text-[#20212b]',
     action: 'text-blue-700 hover:text-blue-800',
   },
   success: {
-    bg: 'bg-green-50',
-    border: 'border-green-200',
-    icon: 'text-green-600',
-    text: 'text-green-800',
-    action: 'text-green-700 hover:text-green-800',
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200 border-l-emerald-500',
+    icon: 'text-emerald-600',
+    text: 'text-emerald-900',
+    action: 'text-emerald-800 hover:text-emerald-900',
   },
 }
 
@@ -55,7 +55,7 @@ export default function AlertWidget({
   const classes = variantClasses[variant]
 
   return (
-    <div className={`rounded-lg border ${classes.border} ${classes.bg} p-4`}>
+    <div className={`rounded-xl border border-l-4 ${classes.border} ${classes.bg} p-4`}>
       <div className="flex items-start gap-3">
         {Icon && <Icon className={`h-5 w-5 flex-shrink-0 ${classes.icon} mt-0.5`} />}
         <div className="flex-1">
@@ -71,7 +71,9 @@ export default function AlertWidget({
         </div>
         {onDismiss && (
           <button
+            type="button"
             onClick={onDismiss}
+            aria-label="Dismiss"
             className={`flex-shrink-0 ${classes.icon} hover:opacity-70 transition-opacity`}
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

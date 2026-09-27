@@ -25,7 +25,7 @@ function isShellLessPath(pathname: string) {
 
 function AuthBootSkeleton() {
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-[#f6f7fb]">
       <div className="hidden w-[4.5rem] shrink-0 border-r bg-white md:block" />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-12 items-center justify-between border-b bg-white px-4">
@@ -90,7 +90,7 @@ export default function DashboardLayout({
   if (loading || !user) {
     if (!loading && !user && token) {
       return (
-        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-50 p-6">
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f6f7fb] p-6">
           <WifiOff className="h-12 w-12 text-gray-400" />
           <div className="text-center">
             <h2 className="text-lg font-semibold text-gray-700">Unable to reach server</h2>
@@ -125,7 +125,7 @@ export default function DashboardLayout({
     return (
       <DashboardShellContext.Provider value={true}>
         {hideNavigation ? (
-          <div className="min-h-screen bg-gray-50">
+          <div className="min-h-screen bg-[#f6f7fb]">
             <main className="app-main p-4 sm:p-5">{content}</main>
           </div>
         ) : (
@@ -138,7 +138,7 @@ export default function DashboardLayout({
   return (
     <DashboardShellContext.Provider value={true}>
       <KeyboardShortcutsProvider>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-[#f6f7fb]">
           <Suspense fallback={null}>
             <NavigationProgress />
           </Suspense>
