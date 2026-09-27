@@ -807,6 +807,34 @@ export default function DeveloperSettingsPage() {
     }
   }
 
+  // Triggers a manual maintenance run on the backend, then polls the settings
+  // endpoint until the run finishes so the status card stays up to date.
+  const runMaintenanceNow = async () => {
+    setDbMaintBusy(true)
+    try {
+      const res = await apiFetch('/developer-settings/db-maintenance/run-now', { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to start maintenance run')
+        return
+      }
+      notifySuccess('Maintenance run started')
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        const infoRes = await apiFetch('/developer-settings/db-maintenance')
+        if (!infoRes.ok) break
+        const info: DBMaintenanceInfo = await infoRes.json()
+        setDbMaintInfo(info)
+        if (info.settings) setDbMaint(info.settings)
+        if (!info.running) break
+      }
+    } catch {
+      notifyError('Failed to start maintenance run')
+    } finally {
+      setDbMaintBusy(false)
+    }
+  }
+
   if (authLoading || loading) {
     return (
       <DashboardLayout>
@@ -855,7 +883,7 @@ export default function DeveloperSettingsPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-8">
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
               General
@@ -883,6 +911,10 @@ export default function DeveloperSettingsPage() {
             <TabsTrigger value="pages" className="flex items-center gap-2">
               <LayoutGrid className="h-4 w-4" />
               Pages & Menus
+            </TabsTrigger>
+            <TabsTrigger value="maintenance" className="flex items-center gap-2">
+              <Database className="h-4 w-4" />
+              Maintenance
             </TabsTrigger>
           </TabsList>
 
@@ -1435,6 +1467,112 @@ export default function DeveloperSettingsPage() {
                     </div>
                   </div>
                 ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="maintenance">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5" />
+                  Database Maintenance
+                </CardTitle>
+                <CardDescription>
+                  Nightly cleanup that removes dead tuples and prevents table
+                  bloat (VACUUM ANALYZE on PostgreSQL, VACUUM + ANALYZE on
+                  SQLite). Runs daily at the configured time in IST
+                  (Asia/Kolkata).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Nightly database maintenance</p>
+                    <p className="text-xs text-gray-500">
+                      Vacuum and analyze all tables every day at the configured time.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={dbMaint.is_enabled}
+                    onCheckedChange={(checked) => setDbMaint({ ...dbMaint, is_enabled: checked })}
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Run time (IST)</Label>
+                    <Input
+                      type="time"
+                      value={dbMaint.run_time}
+                      onChange={(e) => setDbMaint({ ...dbMaint, run_time: e.target.value })}
+                    />
+                    <p className="text-xs text-gray-500">
+                      Interpreted in Asia/Kolkata — default 01:00.
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2 self-center">
+                    <Checkbox
+                      id="vacuum-full"
+                      checked={dbMaint.vacuum_full}
+                      onCheckedChange={(checked) =>
+                        setDbMaint({ ...dbMaint, vacuum_full: checked === true })
+                      }
+                    />
+                    <Label htmlFor="vacuum-full" className="text-sm font-normal">
+                      Full vacuum (VACUUM FULL) — rewrites tables to reclaim disk space,
+                      but takes an exclusive lock per table. Keep off unless bloat is severe.
+                    </Label>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 rounded-md border bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <div>
+                    <span className="font-medium text-gray-800">IST time:</span>{' '}
+                    {dbMaintInfo?.ist_time || '—'} ({dbMaintInfo?.ist_timezone || 'Asia/Kolkata'})
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-800">Next run:</span>{' '}
+                    {dbMaintInfo?.next_run_at
+                      ? new Date(dbMaintInfo.next_run_at).toLocaleString()
+                      : '—'}
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-800">Last run:</span>{' '}
+                    {dbMaint.last_run_at ? (
+                      <span>
+                        {new Date(dbMaint.last_run_at).toLocaleString()} —{' '}
+                        {dbMaint.last_run_status || 'unknown'}
+                        {dbMaint.last_run_tables ? ` · ${dbMaint.last_run_tables} tables` : ''}
+                        {dbMaint.last_run_duration_ms
+                          ? ` · ${(dbMaint.last_run_duration_ms / 1000).toFixed(1)}s`
+                          : ''}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">Never</span>
+                    )}
+                  </div>
+                  {dbMaint.last_run_error && (
+                    <div className="text-red-600">Error: {dbMaint.last_run_error}</div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={runMaintenanceNow}
+                    disabled={dbMaintBusy || dbMaintInfo?.running}
+                  >
+                    {(dbMaintBusy || dbMaintInfo?.running) && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Run now
+                  </Button>
+                  <span className="text-xs text-gray-500">
+                    Runs the cleanup immediately in the background.
+                  </span>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
