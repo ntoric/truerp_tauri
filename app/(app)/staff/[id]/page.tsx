@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -250,32 +251,20 @@ export default function StaffDetailPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm font-medium text-gray-500">Salary</p>
-              <p className="mt-1 text-xl font-bold text-gray-900">
+          <SummaryStat
+            label="Salary"
+            value={
+              <>
                 {formatCurrency(staff.salary)}
-                <span className="text-sm font-normal text-gray-500">
+                <span className="text-sm font-normal text-[#5b5c6b]">
                   /{staff.salary_type === 'monthly' ? 'mo' : staff.salary_type === 'daily' ? 'day' : 'hr'}
                 </span>
-              </p>
-              <p className="text-xs text-gray-500">{formatSalaryType(staff.salary_type)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm font-medium text-gray-500">Total Salary Paid</p>
-              <p className="mt-1 text-xl font-bold text-gray-900">{formatCurrency(totalSalaryPaid)}</p>
-              <p className="text-xs text-gray-500">{payrolls.length} payroll records</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm font-medium text-gray-500">Advance Pending</p>
-              <p className="mt-1 text-xl font-bold text-gray-900">{formatCurrency(totalAdvancePending)}</p>
-              <p className="text-xs text-gray-500">{advances.length} advances</p>
-            </CardContent>
-          </Card>
+              </>
+            }
+            hint={formatSalaryType(staff.salary_type)}
+          />
+          <SummaryStat label="Total Salary Paid" value={formatCurrency(totalSalaryPaid)} hint={`${payrolls.length} payroll records`} />
+          <SummaryStat tone="warning" label="Advance Pending" value={formatCurrency(totalAdvancePending)} hint={`${advances.length} advances`} />
           <Card>
             <CardContent className="p-4">
               <p className="text-sm font-medium text-gray-500">Contact</p>

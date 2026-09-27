@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -789,30 +790,9 @@ export default function PurchaseInvoicesPage() {
 
         {showStats && (
           <div id="purchase-invoices-stats" className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Purchase</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-gray-900">{formatCurrency(stats.total_purchase)}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Paid</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.paid)}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Unpaid</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.unpaid)}</div>
-              </CardContent>
-            </Card>
+            <SummaryStat tone="brand" label="Total Purchase" value={formatCurrency(stats.total_purchase)} />
+            <SummaryStat tone="success" label="Paid" value={formatCurrency(stats.paid)} />
+            <SummaryStat tone="warning" label="Unpaid" value={formatCurrency(stats.unpaid)} />
           </div>
         )}
 

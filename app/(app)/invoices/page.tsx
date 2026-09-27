@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import PageHeader from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -586,38 +587,10 @@ export default function InvoicesPage() {
 
         {showStats && (
           <div id="invoices-stats" className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Sales</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-gray-900">{formatCurrency(stats.total_sales)}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Paid</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.paid)}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Unpaid</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-orange-600">{formatCurrency(stats.unpaid)}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Cancelled</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-red-600">{formatCurrency(stats.cancelled)}</div>
-              </CardContent>
-            </Card>
+            <SummaryStat tone="brand" label="Total Sales" value={formatCurrency(stats.total_sales)} />
+            <SummaryStat tone="success" label="Paid" value={formatCurrency(stats.paid)} />
+            <SummaryStat tone="warning" label="Unpaid" value={formatCurrency(stats.unpaid)} />
+            <SummaryStat tone="danger" label="Cancelled" value={formatCurrency(stats.cancelled)} />
           </div>
         )}
 

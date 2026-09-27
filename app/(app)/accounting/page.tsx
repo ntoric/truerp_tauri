@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -842,44 +843,10 @@ export default function AccountingPage() {
 
         {showStats && (
           <div id="accounting-stats" className="grid gap-3 md:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Total Assets</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-xl font-bold text-blue-600">
-                  {formatCurrency(balanceSheet?.total_assets ?? accounts.filter((a) => a.account_type === 'asset').reduce((s, a) => s + a.balance, 0))}
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Total Liabilities</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-xl font-bold text-red-600">
-                  {formatCurrency(balanceSheet?.total_liabilities ?? accounts.filter((a) => a.account_type === 'liability').reduce((s, a) => s + a.balance, 0))}
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Total Income</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-xl font-bold text-green-600">{formatCurrency(profitLoss?.total_income ?? 0)}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className={`text-xl font-bold ${(profitLoss?.net_profit ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatCurrency(profitLoss?.net_profit ?? 0)}
-                </div>
-              </CardContent>
-            </Card>
+            <SummaryStat label="Total Assets" value={formatCurrency(balanceSheet?.total_assets ?? accounts.filter((a) => a.account_type === 'asset').reduce((s, a) => s + a.balance, 0))} />
+            <SummaryStat tone="danger" label="Total Liabilities" value={formatCurrency(balanceSheet?.total_liabilities ?? accounts.filter((a) => a.account_type === 'liability').reduce((s, a) => s + a.balance, 0))} />
+            <SummaryStat tone="success" label="Total Income" value={formatCurrency(profitLoss?.total_income ?? 0)} />
+            <SummaryStat tone={(profitLoss?.net_profit ?? 0) >= 0 ? 'success' : 'danger'} label="Net Profit" value={formatCurrency(profitLoss?.net_profit ?? 0)} />
           </div>
         )}
 

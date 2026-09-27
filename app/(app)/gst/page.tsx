@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -155,10 +156,10 @@ export default function GSTPage() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-4">
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">CGST</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(summary?.cgst || gstr3b?.cgst_liability || 0)}</div></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">SGST</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(summary?.sgst || gstr3b?.sgst_liability || 0)}</div></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">IGST</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(summary?.igst || gstr3b?.igst_liability || 0)}</div></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Total Liability</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold text-red-600">{formatCurrency(summary?.liability || gstr3b?.total_tax_liability || 0)}</div></CardContent></Card>
+          <SummaryStat label="CGST" value={formatCurrency(summary?.cgst || gstr3b?.cgst_liability || 0)} />
+          <SummaryStat label="SGST" value={formatCurrency(summary?.sgst || gstr3b?.sgst_liability || 0)} />
+          <SummaryStat label="IGST" value={formatCurrency(summary?.igst || gstr3b?.igst_liability || 0)} />
+          <SummaryStat tone="danger" label="Total Liability" value={formatCurrency(summary?.liability || gstr3b?.total_tax_liability || 0)} />
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>

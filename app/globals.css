@@ -154,7 +154,7 @@ aside button:focus-visible {
 @layer components {
   /* Compact density for typical ERP page titles on ~21" screens */
   .app-page-title {
-    @apply text-sm font-semibold leading-none tracking-tight text-slate-900 sm:text-base;
+    @apply text-sm font-semibold leading-none tracking-tight text-[#20212b] sm:text-base;
   }
 
   /*
@@ -164,7 +164,7 @@ aside button:focus-visible {
     under the app header.
   */
   .app-page-subheader {
-    @apply sticky top-[var(--app-header-h)] z-20 -mx-3 -mt-3 mb-1.5 flex min-h-[3.5rem] flex-wrap items-center justify-between gap-x-2 gap-y-1 overflow-visible border-b border-slate-200/80 bg-gray-50/95 px-3 py-1.5 backdrop-blur-sm sm:-mx-4 sm:-mt-4 sm:px-4 lg:-mx-5 lg:-mt-5 lg:px-5;
+    @apply sticky top-[var(--app-header-h)] z-20 -mx-3 -mt-3 mb-1.5 flex min-h-[3.5rem] flex-wrap items-center justify-between gap-x-2 gap-y-1 overflow-visible border-b border-[#e4e6ef] bg-[#f6f7fb]/95 px-3 py-1.5 backdrop-blur-sm sm:-mx-4 sm:-mt-4 sm:px-4 lg:-mx-5 lg:-mt-5 lg:px-5;
   }
 
   .app-page-subheader > :first-child {
@@ -217,7 +217,7 @@ aside button:focus-visible {
 
   .table-scroll thead th,
   .table-scroll thead td {
-    background-color: #fff;
+    background-color: #f6f7fb;
     box-shadow: inset 0 -1px 0 hsl(var(--border));
   }
 

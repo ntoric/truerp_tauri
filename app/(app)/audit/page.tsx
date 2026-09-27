@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -279,50 +280,15 @@ export default function AuditDashboard() {
 
         {stats && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Total Logs</CardTitle>
-                <Activity className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.total_logs}</div>
-                <p className="text-xs text-muted-foreground">All time</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Today&apos;s Logs</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.today_logs}</div>
-                <p className="text-xs text-muted-foreground">Last 24 hours</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Success Rate</CardTitle>
-                <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {stats.total_logs > 0 ? Math.round((stats.success_count / stats.total_logs) * 100) : 0}%
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {stats.success_count} success, {stats.failed_count} failed
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Active Users</CardTitle>
-                <Users className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.top_users.length}</div>
-                <p className="text-xs text-muted-foreground">Unique users</p>
-              </CardContent>
-            </Card>
+            <SummaryStat label="Total Logs" icon={Activity} value={stats.total_logs} hint="All time" />
+            <SummaryStat label="Today's Logs" icon={Clock} value={stats.today_logs} hint="Last 24 hours" />
+            <SummaryStat
+              label="Success Rate"
+              icon={BarChart3}
+              value={`${stats.total_logs > 0 ? Math.round((stats.success_count / stats.total_logs) * 100) : 0}%`}
+              hint={`${stats.success_count} success, ${stats.failed_count} failed`}
+            />
+            <SummaryStat label="Active Users" icon={Users} value={stats.top_users.length} hint="Unique users" />
           </div>
         )}
 

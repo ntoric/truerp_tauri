@@ -28,6 +28,7 @@ import {
 } from '@/lib/reportsExport'
 import { downloadBlob, rowsToCsv } from '@/lib/accountingExport'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { CHART_COLORS, chartAxisProps, chartTooltipProps } from '@/lib/chartTheme'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import JSZip from 'jszip'
 import {
@@ -732,22 +733,22 @@ export default function ReportsPage() {
                   >
                     <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={salesSeries}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                          <YAxis tick={{ fontSize: 11 }} />
-                          <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                          <Bar dataKey="sales" name="Sales" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                          <XAxis {...chartAxisProps} dataKey="period" tick={{ fontSize: 11 }} />
+                          <YAxis {...chartAxisProps} tick={{ fontSize: 11 }} />
+                          <Tooltip {...chartTooltipProps} formatter={(v: number) => formatCurrency(v)} />
+                          <Bar dataKey="sales" name="Sales" fill={CHART_COLORS.primary} radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                   </ReportPanel>
                   <ReportPanel title="Receivables aging" description="Outstanding balance by overdue bucket.">
                     <ResponsiveContainer width="100%" height={220}>
                       <BarChart data={agingChartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="bucket" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 11 }} />
-                        <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                        <Bar dataKey="amount" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                        <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                        <XAxis {...chartAxisProps} dataKey="bucket" tick={{ fontSize: 11 }} />
+                        <YAxis {...chartAxisProps} tick={{ fontSize: 11 }} />
+                        <Tooltip {...chartTooltipProps} formatter={(v: number) => formatCurrency(v)} />
+                        <Bar dataKey="amount" fill={CHART_COLORS.ink} radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </ReportPanel>
@@ -869,14 +870,14 @@ export default function ReportsPage() {
                 >
                   <ResponsiveContainer width="100%" height={300}>
                     <ComposedChart data={salesSeries}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="period" />
-                      <YAxis yAxisId="left" />
-                      <YAxis yAxisId="right" orientation="right" />
-                      <Tooltip formatter={(v: number, name: string) => (name === 'count' ? v : formatCurrency(v))} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                      <XAxis {...chartAxisProps} dataKey="period" />
+                      <YAxis {...chartAxisProps} yAxisId="left" />
+                      <YAxis {...chartAxisProps} yAxisId="right" orientation="right" />
+                      <Tooltip {...chartTooltipProps} formatter={(v: number, name: string) => (name === 'count' ? v : formatCurrency(v))} />
                       <Legend />
-                      <Bar yAxisId="left" dataKey="sales" name="Sales" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                      <Line yAxisId="right" type="monotone" dataKey="count" name="Invoices" stroke="#f59e0b" strokeWidth={2} />
+                      <Bar yAxisId="left" dataKey="sales" name="Sales" fill={CHART_COLORS.primary} radius={[4, 4, 0, 0]} />
+                      <Line yAxisId="right" type="monotone" dataKey="count" name="Invoices" stroke={CHART_COLORS.ink} strokeWidth={2} />
                     </ComposedChart>
                   </ResponsiveContainer>
                   <Table className="mt-6">
@@ -968,14 +969,14 @@ export default function ReportsPage() {
                 <ReportPanel title={`Revenue breakdown (${periodGrouping.toLowerCase()})`}>
                   <ResponsiveContainer width="100%" height={280}>
                     <BarChart data={revenuePeriods}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="period" />
-                      <YAxis />
-                      <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                      <XAxis {...chartAxisProps} dataKey="period" />
+                      <YAxis {...chartAxisProps} />
+                      <Tooltip {...chartTooltipProps} formatter={(v: number) => formatCurrency(v)} />
                       <Legend />
-                      <Bar dataKey="gross" name="Gross" fill="#3b82f6" />
-                      <Bar dataKey="net" name="Net" fill="#10b981" />
-                      <Bar dataKey="tax" name="Tax" fill="#8b5cf6" />
+                      <Bar dataKey="gross" name="Gross" fill={CHART_COLORS.primary} />
+                      <Bar dataKey="net" name="Net" fill={CHART_COLORS.ink} />
+                      <Bar dataKey="tax" name="Tax" fill={CHART_COLORS.muted} />
                     </BarChart>
                   </ResponsiveContainer>
                   <Table className="mt-6">
@@ -1145,11 +1146,11 @@ export default function ReportsPage() {
                   <ReportPanel title="Aging buckets">
                     <ResponsiveContainer width="100%" height={240}>
                       <BarChart data={agingChartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="bucket" />
-                        <YAxis />
-                        <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                        <Bar dataKey="amount" fill="#ef4444" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                        <XAxis {...chartAxisProps} dataKey="bucket" />
+                        <YAxis {...chartAxisProps} />
+                        <Tooltip {...chartTooltipProps} formatter={(v: number) => formatCurrency(v)} />
+                        <Bar dataKey="amount" fill={CHART_COLORS.ink} />
                       </BarChart>
                     </ResponsiveContainer>
                   </ReportPanel>
@@ -1389,14 +1390,14 @@ export default function ReportsPage() {
                 <ReportPanel title={`${periodGrouping} GST`} icon={FileBarChart}>
                   <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={gstChartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
-                      <YAxis />
-                      <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                      <XAxis {...chartAxisProps} dataKey="month" />
+                      <YAxis {...chartAxisProps} />
+                      <Tooltip {...chartTooltipProps} formatter={(v: number) => formatCurrency(v)} />
                       <Legend />
-                      <Bar dataKey="CGST" stackId="a" fill="#3b82f6" />
-                      <Bar dataKey="SGST" stackId="a" fill="#10b981" />
-                      <Bar dataKey="IGST" stackId="a" fill="#8b5cf6" />
+                      <Bar dataKey="CGST" stackId="a" fill={CHART_COLORS.primary} />
+                      <Bar dataKey="SGST" stackId="a" fill={CHART_COLORS.ink} />
+                      <Bar dataKey="IGST" stackId="a" fill={CHART_COLORS.muted} />
                     </BarChart>
                   </ResponsiveContainer>
                   <Table className="mt-6">
@@ -1468,13 +1469,13 @@ export default function ReportsPage() {
                 <ReportPanel title={`Payment in vs out (${periodGrouping.toLowerCase()})`}>
                   <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={paymentChartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="period" />
-                      <YAxis />
-                      <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                      <XAxis {...chartAxisProps} dataKey="period" />
+                      <YAxis {...chartAxisProps} />
+                      <Tooltip {...chartTooltipProps} formatter={(v: number) => formatCurrency(v)} />
                       <Legend />
-                      <Bar dataKey="amount_in" name="In" fill="#10b981" />
-                      <Bar dataKey="amount_out" name="Out" fill="#ef4444" />
+                      <Bar dataKey="amount_in" name="In" fill={CHART_COLORS.ink} />
+                      <Bar dataKey="amount_out" name="Out" fill={CHART_COLORS.primary} />
                     </BarChart>
                   </ResponsiveContainer>
                   <Table className="mt-6">
@@ -1704,11 +1705,11 @@ export default function ReportsPage() {
                   />
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={[...customResult.rows].reverse()}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                      <YAxis />
-                      <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                      <Bar dataKey="amount" fill="#6366f1" />
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                      <XAxis {...chartAxisProps} dataKey="label" tick={{ fontSize: 10 }} />
+                      <YAxis {...chartAxisProps} />
+                      <Tooltip {...chartTooltipProps} formatter={(v: number) => formatCurrency(v)} />
+                      <Bar dataKey="amount" fill={CHART_COLORS.ink} />
                     </BarChart>
                   </ResponsiveContainer>
                   <Table>

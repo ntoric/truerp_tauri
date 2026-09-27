@@ -5,6 +5,7 @@ import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { useStore } from '@/hooks/useStore'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { parseApiError } from '@/lib/form-errors'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -665,66 +666,45 @@ export default function AttendancePage() {
 
         {stats && (
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-            <Card className="cursor-pointer hover:border-slate-300 transition-colors" onClick={() => setStatusFilter('all')}>
-              <CardContent className="p-3 text-center">
-                <div className="text-xl font-bold">{stats.total_staff}</div>
-                <div className="text-xs text-muted-foreground">Total</div>
-              </CardContent>
-            </Card>
-            <Card
-              className={cn('cursor-pointer hover:border-green-300 transition-colors', statusFilter === 'present' && 'ring-2 ring-green-400')}
+            <div className="cursor-pointer rounded-xl transition-shadow hover:shadow-md" onClick={() => setStatusFilter('all')}>
+              <SummaryStat size="sm" label="Total" value={stats.total_staff} />
+            </div>
+            <div
+              className={cn('cursor-pointer rounded-xl transition-shadow hover:shadow-md', statusFilter === 'present' && 'ring-2 ring-emerald-500')}
               onClick={() => setStatusFilter(statusFilter === 'present' ? 'all' : 'present')}
             >
-              <CardContent className="p-3 text-center">
-                <div className="text-xl font-bold text-green-600">{stats.present}</div>
-                <div className="text-xs text-muted-foreground">Present</div>
-              </CardContent>
-            </Card>
-            <Card
-              className={cn('cursor-pointer hover:border-red-300 transition-colors', statusFilter === 'absent' && 'ring-2 ring-red-400')}
+              <SummaryStat size="sm" tone="success" label="Present" value={stats.present} />
+            </div>
+            <div
+              className={cn('cursor-pointer rounded-xl transition-shadow hover:shadow-md', statusFilter === 'absent' && 'ring-2 ring-[#c81e3a]')}
               onClick={() => setStatusFilter(statusFilter === 'absent' ? 'all' : 'absent')}
             >
-              <CardContent className="p-3 text-center">
-                <div className="text-xl font-bold text-red-600">{stats.absent}</div>
-                <div className="text-xs text-muted-foreground">Absent</div>
-              </CardContent>
-            </Card>
-            <Card
-              className={cn('cursor-pointer hover:border-yellow-300 transition-colors', statusFilter === 'half_day' && 'ring-2 ring-yellow-400')}
+              <SummaryStat size="sm" tone="danger" label="Absent" value={stats.absent} />
+            </div>
+            <div
+              className={cn('cursor-pointer rounded-xl transition-shadow hover:shadow-md', statusFilter === 'half_day' && 'ring-2 ring-amber-500')}
               onClick={() => setStatusFilter(statusFilter === 'half_day' ? 'all' : 'half_day')}
             >
-              <CardContent className="p-3 text-center">
-                <div className="text-xl font-bold text-yellow-600">{stats.half_day}</div>
-                <div className="text-xs text-muted-foreground">Half Day</div>
-              </CardContent>
-            </Card>
-            <Card
-              className={cn('cursor-pointer hover:border-blue-300 transition-colors', statusFilter === 'paid_leave' && 'ring-2 ring-blue-400')}
+              <SummaryStat size="sm" tone="warning" label="Half Day" value={stats.half_day} />
+            </div>
+            <div
+              className={cn('cursor-pointer rounded-xl transition-shadow hover:shadow-md', statusFilter === 'paid_leave' && 'ring-2 ring-blue-500')}
               onClick={() => setStatusFilter(statusFilter === 'paid_leave' ? 'all' : 'paid_leave')}
             >
-              <CardContent className="p-3 text-center">
-                <div className="text-xl font-bold text-blue-600">{stats.paid_leave}</div>
-                <div className="text-xs text-muted-foreground">Leave</div>
-              </CardContent>
-            </Card>
-            <Card
-              className={cn('cursor-pointer hover:border-purple-300 transition-colors', statusFilter === 'weekly_off' && 'ring-2 ring-purple-400')}
+              <SummaryStat size="sm" label="Leave" value={stats.paid_leave} />
+            </div>
+            <div
+              className={cn('cursor-pointer rounded-xl transition-shadow hover:shadow-md', statusFilter === 'weekly_off' && 'ring-2 ring-purple-400')}
               onClick={() => setStatusFilter(statusFilter === 'weekly_off' ? 'all' : 'weekly_off')}
             >
-              <CardContent className="p-3 text-center">
-                <div className="text-xl font-bold text-purple-600">{stats.weekly_off}</div>
-                <div className="text-xs text-muted-foreground">Weekly Off</div>
-              </CardContent>
-            </Card>
-            <Card
-              className={cn('cursor-pointer hover:border-amber-300 transition-colors', statusFilter === 'not_marked' && 'ring-2 ring-amber-400')}
+              <SummaryStat size="sm" label="Weekly Off" value={stats.weekly_off} />
+            </div>
+            <div
+              className={cn('cursor-pointer rounded-xl transition-shadow hover:shadow-md', statusFilter === 'not_marked' && 'ring-2 ring-amber-500')}
               onClick={() => setStatusFilter(statusFilter === 'not_marked' ? 'all' : 'not_marked')}
             >
-              <CardContent className="p-3 text-center">
-                <div className="text-xl font-bold text-amber-600">{notMarkedCount}</div>
-                <div className="text-xs text-muted-foreground">Pending</div>
-              </CardContent>
-            </Card>
+              <SummaryStat size="sm" tone="warning" label="Pending" value={notMarkedCount} />
+            </div>
           </div>
         )}
 

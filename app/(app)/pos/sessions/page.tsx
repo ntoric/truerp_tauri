@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -104,42 +105,10 @@ export default function POSSessionHistoryPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Sessions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{sessions.length}</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {summary.openCount} open · {summary.closedCount} closed
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Sales</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatCurrency(summary.totalSales)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Opening Cash</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatCurrency(summary.totalOpening)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Closing Cash</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatCurrency(summary.totalClosing)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Closed sessions only</p>
-          </CardContent>
-        </Card>
+        <SummaryStat label="Sessions" value={sessions.length} hint={`${summary.openCount} open · ${summary.closedCount} closed`} />
+        <SummaryStat label="Total Sales" value={formatCurrency(summary.totalSales)} />
+        <SummaryStat label="Opening Cash" value={formatCurrency(summary.totalOpening)} />
+        <SummaryStat label="Closing Cash" value={formatCurrency(summary.totalClosing)} hint="Closed sessions only" />
       </div>
 
       <Card>

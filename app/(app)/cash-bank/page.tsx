@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -39,6 +40,7 @@ import {
   ChevronDown,
   ChevronUp,
   Landmark,
+  Banknote,
 } from 'lucide-react'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
 import { isSuperAdmin } from '@/lib/roles'
@@ -46,6 +48,56 @@ import { isInitialInvestmentMethod } from '@/lib/paymentSplits'
 
 const CASH_IN_HAND_VALUE = 'cash'
 const OWNER_EQUITY_VALUE = 'owner_equity'
+
+type CashBankPeriod = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'last_month' | 'year' | 'custom'
+
+const PERIOD_OPTIONS: { value: CashBankPeriod; label: string }[] = [
+  { value: 'all', label: 'All Time' },
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'week', label: 'This Week' },
+  { value: 'month', label: 'This Month' },
+  { value: 'last_month', label: 'Last Month' },
+  { value: 'year', label: 'This Year' },
+  { value: 'custom', label: 'Custom' },
+]
+
+const toDateInput = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// Preset periods resolve to a concrete [start, end] range; 'all'/'custom' return empty.
+function periodDateRange(period: CashBankPeriod): { start: string; end: string } {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const todayStr = toDateInput(today)
+  switch (period) {
+    case 'today':
+      return { start: todayStr, end: todayStr }
+    case 'yesterday': {
+      const d = new Date(today)
+      d.setDate(d.getDate() - 1)
+      const s = toDateInput(d)
+      return { start: s, end: s }
+    }
+    case 'week': {
+      const day = today.getDay() === 0 ? 7 : today.getDay()
+      const start = new Date(today)
+      start.setDate(start.getDate() - (day - 1))
+      return { start: toDateInput(start), end: todayStr }
+    }
+    case 'month':
+      return { start: toDateInput(new Date(today.getFullYear(), today.getMonth(), 1)), end: todayStr }
+    case 'last_month':
+      return {
+        start: toDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1)),
+        end: toDateInput(new Date(today.getFullYear(), today.getMonth(), 0)),
+      }
+    case 'year':
+      return { start: toDateInput(new Date(today.getFullYear(), 0, 1)), end: todayStr }
+    default:
+      return { start: '', end: '' }
+  }
+}
 
 const TRANSACTION_TYPE_OPTIONS = [
   { value: 'add', label: 'Add' },
@@ -95,6 +147,8 @@ interface CashBankSummary {
   bank_accounts: BankAccount[]
   unlinked_count: number
   unlinked_amount: number
+  cash_net_change: number
+  bank_net_change: number
 }
 
 export default function CashBankPage() {
@@ -111,6 +165,7 @@ export default function CashBankPage() {
   const [filterUnlinked, setFilterUnlinked] = useState(false)
   const [filterType, setFilterType] = useState('all')
   const [filterAccount, setFilterAccount] = useState('all')
+  const [period, setPeriod] = useState<CashBankPeriod>('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [addMoneyAccountId, setAddMoneyAccountId] = useState(CASH_IN_HAND_VALUE)
@@ -145,7 +200,7 @@ export default function CashBankPage() {
     if (!authLoading && user) {
       fetchSummary()
     }
-  }, [authLoading, user])
+  }, [authLoading, user, startDate, endDate])
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -171,7 +226,11 @@ export default function CashBankPage() {
 
   const fetchSummary = async () => {
     try {
-      const res = await apiFetch('/cash-bank/summary')
+      const params = new URLSearchParams()
+      if (startDate) params.append('start_date', startDate)
+      if (endDate) params.append('end_date', endDate)
+      const qs = params.toString()
+      const res = await apiFetch(`/cash-bank/summary${qs ? `?${qs}` : ''}`)
       if (res.ok) setSummary(await res.json())
     } catch (err) {
       console.error(err)
@@ -216,6 +275,21 @@ export default function CashBankPage() {
   const fetchData = () => {
     fetchSummary()
     fetchTransactions()
+  }
+
+  const handlePeriodChange = (next: CashBankPeriod) => {
+    setPeriod(next)
+    if (next === 'custom') return
+    const { start, end } = periodDateRange(next)
+    setStartDate(start)
+    setEndDate(end)
+  }
+
+  // Manual date edits flip the period to custom (or back to all when cleared).
+  const applyDateRange = (start: string, end: string) => {
+    setStartDate(start)
+    setEndDate(end)
+    setPeriod(start || end ? 'custom' : 'all')
   }
 
   const handleAddMoney = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -485,6 +559,10 @@ export default function CashBankPage() {
   const filteredTotalIn = transactionsTotalIn
   const filteredTotalOut = transactionsTotalOut
   const filteredNetTotal = filteredTotalIn - filteredTotalOut
+  const cashInBank = (summary?.bank_accounts || []).reduce((sum, acc) => sum + (acc.balance || 0), 0)
+  const periodActive = startDate !== '' || endDate !== ''
+  const netChangeInPeriod = (summary?.cash_net_change || 0) + (summary?.bank_net_change || 0)
+  const formatSigned = (v: number) => `${v > 0 ? '+' : ''}${formatCurrency(v)}`
 
   const getTransactionTypeBadge = (type: string) => {
     const variants: Record<string, string> = {
@@ -507,6 +585,34 @@ export default function CashBankPage() {
             <h1 className="app-page-title">Cash & Bank</h1>
           </div>
           <PageHeaderActions>
+            <Select value={period} onValueChange={(v) => handlePeriodChange(v as CashBankPeriod)}>
+              <SelectTrigger className="w-[140px]" aria-label="Period filter">
+                <SelectValue placeholder="Period" />
+              </SelectTrigger>
+              <SelectContent>
+                {PERIOD_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {period === 'custom' && (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => applyDateRange(e.target.value, endDate)}
+                  className="w-auto"
+                  aria-label="Start date"
+                />
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => applyDateRange(startDate, e.target.value)}
+                  className="w-auto"
+                  aria-label="End date"
+                />
+              </div>
+            )}
             <Button
               type="button"
               variant={showStats ? 'secondary' : 'outline'}
@@ -743,92 +849,43 @@ export default function CashBankPage() {
 
         {/* Summary Cards — 2 cols until xl so values aren't crushed beside the sidebar */}
         {showStats && (
-        <div id="cash-bank-stats" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-500">Total Balance</p>
-                  <p className="mt-1 break-words text-xl font-bold tabular-nums text-gray-900 xl:text-2xl">
-                    {formatCurrency(summary?.total_balance || 0)}
-                  </p>
-                </div>
-                <div className="shrink-0 rounded-lg bg-blue-50 p-2.5">
-                  <IndianRupee className="h-5 w-5 text-blue-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-500">Cash in-hand</p>
-                  <p className="mt-1 break-words text-xl font-bold tabular-nums text-gray-900 xl:text-2xl">
-                    {formatCurrency(summary?.cash_in_hand || 0)}
-                  </p>
-                </div>
-                <div className="shrink-0 rounded-lg bg-green-50 p-2.5">
-                  <IndianRupee className="h-5 w-5 text-green-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-500">Initial Investment</p>
-                  <p className="mt-1 break-words text-xl font-bold tabular-nums text-gray-900 xl:text-2xl">
-                    {formatCurrency(summary?.initial_investment || 0)}
-                  </p>
-                  <p className="text-xs text-gray-500">Capital investment</p>
-                </div>
-                <div className="shrink-0 rounded-lg bg-amber-50 p-2.5">
-                  <Landmark className="h-5 w-5 text-amber-700" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-500">Bank Accounts</p>
-                  <p className="mt-1 text-xl font-bold tabular-nums text-gray-900 xl:text-2xl">
-                    {summary?.bank_accounts.length || 0}
-                  </p>
-                </div>
-                <div className="shrink-0 rounded-lg bg-purple-50 p-2.5">
-                  <Building2 className="h-5 w-5 text-purple-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card
-            className="cursor-pointer transition-colors hover:border-orange-300"
+        <div id="cash-bank-stats" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <SummaryStat
+            label="Total Balance"
+            icon={IndianRupee}
+            value={formatCurrency(summary?.total_balance || 0)}
+            hint={periodActive ? `Net ${formatSigned(netChangeInPeriod)} in period` : undefined}
+          />
+          <SummaryStat
+            tone="success"
+            label="Cash in-hand"
+            icon={IndianRupee}
+            value={formatCurrency(summary?.cash_in_hand || 0)}
+            hint={periodActive ? `Net ${formatSigned(summary?.cash_net_change || 0)} in period` : undefined}
+          />
+          <SummaryStat
+            label="Cash in Bank"
+            icon={Banknote}
+            value={formatCurrency(cashInBank)}
+            hint={periodActive ? `Net ${formatSigned(summary?.bank_net_change || 0)} in period` : undefined}
+          />
+          <SummaryStat tone="warning" label="Initial Investment" icon={Landmark} value={formatCurrency(summary?.initial_investment || 0)} hint="Capital investment" />
+          <SummaryStat label="Bank Accounts" icon={Building2} value={summary?.bank_accounts.length || 0} />
+          <div
+            className="cursor-pointer transition-shadow hover:shadow-md"
             onClick={() => {
               setActiveTab('transactions')
               setFilterUnlinked(true)
             }}
           >
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium leading-snug text-gray-500">Unlinked Transactions</p>
-                  <p className="mt-1 text-xl font-bold tabular-nums text-gray-900 xl:text-2xl">
-                    {summary?.unlinked_count || 0}
-                  </p>
-                  <p className="break-words text-xs text-gray-500">
-                    {formatCurrency(summary?.unlinked_amount || 0)}
-                  </p>
-                </div>
-                <div className="shrink-0 rounded-lg bg-orange-50 p-2.5">
-                  <Filter className="h-5 w-5 text-orange-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            <SummaryStat
+              tone="warning"
+              label="Unlinked Transactions"
+              icon={Filter}
+              value={summary?.unlinked_count || 0}
+              hint={formatCurrency(summary?.unlinked_amount || 0)}
+            />
+          </div>
         </div>
         )}
 
@@ -946,13 +1003,13 @@ export default function CashBankPage() {
                     <Input
                       type="date"
                       value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
+                      onChange={(e) => applyDateRange(e.target.value, endDate)}
                       className="w-auto"
                     />
                     <Input
                       type="date"
                       value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
+                      onChange={(e) => applyDateRange(startDate, e.target.value)}
                       className="w-auto"
                     />
                   </div>

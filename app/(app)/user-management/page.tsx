@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { useStore } from '@/hooks/useStore'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -782,46 +783,10 @@ export default function UserManagementPage() {
           {isSA && (
             <TabsContent value="overview" className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                      Total users
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-2xl font-bold">
-                    {overview?.total_users ?? 0}
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                      Roles defined
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-2xl font-bold">
-                    {overview?.roles_defined ?? 0}
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                      Activity today
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-2xl font-bold">
-                    {overview?.activity_today ?? 0}
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                      2FA enabled
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-2xl font-bold">
-                    {overview?.two_factor_enabled ?? 0}
-                  </CardContent>
-                </Card>
+                <SummaryStat label="Total users" value={overview?.total_users ?? 0} />
+                <SummaryStat label="Roles defined" value={overview?.roles_defined ?? 0} />
+                <SummaryStat label="Activity today" value={overview?.activity_today ?? 0} />
+                <SummaryStat label="2FA enabled" value={overview?.two_factor_enabled ?? 0} />
               </div>
               <Card>
                 <CardHeader>

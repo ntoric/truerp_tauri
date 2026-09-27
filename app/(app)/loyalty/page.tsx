@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -199,34 +200,10 @@ export default function LoyaltyPage() {
 
         {stats && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-sm text-gray-500">Members with points</p>
-                <p className="text-2xl font-bold">{stats.total_members}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-sm text-gray-500">Outstanding points</p>
-                <p className="text-2xl font-bold">{stats.total_points_outstanding.toLocaleString()}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-sm text-gray-500">Earned this month</p>
-                <p className="text-2xl font-bold text-green-600">
-                  +{stats.points_earned_this_month.toLocaleString()}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-sm text-gray-500">Redeemed this month</p>
-                <p className="text-2xl font-bold text-amber-600">
-                  {stats.points_redeemed_this_month.toLocaleString()}
-                </p>
-              </CardContent>
-            </Card>
+            <SummaryStat label="Members with points" value={stats.total_members} />
+            <SummaryStat label="Outstanding points" value={stats.total_points_outstanding.toLocaleString()} />
+            <SummaryStat tone="success" label="Earned this month" value={`+${stats.points_earned_this_month.toLocaleString()}`} />
+            <SummaryStat tone="warning" label="Redeemed this month" value={stats.points_redeemed_this_month.toLocaleString()} />
           </div>
         )}
 

@@ -1,5 +1,6 @@
 import { LucideIcon } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import SummaryStat from '@/components/widgets/SummaryStat'
 import { cn } from '@/lib/utils'
 
 export function ReportStatGrid({
@@ -19,20 +20,14 @@ export function ReportStatGrid({
   return (
     <div className={cn('grid grid-cols-1 gap-3', colClass)}>
       {stats.map((s) => (
-        <div
+        <SummaryStat
           key={s.label}
-          className={cn(
-            'rounded-lg border p-3',
-            s.tone === 'success' && 'border-green-200 bg-green-50/50',
-            s.tone === 'warning' && 'border-amber-200 bg-amber-50/50',
-            s.tone === 'danger' && 'border-red-200 bg-red-50/50',
-            (!s.tone || s.tone === 'default') && 'bg-muted/30'
-          )}
-        >
-          <p className="text-xs font-medium text-gray-500">{s.label}</p>
-          <p className="mt-1 text-lg font-bold text-gray-900">{s.value}</p>
-          {s.hint && <p className="mt-0.5 text-xs text-gray-500">{s.hint}</p>}
-        </div>
+          size="sm"
+          label={s.label}
+          value={s.value}
+          hint={s.hint}
+          tone={s.tone}
+        />
       ))}
     </div>
   )
@@ -58,7 +53,7 @@ export function ReportPanel({
       <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <CardTitle className="flex items-center gap-2 text-base">
-            {Icon && <Icon className="h-5 w-5 text-blue-600" />}
+            {Icon && <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#111111] text-white"><Icon className="h-4 w-4" /></span>}
             {title}
           </CardTitle>
           {description && <CardDescription>{description}</CardDescription>}
