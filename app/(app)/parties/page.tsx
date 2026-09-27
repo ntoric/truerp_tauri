@@ -784,13 +784,13 @@ export default function PartiesPage() {
                           <div className="flex items-center gap-1">
                             {p.balance > 0 ? (
                               <>
-                                <ArrowUp className="h-4 w-4 text-red-500" />
-                                <span className="font-medium text-red-600">{formatCurrency(p.balance)}</span>
+                                <ArrowDown className="h-4 w-4 text-green-500" />
+                                <span className="font-medium text-green-600">{formatCurrency(p.balance)}</span>
                               </>
                             ) : p.balance < 0 ? (
                               <>
-                                <ArrowDown className="h-4 w-4 text-green-500" />
-                                <span className="font-medium text-green-600">{formatCurrency(Math.abs(p.balance))}</span>
+                                <ArrowUp className="h-4 w-4 text-red-500" />
+                                <span className="font-medium text-red-600">{formatCurrency(Math.abs(p.balance))}</span>
                               </>
                             ) : (
                               <span className="text-gray-600">{formatCurrency(0)}</span>

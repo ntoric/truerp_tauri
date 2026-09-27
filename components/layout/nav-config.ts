@@ -33,6 +33,8 @@ import {
   Globe,
   Store,
   Clock,
+  ClipboardList,
+  HandCoins,
 } from 'lucide-react'
 import { canManageUsers, isSuperAdmin } from '@/lib/roles'
 
@@ -104,6 +106,7 @@ export const navItems: NavItem[] = [
     icon: TrendingUp,
     children: [
       { name: 'Invoices', href: '/invoices', icon: FileText },
+      { name: 'Estimates', href: '/estimates', icon: ClipboardList },
       { name: 'Delivery Challans', href: '/delivery-challans', icon: Truck },
       { name: 'Sales Return', href: '/sales-returns', icon: RotateCcw },
       { name: 'Credit Notes', href: '/credit-notes', icon: FileMinus },
@@ -112,6 +115,7 @@ export const navItems: NavItem[] = [
   },
   { name: 'Expenses', href: '/expenses', icon: Receipt },
   { name: 'Cash & Bank', href: '/cash-bank', icon: IndianRupee },
+  { name: 'Profit Distribution', href: '/profit-distribution', icon: HandCoins },
   { name: 'Accounting', href: '/accounting', icon: Building2 },
   {
     name: 'Reports',

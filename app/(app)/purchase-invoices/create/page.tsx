@@ -31,9 +31,12 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { ProductCombobox } from '@/components/ui/ProductCombobox'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
-import { PAYMENT_METHODS, isInitialInvestmentMethod } from '@/lib/paymentSplits'
-import { useBankAccounts } from '@/hooks/useBankAccounts'
+import { INITIAL_INVESTMENT_METHOD, isInitialInvestmentMethod } from '@/lib/paymentSplits'
+import {
+  CASH_IN_HAND_ACCOUNT,
+  bankAccountIdForApi,
+  useBankAccounts,
+} from '@/hooks/useBankAccounts'
 import ItemsEmptyState, { type PastedItemRow } from '@/components/ItemsEmptyState'
 
 interface Vendor {
@@ -171,9 +174,8 @@ export default function CreatePurchaseInvoicePage() {
   const [autoRoundOff, setAutoRoundOff] = useState(true)
   const [amountPaid, setAmountPaid] = useState(0)
   const [amountPaidEdited, setAmountPaidEdited] = useState(false)
-  const [paidFrom, setPaidFrom] = useState('cash')
-  const { accounts: bankAccounts } = useBankAccounts()
-  const { getDepositHint } = usePaymentMethodMappings()
+  const [paidFrom, setPaidFrom] = useState(CASH_IN_HAND_ACCOUNT)
+  const { accounts: bankAccounts, loading: bankAccountsLoading } = useBankAccounts()
   const [signature, setSignature] = useState('')
   const [items, setItems] = useState<PurchaseBillItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -239,6 +241,15 @@ export default function CreatePurchaseInvoicePage() {
   useEffect(() => {
     fetchData()
   }, [])
+
+  useEffect(() => {
+    if (bankAccountsLoading) return
+    setPaidFrom((prev) => {
+      if (prev === CASH_IN_HAND_ACCOUNT || isInitialInvestmentMethod(prev)) return prev
+      if (bankAccounts.some((a) => a.id === prev)) return prev
+      return CASH_IN_HAND_ACCOUNT
+    })
+  }, [bankAccounts, bankAccountsLoading])
 
   // Listen for bottom menubar action buttons (purchase invoice create page only)
   useEffect(() => {
@@ -455,7 +466,11 @@ export default function CreatePurchaseInvoicePage() {
         const loadedTotal = bill.total_amount || 0
         setAmountPaid(loadedPaid)
         setAmountPaidEdited(loadedPaid + 0.01 < loadedTotal)
-        setPaidFrom(bill.payment_mode || 'cash')
+        setPaidFrom(
+          isInitialInvestmentMethod(bill.payment_mode)
+            ? INITIAL_INVESTMENT_METHOD
+            : bill.bank_account_id || CASH_IN_HAND_ACCOUNT
+        )
         setBillStatus(bill.status || '')
         setSavedBillId(bill.id || editId)
         savedBillIdRef.current = bill.id || editId
@@ -1222,6 +1237,16 @@ export default function CreatePurchaseInvoicePage() {
     }
   }
 
+  const paidFromPayload = () => {
+    if (isInitialInvestmentMethod(paidFrom)) {
+      return { payment_mode: INITIAL_INVESTMENT_METHOD, bank_account_id: null }
+    }
+    return {
+      payment_mode: paidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
+      bank_account_id: bankAccountIdForApi(paidFrom),
+    }
+  }
+
   const buildBillPayload = (asDraft: boolean, sourceItems: PurchaseBillItem[]) => {
     const status = asDraft
       ? 'draft'
@@ -1238,8 +1263,7 @@ export default function CreatePurchaseInvoicePage() {
         total_amount: totalAmount,
         paid_amount: effectiveAmountPaid,
         balance_due: balance,
-        payment_mode: paidFrom,
-        bank_account_id: null,
+        ...paidFromPayload(),
         status,
         notes,
         terms,
@@ -1305,8 +1329,7 @@ export default function CreatePurchaseInvoicePage() {
           total_amount: totalAmount,
           paid_amount: effectiveAmountPaid,
           balance_due: balance,
-          payment_mode: paidFrom,
-          bank_account_id: null,
+          ...paidFromPayload(),
           status: 'draft',
           notes,
           terms,
@@ -2204,23 +2227,38 @@ export default function CreatePurchaseInvoicePage() {
                 </div>
                 <div className="min-w-0 space-y-2">
                   <Label>Paid From</Label>
-                  <select
-                    value={paidFrom}
-                    onChange={(e) => setPaidFrom(e.target.value)}
-                    className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
-                  >
-                    {PAYMENT_METHODS.map((method) => (
-                      <option key={method.value} value={method.value}>
-                        {method.label}
-                      </option>
-                    ))}
-                  </select>
+                  {bankAccountsLoading ? (
+                    <div className="h-8 animate-pulse rounded-md bg-gray-200" />
+                  ) : (
+                    <select
+                      value={paidFrom}
+                      onChange={(e) => setPaidFrom(e.target.value)}
+                      className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
+                    >
+                      <option value={CASH_IN_HAND_ACCOUNT}>Cash in-hand</option>
+                      {bankAccounts
+                        .filter((a) => a.is_active || a.id === paidFrom)
+                        .map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_name}
+                            {account.bank_name ? ` (${account.bank_name})` : ''}
+                            {' — '}
+                            {formatCurrency(account.balance)}
+                          </option>
+                        ))}
+                      <option value={INITIAL_INVESTMENT_METHOD}>Initial Investment</option>
+                    </select>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     {effectiveAmountPaid > 0
                       ? isInitialInvestmentMethod(paidFrom)
                         ? `${formatCurrency(effectiveAmountPaid)} will be recorded as owner's capital (Initial Investment) and will not affect cash or bank balances.`
-                        : `${formatCurrency(effectiveAmountPaid)} will be deducted from ${getDepositHint(paidFrom, bankAccounts)} (configure under Cash & Bank → Payment method accounts).`
-                      : 'Select Initial Investment for opening stock so cash in-hand is not reduced, or choose another method to pay from.'}
+                        : `${formatCurrency(effectiveAmountPaid)} will be deducted from ${
+                            paidFrom === CASH_IN_HAND_ACCOUNT
+                              ? 'Cash in-hand'
+                              : bankAccounts.find((a) => a.id === paidFrom)?.account_name || 'the selected account'
+                          }.`
+                      : 'Select Initial Investment for opening stock so cash in-hand is not reduced, or choose the account to pay from.'}
                   </p>
                 </div>
                 <div className="min-w-0 space-y-2">

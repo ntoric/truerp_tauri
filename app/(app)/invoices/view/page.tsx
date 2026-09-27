@@ -9,7 +9,7 @@ import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter, Gift } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter, Gift, ExternalLink } from 'lucide-react'
 import ThermalPrintModal from '@/components/ThermalPrintModal'
 import InvoiceAttachments from '@/components/InvoiceAttachments'
 import InvoiceStatusTracker from '@/components/InvoiceStatusTracker'
@@ -60,12 +60,33 @@ interface Invoice {
   total_amount: number
   is_inter_state: boolean
   notes: string
+  source_url?: string
   custom_fields?: string
   pdf_template?: string
   items: InvoiceItem[]
   loyalty_points_earned?: number
   loyalty_points_redeemed?: number
   loyalty_discount?: number
+}
+
+// Migrated invoices used to carry the myBillBook source link inside Notes as
+// an "Invoice link: <url>" segment (it now lives in invoice.source_url). Split
+// it out so it renders as a link rather than note text even for rows that
+// predate the column.
+const INVOICE_LINK_PREFIX = 'Invoice link: '
+
+function splitInvoiceLink(notes: string): { link: string | null; notes: string } {
+  if (!notes) return { link: null, notes: '' }
+  let link: string | null = null
+  const kept: string[] = []
+  for (const part of notes.split(' | ')) {
+    if (part.startsWith(INVOICE_LINK_PREFIX)) {
+      if (!link) link = part.slice(INVOICE_LINK_PREFIX.length).trim()
+    } else if (part.trim()) {
+      kept.push(part)
+    }
+  }
+  return { link, notes: kept.join(' | ') }
 }
 
 function partyName(invoice: Invoice) {
@@ -167,6 +188,8 @@ function InvoiceViewContent() {
 
   const customValues = parseCustomFieldsFromInvoice(invoice.custom_fields)
   const p = partyDetails(invoice)
+  const { link: notesLink, notes: displayNotes } = splitInvoiceLink(invoice.notes)
+  const sourceUrl = invoice.source_url || notesLink
 
   return (
     <DashboardLayout>
@@ -305,10 +328,26 @@ function InvoiceViewContent() {
                 </div>
               </div>
 
-              {invoice.notes && (
-                <div className="mt-8 border-t pt-4">
-                  <p className="text-sm font-medium text-gray-500">Notes</p>
-                  <p className="text-sm text-gray-600 mt-1">{invoice.notes}</p>
+              {(displayNotes || sourceUrl) && (
+                <div className="mt-8 border-t pt-4 space-y-2">
+                  {sourceUrl && (
+                    <p className="text-sm">
+                      <a
+                        href={sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center font-medium text-blue-700 hover:underline"
+                      >
+                        <ExternalLink className="mr-1 h-4 w-4" /> Open myBillBook link
+                      </a>
+                    </p>
+                  )}
+                  {displayNotes && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Notes</p>
+                      <p className="text-sm text-gray-600 mt-1">{displayNotes}</p>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -19,7 +19,7 @@ export const STORE_RESET_SCOPES = [
   {
     id: 'sales',
     label: 'Sales',
-    description: 'Invoices, payments in, sales returns, credit notes, delivery challans',
+    description: 'Invoices, payments in, sales returns, credit notes, delivery challans, quotations',
   },
   {
     id: 'purchases',
@@ -64,7 +64,7 @@ export const STORE_RESET_SCOPES = [
   {
     id: 'settings',
     label: 'Settings & notifications',
-    description: 'Print settings, reminders, loyalty, portal access, media, drafts',
+    description: 'Print settings, reminders, loyalty, portal access, media, drafts, marketing campaigns',
   },
   {
     id: 'audit',

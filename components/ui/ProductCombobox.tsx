@@ -24,9 +24,13 @@ interface ProductComboboxProps {
   placeholder?: string
   className?: string
   disabled?: boolean
+  /** Text shown when no product matches `value` (e.g. custom/pasted item names). */
+  displayLabel?: string
+  /** Which price to show beside each option. */
+  priceField?: 'sale_price' | 'purchase_price'
 }
 
-export function ProductCombobox({
+export const ProductCombobox = React.forwardRef<HTMLInputElement, ProductComboboxProps>(function ProductCombobox({
   products,
   value,
   onChange,
@@ -35,11 +39,13 @@ export function ProductCombobox({
   placeholder = 'Search item…',
   className,
   disabled = false,
-}: ProductComboboxProps) {
+  displayLabel,
+  priceField = 'purchase_price',
+}, forwardedRef) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
   const [highlightIndex, setHighlightIndex] = React.useState(0)
-  const inputRef = React.useRef<HTMLInputElement>(null)
+  const inputRef = React.useRef<HTMLInputElement | null>(null)
   const containerRef = React.useRef<HTMLDivElement>(null)
   const [dropdownStyle, setDropdownStyle] = React.useState<React.CSSProperties>({})
 
@@ -155,7 +161,13 @@ export function ProductCombobox({
     }
   }
 
-  const displayValue = open ? query : selected?.name ?? ''
+  const setInputRefs = (el: HTMLInputElement | null) => {
+    inputRef.current = el
+    if (typeof forwardedRef === 'function') forwardedRef(el)
+    else if (forwardedRef) forwardedRef.current = el
+  }
+
+  const displayValue = open ? query : selected?.name ?? displayLabel ?? ''
   const typedName = query.trim()
 
   return (
@@ -163,7 +175,7 @@ export function ProductCombobox({
       <div className="relative flex h-8 w-full min-w-0 items-center rounded-md border border-input bg-background">
         <Search className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
         <input
-          ref={inputRef}
+          ref={setInputRefs}
           type="text"
           disabled={disabled}
           value={displayValue}
@@ -223,7 +235,7 @@ export function ProductCombobox({
                     )}
                   </div>
                   <div className="shrink-0 text-right text-xs text-muted-foreground">
-                    <div>{formatCurrency(product.purchase_price)}</div>
+                    <div>{formatCurrency(priceField === 'sale_price' ? product.sale_price : product.purchase_price)}</div>
                     <div>{product.stock_qty} {product.unit}</div>
                   </div>
                 </button>
@@ -250,4 +262,4 @@ export function ProductCombobox({
       )}
     </div>
   )
-}
+})

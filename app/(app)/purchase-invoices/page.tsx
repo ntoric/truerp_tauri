@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,10 +17,11 @@ import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate, asArray } from '@/lib/utils'
 import { accountingExportDateStamp, downloadBlob, downloadCsv, rowsToCsv } from '@/lib/accountingExport'
 import { runWithExportProgress } from '@/lib/exportProgress'
-import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2, Package, BarChart3, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Edit, X, Trash2, Printer, Eye, Loader2, Package, BarChart3, ChevronUp, ChevronDown, ExternalLink, FileText } from 'lucide-react'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import JSZip from 'jszip'
 import { notifyError, notifySuccess } from '@/lib/notify'
+import { isSuperAdmin } from '@/lib/roles'
 import { printHtmlDocument } from '@/lib/printDocument'
 import { printBarcodeLabels, type BarcodeLabelsPayload } from '@/lib/barcodeLabelPrint'
 import { usePagination } from '@/hooks/usePagination'
@@ -63,6 +64,8 @@ interface PurchaseBill {
   bill_date: string
   due_date?: string
   balance_due: number
+  source_url?: string
+  source_html_url?: string
   items?: Array<{
     id: string
     description: string
@@ -80,6 +83,8 @@ interface PurchaseBillStats {
 
 export default function PurchaseInvoicesPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { user } = useAuth()
+  const canMigrate = isSuperAdmin(user?.role)
   const [bills, setBills] = useState<PurchaseBill[]>([])
   const [stats, setStats] = useState<PurchaseBillStats>({ total_purchase: 0, paid: 0, unpaid: 0 })
   const [showStats, setShowStats] = useState(false)
@@ -385,6 +390,96 @@ export default function PurchaseInvoicesPage() {
       fetchStats()
     } catch (err) {
       console.error(err)
+    }
+  }
+
+  const handleDownloadSource = async (bill: PurchaseBill) => {
+    if (!bill.source_url) {
+      notifyError('This purchase invoice has no source link')
+      return
+    }
+    // Single-bill download: reuse the bulk endpoint with one id so the backend
+    // renders the source page to PDF via headless Chromium and returns a ZIP.
+    try {
+      const res = await apiFetch(`/purchase/bills/download-source`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [bill.id] }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to download source invoice')
+      }
+      const blob = await res.blob()
+      if (!blob.size) throw new Error('Source invoice download was empty')
+      const name = `source_${(bill.bill_number || bill.id).replace(/[^a-zA-Z0-9-_]/g, '_')}.zip`
+      await downloadBlob(name, blob, { skipProgress: true })
+      notifySuccess('Source invoice downloaded')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to download source invoice')
+    }
+  }
+
+  const handleBulkDownloadSource = async () => {
+    const selected = filteredBills.filter((b) => selectedBills.has(b.id) && b.source_url)
+    if (selected.length === 0) {
+      notifyError('No selected purchase invoices have a source link')
+      return
+    }
+    if (exporting) return
+    setExporting(true)
+    try {
+      await runWithExportProgress('Rendering source invoices to PDF', async (update) => {
+        update(10, 'Requesting PDFs from backend…')
+        const res = await apiFetch(`/purchase/bills/download-source`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: selected.map((b) => b.id) }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.error || 'Failed to download source invoices')
+        }
+        update(70, 'Saving ZIP…')
+        const blob = await res.blob()
+        if (!blob.size) throw new Error('Source invoice download was empty')
+        await downloadBlob(`purchase-source-invoices_${accountingExportDateStamp()}.zip`, blob, {
+          skipProgress: true,
+        })
+        update(100, 'Saved')
+      })
+      notifySuccess(`Downloaded source invoices for ${selected.length} purchase invoice${selected.length === 1 ? '' : 's'}`)
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to download source invoices')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleOpenSource = (bill: PurchaseBill) => {
+    const url = bill.source_html_url || bill.source_url
+    if (!url) {
+      notifyError('This purchase invoice has no source link')
+      return
+    }
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  const handleViewInvoice = async (bill: PurchaseBill) => {
+    try {
+      const res = await apiFetch(`/purchase/bills/${bill.id}/invoice-file`)
+      const data = await res.json()
+      if (data.found) {
+        if (data.source === 'local' && data.file_url) {
+          window.open(data.file_url, '_blank', 'noopener,noreferrer')
+        } else if (data.source === 'mybillbook' && data.source_url) {
+          window.open(data.source_url, '_blank', 'noopener,noreferrer')
+        }
+      } else {
+        notifyError(data.error || 'No invoice file found for this purchase bill.')
+      }
+    } catch {
+      notifyError('Failed to check for invoice file.')
     }
   }
 
@@ -766,6 +861,22 @@ export default function PurchaseInvoicesPage() {
                       <Button variant="outline" size="sm" onClick={handleBulkMarkPaid}>
                         Mark as Paid
                       </Button>
+                      {canMigrate && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleBulkDownloadSource()}
+                          disabled={exporting}
+                          title="Download the original source invoices (rendered to PDF) for selected bills"
+                        >
+                          {exporting ? (
+                            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Download className="mr-1 h-3.5 w-3.5" />
+                          )}
+                          Download Source
+                        </Button>
+                      )}
                       <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDelete}>
                         <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
                       </Button>
@@ -843,6 +954,22 @@ export default function PurchaseInvoicesPage() {
                                 <Printer className="mr-2 h-4 w-4" />
                                 Print Labels
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleViewInvoice(bill)}>
+                                <FileText className="mr-2 h-4 w-4" />
+                                View Invoice
+                              </DropdownMenuItem>
+                              {bill.source_url && (
+                                <DropdownMenuItem onClick={() => handleOpenSource(bill)}>
+                                  <ExternalLink className="mr-2 h-4 w-4" />
+                                  Open Source
+                                </DropdownMenuItem>
+                              )}
+                              {bill.source_url && canMigrate && (
+                                <DropdownMenuItem onClick={() => void handleDownloadSource(bill)}>
+                                  <Download className="mr-2 h-4 w-4" />
+                                  Download Source
+                                </DropdownMenuItem>
+                              )}
                               {bill.status !== 'paid' && (
                                 <DropdownMenuItem onClick={() => handleMarkPaid(bill.id)}>
                                   <X className="mr-2 h-4 w-4" />

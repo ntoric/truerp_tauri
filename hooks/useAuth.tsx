@@ -233,7 +233,12 @@ export async function apiFetch(path: string, options: RequestInit & { timeoutMs?
   const token = getAuthToken()
   const storeId = getActiveStoreId()
   const isFormData = options.body instanceof FormData
-  const hasContentType = options.headers && 'Content-Type' in (options.headers as Record<string, string>)
+  const providedHeaders = (options.headers as Record<string, string>) || {}
+  const hasContentType = 'Content-Type' in providedHeaders
+  // Allow the caller to override the active store for a single request (e.g.
+  // the migration tab imports into a selected store without switching globally).
+  const hasStoreOverride =
+    'X-Store-ID' in providedHeaders || 'x-store-id' in providedHeaders
   const { timeoutMs = 8000, signal, ...rest } = options
   const res = await fetch(`${API_BASE}${path}`, {
     ...rest,
@@ -241,7 +246,7 @@ export async function apiFetch(path: string, options: RequestInit & { timeoutMs?
     headers: {
       ...(rest.headers || {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(storeId ? { 'X-Store-ID': storeId } : {}),
+      ...(storeId && !hasStoreOverride ? { 'X-Store-ID': storeId } : {}),
       ...(!isFormData && !hasContentType ? { 'Content-Type': 'application/json' } : {}),
     },
   })

@@ -47,6 +47,16 @@ import { isInitialInvestmentMethod } from '@/lib/paymentSplits'
 const CASH_IN_HAND_VALUE = 'cash'
 const OWNER_EQUITY_VALUE = 'owner_equity'
 
+const TRANSACTION_TYPE_OPTIONS = [
+  { value: 'add', label: 'Add' },
+  { value: 'reduce', label: 'Reduce' },
+  { value: 'transfer_in', label: 'Transfer In' },
+  { value: 'transfer_out', label: 'Transfer Out' },
+  { value: 'expense', label: 'Expense' },
+  { value: 'payroll', label: 'Payroll' },
+  { value: 'profit_distribution', label: 'Profit Distribution' },
+]
+
 function accountIdForApi(selected: string): string | null {
   if (!selected || selected === CASH_IN_HAND_VALUE || selected === OWNER_EQUITY_VALUE) return null
   return selected
@@ -99,6 +109,7 @@ export default function CashBankPage() {
   const [showTransfer, setShowTransfer] = useState(false)
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [filterUnlinked, setFilterUnlinked] = useState(false)
+  const [filterType, setFilterType] = useState('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [addMoneyAccountId, setAddMoneyAccountId] = useState(CASH_IN_HAND_VALUE)
@@ -126,19 +137,19 @@ export default function CashBankPage() {
     if (!authLoading && user) {
       fetchData()
     }
-  }, [authLoading, user, filterUnlinked, startDate, endDate])
+  }, [authLoading, user, filterUnlinked, filterType, startDate, endDate])
 
   const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(transactions)
 
   useEffect(() => {
     resetPage()
-  }, [filterUnlinked, startDate, endDate])
+  }, [filterUnlinked, filterType, startDate, endDate])
 
   const fetchData = async () => {
     try {
       const [summaryRes, transRes] = await Promise.all([
         apiFetch('/cash-bank/summary'),
-        apiFetch(`/cash-bank/transactions?unlinked=${filterUnlinked}&start_date=${startDate}&end_date=${endDate}`),
+        apiFetch(`/cash-bank/transactions?unlinked=${filterUnlinked}&transaction_type=${filterType === 'all' ? '' : filterType}&start_date=${startDate}&end_date=${endDate}`),
       ])
       if (summaryRes.ok) setSummary(await summaryRes.json())
       if (transRes.ok) setTransactions(await transRes.json())
@@ -409,6 +420,7 @@ export default function CashBankPage() {
       transfer_out: 'bg-orange-100 text-orange-700',
       payroll: 'bg-violet-100 text-violet-700',
       expense: 'bg-amber-100 text-amber-700',
+      profit_distribution: 'bg-teal-100 text-teal-700',
     }
     return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[type] || 'bg-gray-100 text-gray-700'}`}>{type.replace('_', ' ')}</span>
   }
@@ -856,6 +868,19 @@ export default function CashBankPage() {
                       className="w-auto"
                     />
                   </div>
+                  <Select value={filterType} onValueChange={setFilterType}>
+                    <SelectTrigger className="w-[150px]">
+                      <SelectValue placeholder="Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      {TRANSACTION_TYPE_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Button
                     variant={filterUnlinked ? 'default' : 'outline'}
                     size="sm"
