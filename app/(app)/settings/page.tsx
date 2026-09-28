@@ -49,6 +49,7 @@ interface Business {
   enable_ai_hsn_search: boolean
   enable_ai_bill_parsing: boolean
   gemini_api_key: string
+  allow_negative_stock: boolean
 }
 
 interface InvoiceSettings {
@@ -108,7 +109,8 @@ export default function SettingsPage() {
     name: '', gstin: '', address: '', city: '', state: '', pincode: '',
     phone: '', email: '', bank_name: '', account_number: '', ifsc_code: '', upi_id: '',
     logo_url: '', logo_aspect_ratio: 'square', signature_url: '',
-    enable_ai_hsn_search: false, enable_ai_bill_parsing: false, gemini_api_key: ''
+    enable_ai_hsn_search: false, enable_ai_bill_parsing: false, gemini_api_key: '',
+    allow_negative_stock: false
   })
   
   // Invoice Settings state
@@ -198,6 +200,7 @@ export default function SettingsPage() {
         setBusiness({
           ...data,
           logo_aspect_ratio: normalizeLogoAspectRatio(data.logo_aspect_ratio),
+          allow_negative_stock: data.allow_negative_stock === true,
         })
       }
     } catch (err) {
@@ -754,6 +757,23 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                       <Label htmlFor="upi_id">UPI ID</Label>
                       <Input id="upi_id" value={business.upi_id} onChange={(e) => handleChange('upi_id', e.target.value, setBusiness)} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="allow_negative_stock">Allow billing without stock</Label>
+                        <p className="text-xs text-muted-foreground">
+                          When enabled, POS lets you add and bill items even when stock is zero or below, and stock can go negative.
+                          When disabled, items with zero or negative stock are hidden in POS.
+                        </p>
+                      </div>
+                      <Switch
+                        id="allow_negative_stock"
+                        checked={business.allow_negative_stock}
+                        onCheckedChange={(checked) => handleChange('allow_negative_stock', checked, setBusiness)}
+                      />
                     </div>
                   </div>
 

@@ -32,15 +32,6 @@ export interface ExpenseLine {
   sub_total: number
 }
 
-export interface PayrollLine {
-  id: string
-  payment_number: string
-  staff_name: string
-  date: string
-  payment_mode: string
-  net_salary: number
-}
-
 export interface DailyReport {
   date: string
   business_name: string
@@ -54,8 +45,6 @@ export interface DailyReport {
   sales_returns: DailyReportMetric
   purchase_returns: DailyReportMetric
   profit_distributions?: DailyReportMetric
-  payrolls?: DailyReportMetric
-  payroll_lines?: PayrollLine[]
   expense_lines?: ExpenseLine[]
   payments_by_method?: PaymentMethodTotal[]
   accounts_payable: DailyReportMetric
@@ -127,7 +116,7 @@ const metricRows: { key: keyof DailyReport; label: string; help: string; onlyIfN
   {
     key: 'expenses',
     label: 'Expenses',
-    help: 'Operating expenses recorded in this period, such as rent or utilities. Purchase bills are counted separately.',
+    help: 'Operating expenses recorded in this period, such as rent, utilities or payroll. Purchase bills are counted separately.',
   },
   {
     key: 'payments_in',
@@ -148,12 +137,6 @@ const metricRows: { key: keyof DailyReport; label: string; help: string; onlyIfN
     key: 'profit_distributions',
     label: 'Profit Distribution Deduction',
     help: 'Profit payouts made to partners in this period. Shown as a deduction from cash/bank, not an operating expense — it does not reduce period profit.',
-    onlyIfNonZero: true,
-  },
-  {
-    key: 'payrolls',
-    label: 'Payroll',
-    help: 'Salary payments made to staff in this period, listed per staff member below.',
     onlyIfNonZero: true,
   },
 ]
@@ -228,20 +211,6 @@ function appendExpenseLinesSection(lines: string[], report: DailyReport) {
   lines.push(`Total expenses: ${formatCurrency(report.expenses.total_amount)}`)
 }
 
-function appendPayrollLinesSection(lines: string[], report: DailyReport) {
-  const payrolls = report.payroll_lines ?? []
-  if (payrolls.length === 0) return
-  lines.push('', 'Payroll (per staff payment)', '--------')
-  for (const p of payrolls) {
-    const staff = p.staff_name || '-'
-    const mode = p.payment_mode || '-'
-    lines.push(
-      `${p.payment_number} · ${p.date} · ${staff} · ${mode} · ${formatCurrency(p.net_salary)}`
-    )
-  }
-  lines.push(`Total payroll: ${formatCurrency(report.payrolls?.total_amount ?? 0)}`)
-}
-
 function appendLoyaltySection(lines: string[], report: DailyReport) {
   const loyalty = report.loyalty
   if (!loyalty || !loyalty.enabled) return
@@ -279,7 +248,6 @@ export function buildDailyReportShareText(report: DailyReport, heading = 'Daily 
 
   appendPaymentMethodSection(lines, report)
   appendExpenseLinesSection(lines, report)
-  appendPayrollLinesSection(lines, report)
   appendLoyaltySection(lines, report)
 
   lines.push(
@@ -323,7 +291,6 @@ export function buildPeriodReportShareText(report: PeriodReport): string {
 
   appendPaymentMethodSection(lines, report)
   appendExpenseLinesSection(lines, report)
-  appendPayrollLinesSection(lines, report)
   appendLoyaltySection(lines, report)
 
   lines.push(

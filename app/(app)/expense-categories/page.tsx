@@ -30,13 +30,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Pencil, Trash2, Power, MoreVertical, ArrowLeft } from 'lucide-react'
+import { Plus, Pencil, Trash2, Power, MoreVertical, ArrowLeft, Download, Search } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { cn, formatDate } from '@/lib/utils'
+import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import PageHeaderActions from '@/components/layout/PageHeaderActions'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { notifyError, notifySuccess } from '@/lib/notify'
 
@@ -63,13 +65,26 @@ export default function ExpenseCategoriesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<ExpenseCategory | null>(null)
   const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
   const [formData, setFormData] = useState({ name: '', description: '', is_active: true })
 
   useEffect(() => {
     if (!authLoading && user) fetchCategories()
   }, [authLoading, user])
 
-  const { page, setPage, totalPages, totalItems, paginatedItems, pageSize } = usePagination(categories)
+  const query = search.trim().toLowerCase()
+  const filteredCategories = query
+    ? categories.filter((cat) =>
+        cat.name.toLowerCase().includes(query) ||
+        (cat.description || '').toLowerCase().includes(query)
+      )
+    : categories
+
+  const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(filteredCategories)
+
+  useEffect(() => {
+    resetPage()
+  }, [search])
 
   const fetchCategories = async () => {
     try {
@@ -174,6 +189,32 @@ export default function ExpenseCategoriesPage() {
     }
   }
 
+  const handleExport = async () => {
+    if (filteredCategories.length === 0) {
+      notifyError('No expense categories to export')
+      return
+    }
+    const rows: (string | number)[][] = [
+      ['Name', 'Description', 'Status', 'Created', 'Last Modified'],
+      ...filteredCategories.map((cat) => [
+        cat.name,
+        cat.description || '',
+        cat.is_active ? 'Active' : 'Inactive',
+        cat.created_at ? formatDate(cat.created_at) : '',
+        cat.updated_at ? formatDate(cat.updated_at) : '',
+      ]),
+    ]
+    try {
+      await downloadCsv(`expense_categories_${accountingExportDateStamp()}.csv`, rows, {
+        label: 'Exporting expense categories',
+      })
+      notifySuccess(`Exported ${filteredCategories.length} expense categories`)
+    } catch (err) {
+      console.error(err)
+      notifyError(err instanceof Error ? err.message : 'Failed to export expense categories')
+    }
+  }
+
   if (authLoading || loading) {
     return (
       <DashboardLayout>
@@ -193,15 +234,31 @@ export default function ExpenseCategoriesPage() {
             >
               <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Back to Expenses
             </Link>
-            <h1 className="app-page-title">Expense Categories</h1>
+            <h1 className="app-page-title whitespace-nowrap">Expense Categories</h1>
           </div>
-          <Button onClick={openCreateDialog}>
-            <Plus className="mr-2 h-4 w-4" /> Add Category
-          </Button>
+          <PageHeaderActions>
+            <Button variant="outline" onClick={handleExport} disabled={filteredCategories.length === 0}>
+              <Download className="mr-2 h-4 w-4" /> Export
+            </Button>
+            <Button onClick={openCreateDialog}>
+              <Plus className="mr-2 h-4 w-4" /> Add Category
+            </Button>
+          </PageHeaderActions>
         </div>
 
         <Card>
           <CardContent className="p-0">
+            <div className="border-b p-4">
+              <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Input
+                  placeholder="Search categories..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -254,10 +311,10 @@ export default function ExpenseCategoriesPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {categories.length === 0 && (
+                {filteredCategories.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                      No expense categories found
+                      {categories.length === 0 ? 'No expense categories found' : 'No categories match your search'}
                     </TableCell>
                   </TableRow>
                 )}

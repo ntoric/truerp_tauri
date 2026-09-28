@@ -39,7 +39,6 @@ import {
   type PeriodReport,
   type PaymentMethodTotal,
   type ExpenseLine,
-  type PayrollLine,
   type LoyaltyReportSummary,
   type DailyReportEmailSettings,
   type ReportEmailPeriod,
@@ -68,7 +67,6 @@ import {
   ScrollText,
   Receipt,
   Gift,
-  Users,
   type LucideIcon,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -185,7 +183,7 @@ function PaymentsByMethodTable({ report }: { report: DailyReport }) {
         <TermHelp
           label="Payments by method"
           hideLabel
-          help="Money received and paid for each payment method in this period. Cash, UPI, Card, Bank Transfer, and Cheque are always listed."
+          help="Money received for each payment method in this period. Cash, UPI, Card, Bank Transfer, and Cheque are always listed."
         />
       </div>
       <div className="table-scroll">
@@ -194,7 +192,6 @@ function PaymentsByMethodTable({ report }: { report: DailyReport }) {
             <tr>
               <th className="px-4 py-3 font-medium">Method</th>
               <th className="px-4 py-3 font-medium text-right">Received</th>
-              <th className="px-4 py-3 font-medium text-right">Paid</th>
             </tr>
           </thead>
           <tbody>
@@ -222,12 +219,6 @@ function PaymentsByMethodTable({ report }: { report: DailyReport }) {
                     </p>
                     <p className="text-xs text-gray-500">{row.in.count} txn</p>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <p className="font-semibold text-amber-800">
-                      {formatCurrency(row.out.total_amount)}
-                    </p>
-                    <p className="text-xs text-gray-500">{row.out.count} txn</p>
-                  </td>
                 </tr>
               )
             })}
@@ -238,12 +229,6 @@ function PaymentsByMethodTable({ report }: { report: DailyReport }) {
                   {formatCurrency(report.payments_in.total_amount)}
                 </p>
                 <p className="text-xs text-blue-800">{report.payments_in.count} txn</p>
-              </td>
-              <td className="px-4 py-3 text-right">
-                <p className="font-semibold text-amber-900">
-                  {formatCurrency(report.payments_out.total_amount)}
-                </p>
-                <p className="text-xs text-blue-800">{report.payments_out.count} txn</p>
               </td>
             </tr>
           </tbody>
@@ -341,71 +326,6 @@ function ExpensesTable({ report }: { report: DailyReport }) {
               </td>
               <td className="px-4 py-3 text-right font-semibold text-amber-900">
                 {formatCurrency(report.expenses.total_amount)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function PayrollTable({ report }: { report: DailyReport }) {
-  const payrolls = report.payroll_lines ?? []
-  if (payrolls.length === 0) return null
-
-  const methodLabel = (mode: string): string => {
-    if (!mode) return '-'
-    const match = (report.payments_by_method ?? []).find((m) => m.method === mode)
-    if (match) return match.label
-    return mode
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-  }
-
-  return (
-    <div className="mt-6 overflow-hidden rounded-lg border border-green-200">
-      <div className="flex items-center gap-2 border-b border-green-200 bg-green-50 px-4 py-3">
-        <Users className="h-4 w-4 text-green-700" />
-        <h3 className="text-sm font-semibold text-green-900">Payroll</h3>
-        <span className="text-xs text-green-700">
-          {payrolls.length} {payrolls.length === 1 ? 'payment' : 'payments'} ·{' '}
-          {formatCurrency(report.payrolls?.total_amount ?? 0)}
-        </span>
-      </div>
-      <div className="table-scroll">
-        <table className="w-full text-sm">
-          <thead className="bg-green-50/60 text-left text-green-900">
-            <tr>
-              <th className="px-4 py-3 font-medium">Payment No.</th>
-              <th className="px-4 py-3 font-medium">Date</th>
-              <th className="px-4 py-3 font-medium">Staff</th>
-              <th className="px-4 py-3 font-medium">Mode</th>
-              <th className="px-4 py-3 font-medium text-right">Net Salary</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payrolls.map((line: PayrollLine) => (
-              <tr key={line.id} className="border-t border-green-100">
-                <td className="px-4 py-3 font-medium text-gray-900">
-                  {line.payment_number || '-'}
-                </td>
-                <td className="px-4 py-3 text-gray-600">
-                  {line.date ? formatDate(line.date + 'T00:00:00') : '-'}
-                </td>
-                <td className="px-4 py-3 text-gray-900">{line.staff_name || '-'}</td>
-                <td className="px-4 py-3 text-gray-700">{methodLabel(line.payment_mode)}</td>
-                <td className="px-4 py-3 text-right font-semibold text-green-800">
-                  {formatCurrency(line.net_salary)}
-                </td>
-              </tr>
-            ))}
-            <tr className="border-t border-green-200 bg-green-50">
-              <td colSpan={4} className="px-4 py-3 font-semibold text-green-900">
-                Total ({payrolls.length} {payrolls.length === 1 ? 'payment' : 'payments'})
-              </td>
-              <td className="px-4 py-3 text-right font-semibold text-green-900">
-                {formatCurrency(report.payrolls?.total_amount ?? 0)}
               </td>
             </tr>
           </tbody>
@@ -630,8 +550,6 @@ function ReportSummaryBody({
 
       <ExpensesTable report={report} />
 
-      <PayrollTable report={report} />
-
       <LoyaltySummaryTable report={report} />
 
       <p className="mt-4 text-xs text-gray-500">
@@ -640,7 +558,7 @@ function ReportSummaryBody({
         notes. Purchase expense = full bill total; Payment out = amount paid; Accounts payable =
         unpaid balance. Profit distributions are paid out to partners and reduce cash/bank and net
         cash flow, but are not expenses and do not reduce period profit. A separate Payments by
-        method table lists Cash, UPI, Card, Bank Transfer, and Cheque received vs paid. Cancelled
+        method table lists Cash, UPI, Card, Bank Transfer, and Cheque received. Cancelled
         documents are excluded from counts.
       </p>
     </>

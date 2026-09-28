@@ -29,7 +29,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Pencil, Trash2, FileText, Power, MoreVertical, Download } from 'lucide-react'
+import { Plus, Pencil, Trash2, FileText, Power, MoreVertical, Download, Search } from 'lucide-react'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { Checkbox } from '@/components/ui/checkbox'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -69,6 +69,9 @@ export default function CategoriesPage() {
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set())
   const [formData, setFormData] = useState({ name: '', description: '', is_active: true })
 
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('')
+
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const pageSize = DEFAULT_PAGE_SIZE
@@ -76,12 +79,24 @@ export default function CategoriesPage() {
 
   useEffect(() => {
     if (!authLoading && user) fetchCategories()
-  }, [authLoading, user, page])
+  }, [authLoading, user, page, debouncedSearch])
+
+  // Debounce the search box so each keystroke doesn't hit the API.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim())
+      setPage(1)
+      setSelectedCategories(new Set())
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
   useEffect(() => { if (showDraftsModal && user) fetchDrafts() }, [showDraftsModal, user])
 
   const fetchCategories = async () => {
     try {
-      const res = await apiFetch(`/categories?page=${page}&per_page=${pageSize}`)
+      const params = new URLSearchParams({ page: String(page), per_page: String(pageSize) })
+      if (debouncedSearch) params.append('search', debouncedSearch)
+      const res = await apiFetch(`/categories?${params}`)
       if (res.ok) {
         const data = await res.json()
         // The current page may no longer exist after deletions.
@@ -380,6 +395,17 @@ export default function CategoriesPage() {
             </div>
           )}
           <CardContent className="p-0">
+            <div className="p-4 border-b">
+              <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Search categories..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
             <Table>
               <TableHeader>
                 <TableRow>

@@ -12,6 +12,7 @@ export interface POSReceiptBusiness {
   pincode?: string
   phone?: string
   logo_data_url?: string
+  allow_negative_stock?: boolean
 }
 
 export interface POSReceiptItem {

@@ -48,6 +48,7 @@ interface Payroll {
   deductions: number
   bonus: number
   net_salary: number
+  paid_amount: number
   payment_mode: string
   status: string
   bank_account?: { account_name: string } | null
@@ -225,8 +226,7 @@ export default function StaffDetailPage() {
   }, [attendances])
 
   const totalSalaryPaid = payrolls
-    .filter((p) => p.status === 'paid')
-    .reduce((sum, p) => sum + p.net_salary, 0)
+    .reduce((sum, p) => sum + (p.paid_amount || (p.status === 'paid' ? p.net_salary : 0)), 0)
   const totalAdvancePending = advances.reduce((sum, a) => sum + (a.pending_amount || 0), 0)
 
   if (loading) {
@@ -391,12 +391,23 @@ export default function StaffDetailPage() {
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(p.basic_salary)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums text-red-600">{formatCurrency(p.deductions)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums text-green-600">{formatCurrency(p.bonus)}</TableCell>
-                    <TableCell className="whitespace-nowrap text-right tabular-nums font-semibold">{formatCurrency(p.net_salary)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums font-semibold">
+                      {formatCurrency(p.net_salary)}
+                      {(p.status === 'partial' || p.status === 'pending') && (
+                        <div className="mt-0.5 text-xs font-normal text-gray-500">
+                          Paid {formatCurrency(p.paid_amount || 0)} · Due {formatCurrency(Math.max(0, p.net_salary - (p.paid_amount || 0)))}
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell className="whitespace-nowrap">{formatPaymentMethod(p.payment_mode)}</TableCell>
                     <TableCell>
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          p.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                          p.status === 'paid'
+                            ? 'bg-green-100 text-green-700'
+                            : p.status === 'partial'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-yellow-100 text-yellow-700'
                         }`}
                       >
                         {p.status.toUpperCase()}

@@ -17,6 +17,7 @@ import {
 
 export interface BarcodeLabelItem {
   name: string
+  brand?: string
   barcode: string
   sku?: string
   price: number
@@ -271,34 +272,37 @@ async function renderLabelCanvas(
   const bodySize = Math.max(codeSize + 2, Math.round(height * 0.11))
   const gap = 2
 
-  // 1) Product name — up to 2 wrapped lines, same size as price row
+  // 1) Brand header (business name) — bold, uppercase, single line
   let y = pad
-  ctx.font = `${bodySize}px Arial, Helvetica, sans-serif`
   ctx.textAlign = 'center'
-  const nameLines = wrapTextLines(ctx, item.name || 'Item', contentW, 2)
-  for (const line of nameLines) {
-    ctx.fillText(line, width / 2, y)
-    y += bodySize + 1
+  const brand = (item.brand || '').trim()
+  if (brand) {
+    ctx.font = `bold ${bodySize}px Arial, Helvetica, sans-serif`
+    for (const line of wrapTextLines(ctx, brand.toUpperCase(), contentW, 1)) {
+      ctx.fillText(line, width / 2, y)
+      y += bodySize + 1
+    }
+    y += gap
   }
-  y += gap
+
+  // Pre-wrap the product name (rendered after the barcode) so the barcode gets
+  // every dot of vertical space the actual line count leaves free.
+  ctx.font = `bold ${bodySize}px Arial, Helvetica, sans-serif`
+  const nameLines = wrapTextLines(ctx, (item.name || 'Item').toUpperCase(), contentW, 2)
+  const nameRowH = nameLines.length * (bodySize + 1)
 
   // 2) Barcode (full width) + human-readable code
   const barcodeCode = (item.barcode || '0000000000').trim() || '0000000000'
   const priceRowH = bodySize + gap
   const codeH = codeSize + 1
-  const barcodeMaxH = Math.max(16, height - y - pad - priceRowH - codeH - gap)
-  let moduleW = 2
-  let barcodeUrl = code128DataUrl(barcodeCode, moduleW, barcodeMaxH)
+  const barcodeMaxH = Math.max(16, height - y - pad - priceRowH - nameRowH - codeH - gap)
+  const barcodeUrl = code128DataUrl(barcodeCode, 2, barcodeMaxH)
   try {
-    let img = await loadImage(barcodeUrl)
-    if (img.width > contentW && moduleW > 1) {
-      moduleW = 1
-      barcodeUrl = code128DataUrl(barcodeCode, moduleW, barcodeMaxH)
-      img = await loadImage(barcodeUrl)
-    }
-    const scale = Math.min(contentW / img.width, barcodeMaxH / img.height)
-    const bw = Math.max(1, Math.round(img.width * scale))
-    const bh = Math.max(1, Math.round(img.height * scale))
+    const img = await loadImage(barcodeUrl)
+    // Fixed height for every label: longer codes squash horizontally instead
+    // of shrinking vertically, so all barcodes print at the same height.
+    const bw = contentW
+    const bh = barcodeMaxH
     const bx = Math.floor((width - bw) / 2)
     ctx.drawImage(img, bx, y, bw, bh)
     y += bh + 1
@@ -313,15 +317,25 @@ async function renderLabelCanvas(
     ctx.fillText(line, width / 2, y)
     y += codeSize + 1
   }
+  y += gap
 
-  // 3) MRP left · sale price right — same body size; shrink only if they collide
+  // 3) Product name — centered below the barcode digits, bold uppercase
+  ctx.font = `bold ${bodySize}px Arial, Helvetica, sans-serif`
+  for (const line of nameLines) {
+    ctx.fillText(line, width / 2, y)
+    y += bodySize + 1
+  }
+
+  // 4) MRP left · SP right — same body size; shrink only if they collide
+  // No MRP → print the sale price as MRP; SKU only when there is no price at all.
+  const mrp = item.mrp && item.mrp > 0 ? item.mrp : item.price
   const leftText =
-    item.mrp && item.mrp > 0
-      ? `MRP: ${formatPrice(item.mrp)}`
+    mrp > 0
+      ? `MRP: ${formatPrice(mrp)}`
       : item.sku
         ? `SKU: ${item.sku}`
         : ''
-  const rightText = formatPrice(item.price)
+  const rightText = `SP: ${formatPrice(item.price)}`
   let rowSize = bodySize
   const halfGap = Math.max(4, Math.round(contentW * 0.04))
   const maxSide = Math.floor((contentW - halfGap) / 2)
@@ -413,21 +427,24 @@ function buildLabelsHtmlFallback(payload: BarcodeLabelsPayload): string {
       const name = escapeHtml(item.name || 'Item')
       const code = escapeHtml(barcode)
       const img = code128DataUrl(barcode, 2, barcodeH)
+      const brand = (item.brand || '').trim()
+      const mrpValue = item.mrp && item.mrp > 0 ? item.mrp : Number(item.price || 0)
       const mrp =
-        item.mrp && item.mrp > 0
-          ? `<span class="product-mrp">MRP: ₹${item.mrp.toFixed(2)}</span>`
+        mrpValue > 0
+          ? `<span class="product-mrp">MRP: ₹${mrpValue.toFixed(2)}</span>`
           : item.sku
             ? `<span class="product-sku">SKU: ${escapeHtml(item.sku)}</span>`
             : ''
       return `<div class="label">
-  <div class="product-name">${name}</div>
+  ${brand ? `<div class="label-brand">${escapeHtml(brand)}</div>` : ''}
   <div class="product-barcode">
     ${img ? `<img class="barcode-img" src="${img}" alt="${code}" />` : ''}
     <div class="barcode-text">${code}</div>
   </div>
+  <div class="product-name">${name}</div>
   <div class="price-row">
     ${mrp}
-    <span class="product-price">₹${Number(item.price || 0).toFixed(2)}</span>
+    <span class="product-price">SP: ₹${Number(item.price || 0).toFixed(2)}</span>
   </div>
 </div>`
     })
@@ -440,17 +457,23 @@ html, body { width: ${w}mm; margin: 0; padding: 0; font-family: Arial, Helvetica
 .label {
   width: ${w}mm; height: ${h}mm; max-width: ${w}mm; max-height: ${h}mm;
   padding: 1mm; display: flex; flex-direction: column; align-items: stretch;
-  justify-content: space-between; gap: 0.4mm; overflow: hidden;
+  justify-content: space-between; gap: 0.9mm; overflow: hidden;
   page-break-after: always; break-after: page; page-break-inside: avoid;
 }
 .label:last-child { page-break-after: auto; break-after: auto; }
+.label-brand {
+  font-size: 9px; font-weight: 600; line-height: 1.15; text-align: center;
+  text-transform: uppercase; letter-spacing: 0.2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .product-name {
-  font-size: 9px; font-weight: 400; line-height: 1.15; text-align: center;
+  font-size: 9px; font-weight: 600; line-height: 1.15; text-align: center;
+  text-transform: uppercase;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   overflow: hidden; word-break: break-word; overflow-wrap: anywhere;
 }
-.product-barcode { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
-.product-barcode .barcode-img { max-width: 100%; max-height: ${Math.max(8, h * 0.42)}mm; height: auto; display: block; margin: 0 auto; }
+.product-barcode { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; margin: 0.5mm 0; }
+.product-barcode .barcode-img { flex: 1 1 auto; min-height: 0; width: 100%; display: block; object-fit: fill; }
 .barcode-text {
   font-family: "Courier New", monospace; font-size: 7px; text-align: center;
   width: 100%; word-break: break-all; overflow-wrap: anywhere; white-space: normal;

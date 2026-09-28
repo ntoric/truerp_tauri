@@ -233,10 +233,7 @@ export default function InventoryPage() {
   )
   const dateRangeLabel = useMemo(() => formatDateRangeLabel(dateRange), [dateRange])
   const isDateFilterActive = datePeriod !== 'all' && (datePeriod !== 'custom' || Boolean(customFromDate || customToDate))
-  const hasCustomizedFilters =
-    productSearchQuery.trim().length > 0 ||
-    datePeriod !== 'month' ||
-    (datePeriod === 'custom' && Boolean(customFromDate || customToDate))
+  const hasCustomizedFilters = datePeriod !== 'month'
 
   const entryNeedsBatching = useMemo(() => {
     const selectedItem = inventoryItems.find((item) => item.id === newEntry.selected_item_id)
@@ -853,6 +850,181 @@ export default function InventoryPage() {
     }
   }
 
+  const warehouseName = (id: string) =>
+    warehouses.find((wh) => wh.id === id)?.name || id
+
+  const handleExportBalance = async () => {
+    try {
+      await downloadCsv(
+        `stock_balance_${accountingExportDateStamp()}.csv`,
+        [
+          ['Product', 'SKU', 'Stock Qty', 'Cost Price', 'Value', 'Outlet'],
+          ...filteredBalance.map((item) => [
+            item.product_name,
+            item.sku,
+            item.stock_qty,
+            item.cost_price.toFixed(2),
+            item.value.toFixed(2),
+            item.outlet_name || item.outlet_id,
+          ]),
+        ],
+        { label: 'Exporting stock balance' }
+      )
+      notifySuccess('Stock balance exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export stock balance')
+    }
+  }
+
+  const handleExportEntries = async () => {
+    try {
+      // per_page=0 returns every matching row for the export.
+      const params = new URLSearchParams()
+      if (dateRange.from) params.append('from_date', toYmd(dateRange.from))
+      if (dateRange.to) params.append('to_date', toYmd(dateRange.to))
+      if (entryApprovalFilter !== 'all') params.append('approval_status', entryApprovalFilter)
+      if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      params.append('page', '1')
+      params.append('per_page', '0')
+      const res = await apiFetch(`/inventory/entries?${params.toString()}`, { timeoutMs: 30000 })
+      if (!res.ok) throw new Error('Failed to fetch stock entries')
+      const rows = asArray<StockEntry>(await res.json())
+      await downloadCsv(
+        `stock_entries_${accountingExportDateStamp()}.csv`,
+        [
+          ['Item', 'SKU', 'Type', 'Approval', 'Quantity', 'Cost Price', 'Batch No', 'Item Code', 'Outlet', 'Date', 'Notes'],
+          ...rows.map((entry) => [
+            entry.product?.name || entry.item_name,
+            entry.product?.sku || '',
+            entry.entry_type,
+            entry.approval_status || 'approved',
+            entry.quantity,
+            entry.cost_price.toFixed(2),
+            entry.batch_no || '',
+            entry.item_code || '',
+            entry.outlet_name || entry.outlet_id,
+            new Date(entry.entry_date).toLocaleDateString(),
+            entry.notes || '',
+          ]),
+        ],
+        { label: 'Exporting stock entries' }
+      )
+      notifySuccess('Stock entries exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export stock entries')
+    }
+  }
+
+  const handleExportTransfers = async () => {
+    try {
+      // per_page=0 returns every matching row for the export.
+      const params = new URLSearchParams()
+      if (dateRange.from) params.append('from_date', toYmd(dateRange.from))
+      if (dateRange.to) params.append('to_date', toYmd(dateRange.to))
+      params.append('page', '1')
+      params.append('per_page', '0')
+      const res = await apiFetch(`/inventory/transfers?${params.toString()}`, { timeoutMs: 30000 })
+      if (!res.ok) throw new Error('Failed to fetch stock transfers')
+      const rows = asArray<StockTransfer>(await res.json())
+      await downloadCsv(
+        `stock_transfers_${accountingExportDateStamp()}.csv`,
+        [
+          ['From Outlet', 'To Outlet', 'Status', 'Items', 'Quantity', 'Date'],
+          ...rows.map((transfer) => [
+            transfer.from_outlet_id ? warehouseName(transfer.from_outlet_id) : '-',
+            warehouseName(transfer.to_outlet_id),
+            transfer.status,
+            transfer.total_items,
+            transfer.total_quantity,
+            new Date(transfer.created_at).toLocaleDateString(),
+          ]),
+        ],
+        { label: 'Exporting stock transfers' }
+      )
+      notifySuccess('Stock transfers exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export stock transfers')
+    }
+  }
+
+  const handleExportStocks = async () => {
+    try {
+      // per_page=0 returns every matching row for the export.
+      const params = new URLSearchParams()
+      if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      params.append('page', '1')
+      params.append('per_page', '0')
+      const res = await apiFetch(`/inventory/stocks?${params.toString()}`, { timeoutMs: 30000 })
+      if (!res.ok) throw new Error('Failed to fetch inventory stocks')
+      const rows = asArray<InventoryStock>(await res.json())
+      await downloadCsv(
+        `inventory_stocks_${accountingExportDateStamp()}.csv`,
+        [
+          ['Product', 'SKU', 'Batch', 'Expiry', 'Initial Qty', 'Quantity', 'Reserved', 'Available', 'Avg Cost', 'Outlet', 'Last Updated'],
+          ...rows.map((stock) => [
+            stock.product?.name || '',
+            stock.product?.sku || '',
+            stock.batch_no || '',
+            stock.exp_date ? new Date(stock.exp_date).toLocaleDateString('en-IN') : '',
+            stock.initial_quantity ?? 0,
+            stock.quantity,
+            stock.reserved_qty,
+            stock.available_qty,
+            stock.average_cost.toFixed(2),
+            stock.outlet_name || stock.outlet_id,
+            new Date(stock.last_updated).toLocaleDateString(),
+          ]),
+        ],
+        { label: 'Exporting inventory stocks' }
+      )
+      notifySuccess('Inventory stocks exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export inventory stocks')
+    }
+  }
+
+  const handleExportLowStock = async () => {
+    try {
+      await downloadCsv(
+        `low_stock_alerts_${accountingExportDateStamp()}.csv`,
+        [
+          ['Product', 'SKU', 'Current Stock', 'Min Stock', 'Outlet'],
+          ...lowStockAlerts.map((alert) => [
+            alert.product_name,
+            alert.sku,
+            alert.current_stock,
+            alert.min_stock,
+            alert.outlet_name || alert.outlet_id,
+          ]),
+        ],
+        { label: 'Exporting low stock alerts' }
+      )
+      notifySuccess('Low stock alerts exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to export low stock alerts')
+    }
+  }
+
+  const exportButton = (onClick: () => void) => (
+    <Button variant="outline" size="sm" onClick={onClick} className="gap-2">
+      <Download className="h-4 w-4" />
+      Export
+    </Button>
+  )
+
+  const productSearchInput = (
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+      <Input
+        placeholder="Search by name, SKU, or item code..."
+        value={productSearchQuery}
+        onChange={(e) => setProductSearchQuery(e.target.value)}
+        className="w-full pl-9 sm:w-[280px]"
+        aria-label="Product search"
+      />
+    </div>
+  )
+
   if (authLoading || loading) {
     return (
       <DashboardLayout>
@@ -882,7 +1054,7 @@ export default function InventoryPage() {
               title={showFilters ? 'Hide filters' : 'Period & search'}
             >
               <Filter className="h-4 w-4" />
-              {(isProductSearchActive || datePeriod !== 'month') && (
+              {datePeriod !== 'month' && (
                 <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-white" />
               )}
             </Button>
@@ -1226,39 +1398,25 @@ export default function InventoryPage() {
             <div className="space-y-4">
               <div>
                 <Label>Product</Label>
-                <Select
+                <SearchableSelect
                   value={reserveStock.product_id}
                   onValueChange={(value) => setReserveStock({ ...reserveStock, product_id: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select product" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {inventoryItems.filter(item => item.type === 'product').map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.name} {item.sku && `(${item.sku})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  options={inventoryItems
+                    .filter(item => item.type === 'product')
+                    .map(item => ({ value: item.id, label: item.sku ? `${item.name} (${item.sku})` : item.name }))}
+                  placeholder="Select product"
+                  searchPlaceholder="Search products..."
+                />
               </div>
               <div>
                 <Label>Outlet / Warehouse</Label>
-                <Select
+                <SearchableSelect
                   value={reserveStock.outlet_id}
                   onValueChange={(value) => setReserveStock({ ...reserveStock, outlet_id: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select outlet" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {warehouses.map((wh) => (
-                      <SelectItem key={wh.id} value={wh.id}>
-                        {wh.name} ({wh.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  options={warehouses.map(wh => ({ value: wh.id, label: `${wh.name} (${wh.code})` }))}
+                  placeholder="Select outlet"
+                  searchPlaceholder="Search outlets..."
+                />
               </div>
               <div>
                 <Label>Quantity</Label>
@@ -1292,39 +1450,25 @@ export default function InventoryPage() {
             <div className="space-y-4">
               <div>
                 <Label>Product</Label>
-                <Select
+                <SearchableSelect
                   value={releaseStock.product_id}
                   onValueChange={(value) => setReleaseStock({ ...releaseStock, product_id: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select product" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {inventoryItems.filter(item => item.type === 'product').map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.name} {item.sku && `(${item.sku})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  options={inventoryItems
+                    .filter(item => item.type === 'product')
+                    .map(item => ({ value: item.id, label: item.sku ? `${item.name} (${item.sku})` : item.name }))}
+                  placeholder="Select product"
+                  searchPlaceholder="Search products..."
+                />
               </div>
               <div>
                 <Label>Outlet / Warehouse</Label>
-                <Select
+                <SearchableSelect
                   value={releaseStock.outlet_id}
                   onValueChange={(value) => setReleaseStock({ ...releaseStock, outlet_id: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select outlet" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {warehouses.map((wh) => (
-                      <SelectItem key={wh.id} value={wh.id}>
-                        {wh.name} ({wh.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  options={warehouses.map(wh => ({ value: wh.id, label: `${wh.name} (${wh.code})` }))}
+                  placeholder="Select outlet"
+                  searchPlaceholder="Search outlets..."
+                />
               </div>
               <div>
                 <Label>Quantity</Label>
@@ -1396,19 +1540,6 @@ export default function InventoryPage() {
                       )}
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="inventory_product_search">Product search</Label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                      <Input
-                        id="inventory_product_search"
-                        placeholder="Search by name, SKU, or item code..."
-                        value={productSearchQuery}
-                        onChange={(e) => setProductSearchQuery(e.target.value)}
-                        className="w-full pl-9 sm:w-[280px]"
-                      />
-                    </div>
-                  </div>
                 </div>
                 <div className="text-sm text-gray-500">
                   {isDateFilterActive ? (
@@ -1432,7 +1563,7 @@ export default function InventoryPage() {
 
         {!showFilters && hasCustomizedFilters && (
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-            {datePeriod !== 'month' && isDateFilterActive && (
+            {isDateFilterActive && (
               <button
                 type="button"
                 onClick={() => setShowFilters(true)}
@@ -1440,16 +1571,6 @@ export default function InventoryPage() {
               >
                 <CalendarRange className="h-3.5 w-3.5 text-gray-500" />
                 {dateRangeLabel}
-              </button>
-            )}
-            {isProductSearchActive && (
-              <button
-                type="button"
-                onClick={() => setShowFilters(true)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 hover:bg-slate-50"
-              >
-                <Search className="h-3.5 w-3.5 text-gray-500" />
-                “{productSearchQuery.trim()}”
               </button>
             )}
           </div>
@@ -1481,6 +1602,12 @@ export default function InventoryPage() {
           <TabsContent value="balance">
             <ExpandableTableCard
               title="Stock Balance"
+              headerActions={
+                <>
+                  {productSearchInput}
+                  {exportButton(handleExportBalance)}
+                </>
+              }
               description={
                 <p className="text-sm text-gray-500">
                   Totals consolidated across all batches per product and outlet.
@@ -1558,6 +1685,7 @@ export default function InventoryPage() {
               }
               headerActions={
                 <>
+                  {productSearchInput}
                   <Select
                     value={entryApprovalFilter}
                     onValueChange={(v) => setEntryApprovalFilter(v as typeof entryApprovalFilter)}
@@ -1582,6 +1710,7 @@ export default function InventoryPage() {
                       Approve all pending
                     </Button>
                   )}
+                  {exportButton(handleExportEntries)}
                 </>
               }
             >
@@ -1693,6 +1822,7 @@ export default function InventoryPage() {
           <TabsContent value="transfers">
             <ExpandableTableCard
               title="Stock Transfers"
+              headerActions={exportButton(handleExportTransfers)}
               description={
                 isDateFilterActive ? (
                   <p className="text-sm text-gray-500">
@@ -1752,6 +1882,12 @@ export default function InventoryPage() {
           <TabsContent value="stocks">
             <ExpandableTableCard
               title="Inventory Stocks"
+              headerActions={
+                <>
+                  {productSearchInput}
+                  {exportButton(handleExportStocks)}
+                </>
+              }
               description={
                 <p className="text-sm text-gray-500">
                   Current stock by batch where batch tracking applies; one row per product when no batch is used.
@@ -1833,6 +1969,7 @@ export default function InventoryPage() {
                   )}
                 </CardTitle>
               }
+              headerActions={exportButton(handleExportLowStock)}
               description={
                 <p className="text-sm text-gray-500">
                   Products at or below their minimum stock level. Always shows current data.

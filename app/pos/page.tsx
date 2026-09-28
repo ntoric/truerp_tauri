@@ -6,7 +6,7 @@ import { useOfflineSync } from '@/hooks/useOfflineSync'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { formatCurrency, asArray } from '@/lib/utils'
 import { offlineStorage, POS_META_KEYS, type POSSaleRecord } from '@/lib/offlineStorage'
 import Link from 'next/link'
@@ -46,6 +46,13 @@ import {
   numericSplitAmount,
   sumPaymentSplits,
 } from '@/lib/paymentSplits'
+import { AdditionalChargeItemsInput } from '@/components/AdditionalChargeItemsInput'
+import {
+  type AdditionalChargeItem,
+  hydrateAdditionalCharges,
+  sanitizeAdditionalChargeItems,
+  sumAdditionalChargeItems,
+} from '@/lib/additionalCharges'
 
 interface Product {
   id: string
@@ -83,6 +90,13 @@ interface CartItem {
 
 const cartLineKey = (productId: string, batchNo?: string) => `${productId}::${batchNo || ''}`
 
+const NON_WEIGHT_QTY_DECIMALS = 3
+
+const roundQty = (value: number, places: number) => {
+  const factor = Math.pow(10, places)
+  return Math.round(value * factor) / factor
+}
+
 interface POSSession {
   id: string
   opening_cash: number
@@ -101,7 +115,7 @@ interface POSTab {
   draftId?: string
   discountType: 'amount' | 'percent'
   discountValue: string
-  additionalCharges: string
+  additionalChargeItems: AdditionalChargeItem[]
 }
 
 interface POSDraft {
@@ -345,7 +359,7 @@ export default function POSPage() {
   const [parties, setParties] = useState<Party[]>([])
   const [walkInCustomer, setWalkInCustomer] = useState<Party | null>(null)
   const [tabs, setTabs] = useState<POSTab[]>([
-    { id: 'tab-1', title: 'New Order', cart: [], selectedParty: null, notes: '', isDraft: false, discountType: 'amount', discountValue: '', additionalCharges: '' }
+    { id: 'tab-1', title: 'New Order', cart: [], selectedParty: null, notes: '', isDraft: false, discountType: 'amount', discountValue: '', additionalChargeItems: [] }
   ])
   const [activeTabId, setActiveTabId] = useState('tab-1')
   const [searchTerm, setSearchTerm] = useState('')
@@ -380,6 +394,7 @@ export default function POSPage() {
   const { getDepositHint } = usePaymentMethodMappings()
   const [mounted, setMounted] = useState(false)
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
+  const [allowNegativeStock, setAllowNegativeStock] = useState(false)
   const {
     settings: scaleSettings,
     connectionStatus: scaleConnectionStatus,
@@ -405,6 +420,7 @@ export default function POSPage() {
         loadSession(),
         loadDrafts(),
         loadLoyaltySettings(),
+        loadBusinessSettings(),
       ])
       await hydratePOSSnapshot()
     })()
@@ -440,6 +456,21 @@ export default function POSPage() {
     }
     const cached = await offlineStorage.getMeta<LoyaltySettings>(POS_META_KEYS.LOYALTY)
     if (cached) setLoyaltySettings(cached)
+  }
+
+  const loadBusinessSettings = async () => {
+    try {
+      const res = await apiFetch('/business', { timeoutMs: 5000 })
+      if (res.ok) {
+        const data = await res.json()
+        setAllowNegativeStock(data?.allow_negative_stock === true)
+        return
+      }
+    } catch {
+      /* offline — use cached snapshot */
+    }
+    const cached = await getCachedBusiness()
+    setAllowNegativeStock(cached?.allow_negative_stock === true)
   }
 
   const loadProducts = async () => {
@@ -659,7 +690,7 @@ export default function POSPage() {
     const finishClose = async () => {
       await offlineStorage.closePOSSession(session.id)
       setSession(null)
-      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', additionalCharges: '' })
+      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', additionalChargeItems: [] })
       setIsEditingCustomer(false)
       resetPayment()
       window.location.href = '/dashboard'
@@ -704,7 +735,11 @@ export default function POSPage() {
       isProductGstEnabled(product) ? (product.sale_price_with_tax ?? true) : false
     )
 
-  const addToCartWithQuantity = async (product: Product, quantity: number) => {
+  const addToCartWithQuantity = async (product: Product, quantity: number): Promise<boolean> => {
+    if (!allowNegativeStock && Number(product.stock_qty || 0) <= 0) {
+      notifyError(`${product.name} is out of stock`)
+      return false
+    }
     const q = isWeightBasedUnit(product.unit)
       ? Math.max(quantity, 0.001)
       : Math.max(1, Math.round(quantity))
@@ -715,11 +750,14 @@ export default function POSPage() {
       const batches = await fetchProductBatches(product.id)
       const picked = pickDefaultBatch(batches)
       if (!picked) {
-        notifyError(`No batch stock for ${product.name}. Add purchase stock with a batch first.`)
-        return
+        if (!allowNegativeStock) {
+          notifyError(`No batch stock for ${product.name}. Add purchase stock with a batch first.`)
+          return false
+        }
+      } else {
+        batch_no = picked.batch_no || ''
+        exp_date = picked.exp_date ?? null
       }
-      batch_no = picked.batch_no || ''
-      exp_date = picked.exp_date ?? null
     }
 
     const key = cartLineKey(product.id, batch_no)
@@ -727,10 +765,7 @@ export default function POSPage() {
       (item) => cartLineKey(item.product.id, item.batch_no) === key
     )
     if (existingItem) {
-      const nextQty = isWeightBasedUnit(product.unit)
-        ? existingItem.quantity + q
-        : Math.round(existingItem.quantity) + Math.round(q)
-      updateQuantity(product.id, nextQty, batch_no)
+      updateQuantity(product.id, existingItem.quantity + q, batch_no)
     } else {
       updateTab(activeTabId, {
         cart: [
@@ -739,6 +774,7 @@ export default function POSPage() {
         ],
       })
     }
+    return true
   }
 
   const addToCart = (product: Product) => {
@@ -765,8 +801,9 @@ export default function POSPage() {
     // Retail barcodes: exact item_code/sku match — always qty 1 (never stale scale weight).
     const exactProduct = findProductByExactScanCode(code, products)
     if (exactProduct) {
-      void addToCartWithQuantity(exactProduct, 1)
-      notifySuccess(`Added: ${exactProduct.name}`)
+      if (await addToCartWithQuantity(exactProduct, 1)) {
+        notifySuccess(`Added: ${exactProduct.name}`)
+      }
       barcodeInputRef.current?.clear()
       barcodeInputRef.current?.focus()
       return
@@ -784,8 +821,9 @@ export default function POSPage() {
             const id = String(matches[0].product_id ?? '')
             const product = products.find((p) => p.id === id)
             if (product) {
-              void addToCartWithQuantity(product, 1)
-              notifySuccess(`Added: ${product.name}`)
+              if (await addToCartWithQuantity(product, 1)) {
+                notifySuccess(`Added: ${product.name}`)
+              }
               barcodeInputRef.current?.clear()
               barcodeInputRef.current?.focus()
               return
@@ -802,8 +840,9 @@ export default function POSPage() {
       if (scaleHit) {
         const product = products.find((p) => p.id === scaleHit.product.id)
         if (product) {
-          addToCartWithQuantity(product, scaleHit.quantity)
-          notifySuccess(`${product.name} · ${formatQty(scaleHit.quantity, scaleSettings.decimal_places)} ${product.unit}`)
+          if (await addToCartWithQuantity(product, scaleHit.quantity)) {
+            notifySuccess(`${product.name} · ${formatQty(scaleHit.quantity, scaleSettings.decimal_places)} ${product.unit}`)
+          }
           barcodeInputRef.current?.clear()
           barcodeInputRef.current?.focus()
           return
@@ -899,13 +938,10 @@ export default function POSPage() {
   const formatCartQuantity = (item: CartItem) =>
     isWeightBasedUnit(item.product.unit)
       ? item.quantity.toFixed(scaleSettings.decimal_places)
-      : String(Math.round(item.quantity))
+      : String(roundQty(item.quantity, NON_WEIGHT_QTY_DECIMALS))
 
   const adjustCartQuantity = (item: CartItem, delta: number) => {
-    const next = isWeightBasedUnit(item.product.unit)
-      ? item.quantity + delta
-      : Math.round(item.quantity) + delta
-    updateQuantity(item.product.id, next, item.batch_no)
+    updateQuantity(item.product.id, item.quantity + delta, item.batch_no)
   }
 
   const commitQuantityEdit = (productId: string, raw: string, unit: string, batchNo?: string) => {
@@ -916,8 +952,8 @@ export default function POSPage() {
       return
     }
     const quantity = isWeightBasedUnit(unit)
-      ? Math.round(parsed * Math.pow(10, scaleSettings.decimal_places)) / Math.pow(10, scaleSettings.decimal_places)
-      : Math.round(parsed)
+      ? roundQty(parsed, scaleSettings.decimal_places)
+      : roundQty(parsed, NON_WEIGHT_QTY_DECIMALS)
     updateQuantity(productId, quantity, batchNo)
     setEditingQty(null)
   }
@@ -960,7 +996,7 @@ export default function POSPage() {
   const getSaleDiscount = () =>
     computeSaleDiscount(getCartTotal(), activeTab.discountType || 'amount', activeTab.discountValue || '')
 
-  const getAdditionalCharges = () => Math.max(0, parseMoney(activeTab.additionalCharges || ''))
+  const getAdditionalCharges = () => Math.max(0, sumAdditionalChargeItems(activeTab.additionalChargeItems || []))
 
   const getLoyaltyDiscount = (saleDiscount = getSaleDiscount()) => {
     if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
@@ -1044,11 +1080,11 @@ export default function POSPage() {
     )
   }
 
-  const applyPosAdditionalChargesChange = (nextValue: string) => {
+  const applyPosAdditionalChargesChange = (nextItems: AdditionalChargeItem[]) => {
     const cartTotal = getCartTotal()
     const saleDiscount = getSaleDiscount()
     const prevAddCharges = getAdditionalCharges()
-    const nextAddCharges = Math.max(0, parseMoney(nextValue))
+    const nextAddCharges = Math.max(0, sumAdditionalChargeItems(nextItems))
     const prevLoyalty = getLoyaltyDiscount(saleDiscount)
     const nextLoyalty = (() => {
       if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
@@ -1061,7 +1097,7 @@ export default function POSPage() {
       return discount
     })()
     prevLoyaltyDiscountRef.current = nextLoyalty
-    updateTab(activeTabId, { additionalCharges: nextValue })
+    updateTab(activeTabId, { additionalChargeItems: nextItems })
     syncReceivedToPayable(
       Math.max(0, Math.round(cartTotal - saleDiscount + prevAddCharges - prevLoyalty)),
       Math.max(0, Math.round(cartTotal - saleDiscount + nextAddCharges - nextLoyalty)),
@@ -1153,7 +1189,7 @@ export default function POSPage() {
       isDraft: false,
       discountType: 'amount',
       discountValue: '',
-      additionalCharges: '',
+      additionalChargeItems: [],
     }
     setTabs([...tabs, newTab])
     setActiveTabId(newTab.id)
@@ -1190,7 +1226,7 @@ export default function POSPage() {
         items: activeTab.cart,
         discountType: activeTab.discountType || 'amount',
         discountValue: activeTab.discountValue || '',
-        additionalCharges: activeTab.additionalCharges || '',
+        additionalChargeItems: sanitizeAdditionalChargeItems(activeTab.additionalChargeItems || []),
       }),
       party_id: activeTab.selectedParty?.id,
       notes: activeTab.notes,
@@ -1225,7 +1261,7 @@ export default function POSPage() {
 
   const loadDraft = async (draft: POSDraft) => {
     try {
-      const parsed = JSON.parse(draft.cart_data) as CartItem[] | { items?: CartItem[]; discountType?: string; discountValue?: string; additionalCharges?: string }
+      const parsed = JSON.parse(draft.cart_data) as CartItem[] | { items?: CartItem[]; discountType?: string; discountValue?: string; additionalCharges?: string; additionalChargeItems?: AdditionalChargeItem[] }
       const rawItems = Array.isArray(parsed) ? parsed : (parsed.items || [])
       const cartData = rawItems.map((item) => ({
         ...item,
@@ -1234,7 +1270,9 @@ export default function POSPage() {
       const party = parties.find(p => p.id === draft.party_id)
       const discountType = !Array.isArray(parsed) && parsed.discountType === 'percent' ? 'percent' as const : 'amount' as const
       const discountValue = !Array.isArray(parsed) && typeof parsed.discountValue === 'string' ? parsed.discountValue : ''
-      const additionalCharges = !Array.isArray(parsed) && typeof parsed.additionalCharges === 'string' ? parsed.additionalCharges : ''
+      const additionalChargeItems = !Array.isArray(parsed)
+        ? hydrateAdditionalCharges(parsed.additionalChargeItems, parseMoney(parsed.additionalCharges || ''))
+        : []
 
       const newTab: POSTab = {
         id: `draft-${draft.id}`,
@@ -1246,7 +1284,7 @@ export default function POSPage() {
         draftId: draft.id,
         discountType,
         discountValue,
-        additionalCharges,
+        additionalChargeItems,
       }
       
       setTabs([...tabs, newTab])
@@ -1366,6 +1404,7 @@ export default function POSPage() {
     const paymentMode = checkoutSplits[0]?.mode || paymentSplits[0]?.mode || 'upi'
     const saleStatus = amountPaid + 0.01 >= roundedTotal ? 'paid' : (amountPaid > 0 ? 'partial' : 'sent')
     const saleDiscount = getSaleDiscount()
+    const chargeItems = sanitizeAdditionalChargeItems(activeTab.additionalChargeItems || [])
     const loyaltyDiscountValue = getLoyaltyDiscount(saleDiscount)
     const loyaltyEarned = loyaltySettings?.is_enabled
       ? estimatePointsEarned(loyaltySettings, Math.max(0, getCartTotal() - saleDiscount + getAdditionalCharges() - loyaltyDiscountValue))
@@ -1403,6 +1442,7 @@ export default function POSPage() {
         session_opening_cash: session?.opening_cash,
         ...(saleDiscount > 0 ? { invoice_discount: saleDiscount } : {}),
         ...(getAdditionalCharges() > 0 ? { additional_charges: getAdditionalCharges() } : {}),
+        ...(chargeItems.length > 0 ? { additional_charge_items: chargeItems } : {}),
         ...(loyaltyPointsToRedeem > 0 ? { loyalty_points_redeemed: loyaltyPointsToRedeem } : {}),
         items: cartSnapshot.map((item) => ({
           product_id: item.product.id,
@@ -1428,14 +1468,15 @@ export default function POSPage() {
           .filter((item) => item.product.id === product.id)
           .reduce((sum, item) => sum + item.quantity, 0)
         if (!sold) return product
-        return { ...product, stock_qty: Math.max(0, Number(product.stock_qty || 0) - sold) }
+        const nextStock = Number(product.stock_qty || 0) - sold
+        return { ...product, stock_qty: allowNegativeStock ? nextStock : Math.max(0, nextStock) }
       })
       setProducts(nextProducts)
       for (const item of cartSnapshot) {
-        await offlineStorage.decrementLocalStock(item.product.id, item.quantity, item.batch_no)
+        await offlineStorage.decrementLocalStock(item.product.id, item.quantity, item.batch_no, allowNegativeStock)
       }
 
-      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', additionalCharges: '' })
+      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', additionalChargeItems: [] })
       setIsEditingCustomer(false)
       setEditingQty(null)
       setPaymentSplits([{ mode: 'upi', amount: '' }])
@@ -1524,9 +1565,10 @@ export default function POSPage() {
   }
 
   const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (allowNegativeStock || Number(p.stock_qty || 0) > 0) &&
+    (p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.item_code?.toLowerCase().includes(searchTerm.toLowerCase())
+    p.item_code?.toLowerCase().includes(searchTerm.toLowerCase()))
   )
 
   if (!mounted) {
@@ -1828,7 +1870,7 @@ export default function POSPage() {
                     <span className="text-sm font-bold text-blue-600">
                       {formatCurrency(product.sale_price)}
                     </span>
-                    <span className="text-xs text-gray-500">
+                    <span className={`text-xs ${Number(product.stock_qty || 0) <= 0 ? 'font-medium text-red-500' : 'text-gray-500'}`}>
                       {formatQty(product.stock_qty)}
                     </span>
                   </div>
@@ -2144,9 +2186,9 @@ export default function POSPage() {
                   >
                     <Input
                       type="number"
-                      inputMode={isWeightBasedUnit(item.product.unit) ? 'decimal' : 'numeric'}
-                      min={isWeightBasedUnit(item.product.unit) ? 0.001 : 1}
-                      step={isWeightBasedUnit(item.product.unit) ? Math.pow(10, -scaleSettings.decimal_places) : 1}
+                      inputMode="decimal"
+                      min={Math.pow(10, -NON_WEIGHT_QTY_DECIMALS)}
+                      step={isWeightBasedUnit(item.product.unit) ? Math.pow(10, -scaleSettings.decimal_places) : 'any'}
                       value={
                         editingQty?.productId === cartLineKey(item.product.id, item.batch_no)
                           ? editingQty.value
@@ -2296,15 +2338,24 @@ export default function POSPage() {
                     </div>
                     <div className="flex min-w-0 flex-1 items-center gap-1">
                       <span className="text-xs text-gray-600 shrink-0">Addl Charges</span>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={activeTab.additionalCharges || ''}
-                        onChange={(e) => applyPosAdditionalChargesChange(limitDecimalInput(e.target.value))}
-                        className="ml-auto h-7 w-16 px-1 text-right text-xs"
-                        aria-label="Additional charges"
-                      />
+                      <Popover modal={false}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="ml-auto flex h-7 min-w-16 items-center justify-end rounded border border-gray-300 bg-white px-1.5 text-xs text-gray-800 hover:border-blue-400"
+                            aria-label="Additional charges"
+                          >
+                            {getAdditionalCharges() > 0 ? formatCurrency(getAdditionalCharges()) : '0.00'}
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" side="top" className="w-80">
+                          <div className="mb-2 text-xs font-medium text-gray-700">Additional Charges</div>
+                          <AdditionalChargeItemsInput
+                            items={activeTab.additionalChargeItems || []}
+                            onChange={applyPosAdditionalChargesChange}
+                          />
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   </div>
                   {(getSaleDiscount() > 0 || getAdditionalCharges() > 0) && (

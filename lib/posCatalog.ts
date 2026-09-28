@@ -65,6 +65,7 @@ export async function hydratePOSSnapshot(): Promise<void> {
           pincode: business?.pincode,
           phone: business?.phone,
           logo_data_url: logoDataUrl || undefined,
+          allow_negative_stock: business?.allow_negative_stock === true,
         }
         await offlineStorage.setMeta(POS_META_KEYS.BUSINESS, snapshot)
       } catch {

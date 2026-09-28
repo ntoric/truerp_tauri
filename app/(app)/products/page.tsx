@@ -64,6 +64,25 @@ interface Category {
   description?: string
 }
 
+const UNIT_OPTIONS = [
+  { value: 'PCS', label: 'PCS (Pieces)' },
+  { value: 'KG', label: 'KG (Kilogram)' },
+  { value: 'LTR', label: 'LTR (Liter)' },
+  { value: 'MTR', label: 'MTR (Meter)' },
+  { value: 'BOX', label: 'BOX' },
+  { value: 'DOZ', label: 'DOZ (Dozen)' },
+  { value: 'GM', label: 'GM (Gram)' },
+  { value: 'ML', label: 'ML (Milliliter)' },
+  { value: 'FT', label: 'FT (Feet)' },
+  { value: 'INCH', label: 'INCH' },
+  { value: 'SET', label: 'SET' },
+  { value: 'PKT', label: 'PKT (Packet)' },
+  { value: 'BTL', label: 'BTL (Bottle)' },
+  { value: 'CAN', label: 'CAN' },
+  { value: 'BAG', label: 'BAG' },
+  { value: 'ROLL', label: 'ROLL' },
+]
+
 interface Product {
   id: string
   name: string
@@ -112,6 +131,8 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [selectedUnit, setSelectedUnit] = useState<string>('all')
+  const [units, setUnits] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [debouncedSearch, setDebouncedSearch] = useState<string>('')
   const [page, setPage] = useState(1)
@@ -191,7 +212,8 @@ export default function ProductsPage() {
     }
   }, [searchParams, router])
   useEffect(() => { if (!authLoading && user) fetchBusinessSettings() }, [authLoading, user])
-  useEffect(() => { if (!authLoading && user) fetchProducts() }, [authLoading, user, selectedCategory, debouncedSearch, page])
+  useEffect(() => { if (!authLoading && user) fetchUnits() }, [authLoading, user])
+  useEffect(() => { if (!authLoading && user) fetchProducts() }, [authLoading, user, selectedCategory, selectedUnit, debouncedSearch, page])
 
   // Debounce the search box so each keystroke doesn't hit the API.
   useEffect(() => {
@@ -297,10 +319,20 @@ export default function ProductsPage() {
     } catch (err) { console.error(err) }
   }
 
+  const fetchUnits = async () => {
+    try {
+      const res = await apiFetch('/products/units')
+      if (res.ok) {
+        setUnits(asArray<string>(await res.json()))
+      }
+    } catch (err) { console.error(err) }
+  }
+
   const fetchProducts = async () => {
     try {
       const params = new URLSearchParams()
       if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
+      if (selectedUnit && selectedUnit !== 'all') params.append('unit', selectedUnit)
       if (debouncedSearch) params.append('search', debouncedSearch)
       params.append('page', String(page))
       params.append('per_page', String(pageSize))
@@ -454,6 +486,7 @@ export default function ProductsPage() {
         update(10, 'Fetching products…')
         const params = new URLSearchParams()
         if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
+        if (selectedUnit && selectedUnit !== 'all') params.append('unit', selectedUnit)
         if (debouncedSearch) params.append('search', debouncedSearch)
         const res = await apiFetch(`/products/export/csv?${params.toString()}`)
         if (!res.ok) {
@@ -480,6 +513,7 @@ export default function ProductsPage() {
         update(10, 'Fetching products…')
         const params = new URLSearchParams()
         if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
+        if (selectedUnit && selectedUnit !== 'all') params.append('unit', selectedUnit)
         if (debouncedSearch) params.append('search', debouncedSearch)
         const res = await apiFetch(`/products/export/excel?${params.toString()}`)
         if (!res.ok) {
@@ -803,6 +837,7 @@ export default function ProductsPage() {
         clearErrors()
         showSuccessToast('Product created successfully')
         fetchProducts()
+        fetchUnits()
       } else {
         const { fields } = await handleApiError(res, {
           toastTitle: 'Could not create product',
@@ -1026,22 +1061,9 @@ export default function ProductsPage() {
                           <SelectValue placeholder="Select unit" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="PCS">PCS (Pieces)</SelectItem>
-                          <SelectItem value="KG">KG (Kilogram)</SelectItem>
-                          <SelectItem value="LTR">LTR (Liter)</SelectItem>
-                          <SelectItem value="MTR">MTR (Meter)</SelectItem>
-                          <SelectItem value="BOX">BOX</SelectItem>
-                          <SelectItem value="DOZ">DOZ (Dozen)</SelectItem>
-                          <SelectItem value="GM">GM (Gram)</SelectItem>
-                          <SelectItem value="ML">ML (Milliliter)</SelectItem>
-                          <SelectItem value="FT">FT (Feet)</SelectItem>
-                          <SelectItem value="INCH">INCH</SelectItem>
-                          <SelectItem value="SET">SET</SelectItem>
-                          <SelectItem value="PKT">PKT (Packet)</SelectItem>
-                          <SelectItem value="BTL">BTL (Bottle)</SelectItem>
-                          <SelectItem value="CAN">CAN</SelectItem>
-                          <SelectItem value="BAG">BAG</SelectItem>
-                          <SelectItem value="ROLL">ROLL</SelectItem>
+                          {UNIT_OPTIONS.map((unit) => (
+                            <SelectItem key={unit.value} value={unit.value}>{unit.label}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -1312,6 +1334,19 @@ export default function ProductsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <Select value={selectedUnit} onValueChange={(value) => { setSelectedUnit(value); setPage(1); setSelectedItems(new Set()) }}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="All Units" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Units</SelectItem>
+                  {units.map((unit) => (
+                    <SelectItem key={unit} value={unit}>
+                      {UNIT_OPTIONS.find((o) => o.value === unit)?.label ?? unit}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <div className="flex gap-2 ml-auto">
                 <Button variant="outline" size="sm" onClick={() => setShowImportDialog(true)} className="gap-2">
                   <Upload className="h-4 w-4" />
@@ -1417,6 +1452,7 @@ export default function ProductsPage() {
         onCreated={() => {
           fetchProducts()
           fetchCategories()
+          fetchUnits()
         }}
       />
 
