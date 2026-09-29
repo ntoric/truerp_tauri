@@ -1007,6 +1007,12 @@ export default function DailyReportPage() {
             >
               Profit &amp; loss
             </Link>
+            <Link
+              href="/reports/stock"
+              className="text-sm font-medium text-blue-600 hover:underline"
+            >
+              Stock report
+            </Link>
             <Link href="/reports" className="text-sm font-medium text-blue-600 hover:underline">
               Analytics reports
             </Link>

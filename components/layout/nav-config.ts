@@ -137,6 +137,7 @@ export const navItems: NavItem[] = [
     children: [
       { name: 'Daily Report', href: '/reports/daily', icon: CalendarDots },
       { name: 'Profit & Loss', href: '/reports/profit-loss', icon: Scales },
+      { name: 'Stock Report', href: '/reports/stock', icon: Warehouse },
       { name: 'Reports & Analytics', href: '/reports', icon: ChartLineUp },
     ],
   },

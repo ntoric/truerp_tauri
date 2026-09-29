@@ -490,7 +490,8 @@ export default function ProfitLossReportPage() {
                 </div>
 
                 <p className="mt-4 text-xs text-gray-500">
-                  Gross profit = net sales + closing stock − opening stock. Net
+                  Gross profit = net sales − net purchases + closing stock −
+                  opening stock. Net
                   profit = gross profit + other income − expenses. Opening and
                   closing stock are valued at weighted average cost replayed from the stock ledger.
                   Other income comes from non-sales ledger postings (e.g. manual
