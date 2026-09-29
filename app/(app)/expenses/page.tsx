@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
@@ -15,7 +16,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
-import { Plus, Search, Tags, Printer as ThermalPrinter, MoreVertical, Trash2, Download, Eye, X, Loader2 } from 'lucide-react'
+import { Plus, Search, Tags, Printer as ThermalPrinter, MoreVertical, Trash2, Download, Eye, X, Loader2, Pencil } from 'lucide-react'
 import ThermalPrintModal from '@/components/ThermalPrintModal'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
@@ -67,6 +68,7 @@ interface Category {
 }
 
 export default function ExpensesPage() {
+  const router = useRouter()
   const { confirm, confirmDialog } = useConfirmDialog()
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -382,6 +384,10 @@ export default function ExpensesPage() {
                               <DropdownMenuItem onClick={() => setPreviewId(e.id)}>
                                 <Eye className="mr-2 h-4 w-4" />
                                 Preview
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => router.push(`/expenses/edit/${e.id}`)}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => openThermalPrint(e)}>
                                 <ThermalPrinter className="mr-2 h-4 w-4" />

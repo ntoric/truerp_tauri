@@ -21,13 +21,15 @@ import {
   type PageFeaturesMap,
 } from '@/lib/pageFeatures'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Mail, MessageSquare, Send, Loader2, CheckCircle, XCircle,
   Smartphone, Save, LayoutGrid, Sparkles, Clock,
   DatabaseBackup, Upload, FileArchive, FileUp, FileDown, AlertTriangle, Store,
-  Database,
+  Database, Download, Trash2, CloudUpload,
 } from 'lucide-react'
 import { getServerTime, type ServerTimeInfo } from '@/lib/dailyReport'
+import { downloadBlob } from '@/lib/accountingExport'
 
 // -----------------------------------------------------------------------------
 // Data Migration types & config
@@ -553,6 +555,75 @@ interface DBMaintenanceInfo {
   next_run_at: string
 }
 
+// GET/PUT /api/v1/developer-settings/db-backup payload shapes. Secrets are
+// write-only: the API reports has_* flags instead of returning values.
+type DBBackupDestination = 'local' | 's3' | 'gdrive' | 'mega' | 'telegram' | 'custom'
+
+interface DBBackupSettings {
+  id: string
+  is_enabled: boolean
+  frequency: 'daily' | 'weekly' | 'monthly'
+  run_time: string
+  weekday: number
+  month_day: number
+  retention_count: number
+  destination_type: DBBackupDestination
+  s3_endpoint: string
+  s3_region: string
+  s3_bucket: string
+  s3_access_key: string
+  s3_prefix: string
+  gdrive_folder_id: string
+  mega_email: string
+  telegram_chat_id: string
+  custom_url: string
+  custom_headers: string
+  has_s3_secret: boolean
+  has_gdrive_credentials: boolean
+  has_mega_password: boolean
+  has_telegram_bot_token: boolean
+  has_custom_auth_header: boolean
+  last_run_at?: string | null
+  last_run_status?: string
+  last_run_error?: string
+  last_run_file?: string
+  last_run_size_bytes?: number
+  last_run_duration_ms?: number
+}
+
+// Write-only secret inputs — sent only when the user enters a new value.
+interface DBBackupSecrets {
+  s3_secret_key: string
+  gdrive_service_account_json: string
+  mega_password: string
+  telegram_bot_token: string
+  custom_auth_header: string
+}
+
+interface DBBackupRecord {
+  id: string
+  file_name: string
+  size_bytes: number
+  trigger: string
+  destination: string
+  status: string
+  error?: string
+  upload_detail?: string
+  local_available: boolean
+  created_at: string
+}
+
+interface DBBackupInfo {
+  settings: DBBackupSettings
+  running: boolean
+  ist_time: string
+  ist_timezone: string
+  next_run_at: string
+  backup_dir: string
+  dialect: string
+  records: DBBackupRecord[]
+}
+
 export default function DeveloperSettingsPage() {
   const { user, loading: authLoading } = useAuth()
   const { setPagesLocal, refresh: refreshPageFeatures } = usePageFeatures()
@@ -595,6 +666,41 @@ export default function DeveloperSettingsPage() {
   })
   const [dbMaintInfo, setDbMaintInfo] = useState<DBMaintenanceInfo | null>(null)
   const [dbMaintBusy, setDbMaintBusy] = useState(false)
+  const [dbBackup, setDbBackup] = useState<DBBackupSettings>({
+    id: '',
+    is_enabled: false,
+    frequency: 'daily',
+    run_time: '02:00',
+    weekday: 1,
+    month_day: 1,
+    retention_count: 10,
+    destination_type: 'local',
+    s3_endpoint: '',
+    s3_region: '',
+    s3_bucket: '',
+    s3_access_key: '',
+    s3_prefix: '',
+    gdrive_folder_id: '',
+    mega_email: '',
+    telegram_chat_id: '',
+    custom_url: '',
+    custom_headers: '',
+    has_s3_secret: false,
+    has_gdrive_credentials: false,
+    has_mega_password: false,
+    has_telegram_bot_token: false,
+    has_custom_auth_header: false,
+  })
+  const [dbBackupSecrets, setDbBackupSecrets] = useState<DBBackupSecrets>({
+    s3_secret_key: '',
+    gdrive_service_account_json: '',
+    mega_password: '',
+    telegram_bot_token: '',
+    custom_auth_header: '',
+  })
+  const [dbBackupInfo, setDbBackupInfo] = useState<DBBackupInfo | null>(null)
+  const [dbBackupBusy, setDbBackupBusy] = useState(false)
+  const [dbBackupTesting, setDbBackupTesting] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -633,11 +739,12 @@ export default function DeveloperSettingsPage() {
 
   const fetchSettings = async () => {
     try {
-      const [settingsRes, pagesRes, businessRes, maintRes] = await Promise.all([
+      const [settingsRes, pagesRes, businessRes, maintRes, backupRes] = await Promise.all([
         apiFetch('/developer-settings'),
         apiFetch('/page-features'),
         apiFetch('/business'),
         apiFetch('/developer-settings/db-maintenance'),
+        apiFetch('/developer-settings/db-backup'),
       ])
       if (settingsRes.ok) {
         const data = await settingsRes.json()
@@ -655,6 +762,11 @@ export default function DeveloperSettingsPage() {
         const data: DBMaintenanceInfo = await maintRes.json()
         setDbMaintInfo(data)
         if (data.settings) setDbMaint(data.settings)
+      }
+      if (backupRes.ok) {
+        const data: DBBackupInfo = await backupRes.json()
+        setDbBackupInfo(data)
+        if (data.settings) setDbBackup(data.settings)
       }
     } catch (err) {
       console.error(err)
@@ -694,23 +806,48 @@ export default function DeveloperSettingsPage() {
           notifyError('Failed to save AI settings')
         }
       } else if (activeTab === 'maintenance') {
-        const res = await apiFetch('/developer-settings/db-maintenance', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            is_enabled: dbMaint.is_enabled,
-            run_time: dbMaint.run_time,
-            vacuum_full: dbMaint.vacuum_full,
+        // The maintenance tab holds two cards — save both settings groups.
+        const [maintRes, backupRes] = await Promise.all([
+          apiFetch('/developer-settings/db-maintenance', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              is_enabled: dbMaint.is_enabled,
+              run_time: dbMaint.run_time,
+              vacuum_full: dbMaint.vacuum_full,
+            }),
           }),
-        })
-        if (res.ok) {
-          const data = await res.json()
+          apiFetch('/developer-settings/db-backup', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dbBackupPayload()),
+          }),
+        ])
+        let ok = true
+        if (maintRes.ok) {
+          const data = await maintRes.json()
           setDbMaint(data)
-          notifySuccess('Maintenance settings saved successfully')
         } else {
-          const data = await res.json().catch(() => ({}))
+          ok = false
+          const data = await maintRes.json().catch(() => ({}))
           notifyError(data.error || 'Failed to save maintenance settings')
         }
+        if (backupRes.ok) {
+          const data: DBBackupSettings = await backupRes.json()
+          setDbBackup(data)
+          setDbBackupSecrets({
+            s3_secret_key: '',
+            gdrive_service_account_json: '',
+            mega_password: '',
+            telegram_bot_token: '',
+            custom_auth_header: '',
+          })
+        } else {
+          ok = false
+          const data = await backupRes.json().catch(() => ({}))
+          notifyError(data.error || 'Failed to save backup settings')
+        }
+        if (ok) notifySuccess('Maintenance settings saved successfully')
       } else {
         const res = await apiFetch('/developer-settings', {
           method: 'PUT',
@@ -807,6 +944,31 @@ export default function DeveloperSettingsPage() {
     }
   }
 
+  // PUT /db-backup body — non-secret fields plus secrets only when the user
+  // entered a new value (empty secret inputs keep the stored value).
+  const dbBackupPayload = () => ({
+    is_enabled: dbBackup.is_enabled,
+    frequency: dbBackup.frequency,
+    run_time: dbBackup.run_time,
+    weekday: dbBackup.weekday,
+    month_day: dbBackup.month_day,
+    retention_count: dbBackup.retention_count,
+    destination_type: dbBackup.destination_type,
+    s3_endpoint: dbBackup.s3_endpoint,
+    s3_region: dbBackup.s3_region,
+    s3_bucket: dbBackup.s3_bucket,
+    s3_access_key: dbBackup.s3_access_key,
+    s3_prefix: dbBackup.s3_prefix,
+    gdrive_folder_id: dbBackup.gdrive_folder_id,
+    mega_email: dbBackup.mega_email,
+    telegram_chat_id: dbBackup.telegram_chat_id,
+    custom_url: dbBackup.custom_url,
+    custom_headers: dbBackup.custom_headers,
+    ...Object.fromEntries(
+      Object.entries(dbBackupSecrets).filter(([, v]) => v !== '')
+    ),
+  })
+
   // Triggers a manual maintenance run on the backend, then polls the settings
   // endpoint until the run finishes so the status card stays up to date.
   const runMaintenanceNow = async () => {
@@ -833,6 +995,110 @@ export default function DeveloperSettingsPage() {
     } finally {
       setDbMaintBusy(false)
     }
+  }
+
+  const refreshBackupInfo = async (): Promise<DBBackupInfo | null> => {
+    try {
+      const res = await apiFetch('/developer-settings/db-backup')
+      if (!res.ok) return null
+      const info: DBBackupInfo = await res.json()
+      setDbBackupInfo(info)
+      if (info.settings) setDbBackup(info.settings)
+      return info
+    } catch {
+      return null
+    }
+  }
+
+  // Triggers a manual backup, then polls until the run finishes so the status
+  // card and history list stay up to date.
+  const runBackupNow = async () => {
+    setDbBackupBusy(true)
+    try {
+      const res = await apiFetch('/developer-settings/db-backup/run-now', { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to start backup')
+        return
+      }
+      notifySuccess('Backup started')
+      for (let i = 0; i < 60; i++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        const info = await refreshBackupInfo()
+        if (!info || !info.running) break
+      }
+    } catch {
+      notifyError('Failed to start backup')
+    } finally {
+      setDbBackupBusy(false)
+    }
+  }
+
+  // Uploads a small probe file to the configured destination. Unsaved form
+  // values are sent along so the config can be tested before saving.
+  const testBackupDestination = async () => {
+    setDbBackupTesting(true)
+    setTestResult(null)
+    try {
+      const res = await apiFetch('/developer-settings/db-backup/test-destination', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbBackupPayload()),
+      })
+      const data = await res.json().catch(() => ({}))
+      setTestResult({
+        success: res.ok,
+        message: data.message || data.error || (res.ok ? 'Destination reachable' : 'Destination test failed'),
+      })
+    } catch {
+      setTestResult({ success: false, message: 'Destination test failed' })
+    } finally {
+      setDbBackupTesting(false)
+    }
+  }
+
+  const downloadBackupRecord = async (record: DBBackupRecord) => {
+    try {
+      const res = await apiFetch(`/developer-settings/db-backup/records/${record.id}/download`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to download backup')
+        return
+      }
+      const blob = await res.blob()
+      await downloadBlob(record.file_name, blob, { skipProgress: true })
+    } catch {
+      notifyError('Failed to download backup')
+    }
+  }
+
+  const deleteBackupRecord = async (record: DBBackupRecord) => {
+    try {
+      const res = await apiFetch(`/developer-settings/db-backup/records/${record.id}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to delete backup')
+        return
+      }
+      notifySuccess('Backup deleted')
+      await refreshBackupInfo()
+    } catch {
+      notifyError('Failed to delete backup')
+    }
+  }
+
+  const formatBytes = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return '—'
+    const units = ['B', 'KB', 'MB', 'GB']
+    let size = bytes
+    let unit = 0
+    while (size >= 1024 && unit < units.length - 1) {
+      size /= 1024
+      unit++
+    }
+    return `${size.toFixed(size >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`
   }
 
   if (authLoading || loading) {
@@ -1472,6 +1738,7 @@ export default function DeveloperSettingsPage() {
           </TabsContent>
 
           <TabsContent value="maintenance">
+            <div className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1575,6 +1842,472 @@ export default function DeveloperSettingsPage() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CloudUpload className="h-5 w-5" />
+                  Database Backup
+                </CardTitle>
+                <CardDescription>
+                  Compressed database dumps (
+                  {dbBackupInfo?.dialect === 'postgres' ? '.sql.gz' : '.db.gz'})
+                  kept locally in {dbBackupInfo?.backup_dir || 'data/backups'} and
+                  optionally uploaded to a cloud destination after each run.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Scheduled backups</p>
+                    <p className="text-xs text-gray-500">
+                      Automatically back up the database on the configured schedule (IST).
+                    </p>
+                  </div>
+                  <Switch
+                    checked={dbBackup.is_enabled}
+                    onCheckedChange={(checked) => setDbBackup({ ...dbBackup, is_enabled: checked })}
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label>Frequency</Label>
+                    <Select
+                      value={dbBackup.frequency}
+                      onValueChange={(v) =>
+                        setDbBackup({ ...dbBackup, frequency: v as DBBackupSettings['frequency'] })
+                      }
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">Daily</SelectItem>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {dbBackup.frequency === 'weekly' && (
+                    <div className="space-y-2">
+                      <Label>Day of week</Label>
+                      <Select
+                        value={String(dbBackup.weekday)}
+                        onValueChange={(v) => setDbBackup({ ...dbBackup, weekday: Number(v) })}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(
+                            (d, i) => (
+                              <SelectItem key={d} value={String(i)}>{d}</SelectItem>
+                            )
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {dbBackup.frequency === 'monthly' && (
+                    <div className="space-y-2">
+                      <Label>Day of month</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={28}
+                        value={dbBackup.month_day}
+                        onChange={(e) =>
+                          setDbBackup({ ...dbBackup, month_day: Number(e.target.value) || 1 })
+                        }
+                      />
+                      <p className="text-xs text-gray-500">1–28 (always exists every month).</p>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label>Run time (IST)</Label>
+                    <Input
+                      type="time"
+                      value={dbBackup.run_time}
+                      onChange={(e) => setDbBackup({ ...dbBackup, run_time: e.target.value })}
+                    />
+                    <p className="text-xs text-gray-500">Interpreted in Asia/Kolkata — default 02:00.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Keep last N local backups</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={dbBackup.retention_count}
+                      onChange={(e) =>
+                        setDbBackup({ ...dbBackup, retention_count: Number(e.target.value) || 0 })
+                      }
+                    />
+                    <p className="text-xs text-gray-500">0 = keep all.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-lg border px-4 py-3">
+                  <div className="space-y-2">
+                    <Label>Upload destination</Label>
+                    <Select
+                      value={dbBackup.destination_type}
+                      onValueChange={(v) =>
+                        setDbBackup({ ...dbBackup, destination_type: v as DBBackupDestination })
+                      }
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="local">Local disk only</SelectItem>
+                        <SelectItem value="s3">S3 / S3-compatible (R2, MinIO, Spaces)</SelectItem>
+                        <SelectItem value="gdrive">Google Drive (service account)</SelectItem>
+                        <SelectItem value="mega">Mega</SelectItem>
+                        <SelectItem value="telegram">Telegram bot</SelectItem>
+                        <SelectItem value="custom">Custom application (webhook)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {dbBackup.destination_type === 'local' && (
+                    <p className="text-xs text-gray-500">
+                      Backups are only stored in the server's backup directory. Pick a cloud
+                      destination to also upload each dump off-box.
+                    </p>
+                  )}
+
+                  {dbBackup.destination_type === 's3' && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Bucket</Label>
+                        <Input
+                          value={dbBackup.s3_bucket}
+                          onChange={(e) => setDbBackup({ ...dbBackup, s3_bucket: e.target.value })}
+                          placeholder="truerp-backups"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Region</Label>
+                        <Input
+                          value={dbBackup.s3_region}
+                          onChange={(e) => setDbBackup({ ...dbBackup, s3_region: e.target.value })}
+                          placeholder="ap-south-1 (or 'auto' for R2)"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Endpoint (optional)</Label>
+                        <Input
+                          value={dbBackup.s3_endpoint}
+                          onChange={(e) => setDbBackup({ ...dbBackup, s3_endpoint: e.target.value })}
+                          placeholder="https://<account>.r2.cloudflarestorage.com"
+                        />
+                        <p className="text-xs text-gray-500">Leave empty for AWS S3.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Key prefix (optional)</Label>
+                        <Input
+                          value={dbBackup.s3_prefix}
+                          onChange={(e) => setDbBackup({ ...dbBackup, s3_prefix: e.target.value })}
+                          placeholder="backups/truerp"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Access key ID</Label>
+                        <Input
+                          value={dbBackup.s3_access_key}
+                          onChange={(e) => setDbBackup({ ...dbBackup, s3_access_key: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Secret access key</Label>
+                        <Input
+                          type="password"
+                          value={dbBackupSecrets.s3_secret_key}
+                          onChange={(e) =>
+                            setDbBackupSecrets({ ...dbBackupSecrets, s3_secret_key: e.target.value })
+                          }
+                          placeholder={dbBackup.has_s3_secret ? 'Saved — enter to replace' : ''}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {dbBackup.destination_type === 'gdrive' && (
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <Label>Service-account JSON key</Label>
+                        <Textarea
+                          rows={4}
+                          value={dbBackupSecrets.gdrive_service_account_json}
+                          onChange={(e) =>
+                            setDbBackupSecrets({
+                              ...dbBackupSecrets,
+                              gdrive_service_account_json: e.target.value,
+                            })
+                          }
+                          placeholder={
+                            dbBackup.has_gdrive_credentials
+                              ? 'Saved — paste a new JSON key to replace'
+                              : '{"type":"service_account","client_email":"...","private_key":"..."}'
+                          }
+                        />
+                        <p className="text-xs text-gray-500">
+                          Create a service account in Google Cloud with the Drive API enabled. Files
+                          land in the service account&apos;s own Drive unless a shared folder ID is
+                          given below.
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Folder ID (optional)</Label>
+                        <Input
+                          value={dbBackup.gdrive_folder_id}
+                          onChange={(e) =>
+                            setDbBackup({ ...dbBackup, gdrive_folder_id: e.target.value })
+                          }
+                          placeholder="1AbC… (share the folder with the service-account email)"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {dbBackup.destination_type === 'mega' && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Mega account email</Label>
+                        <Input
+                          type="email"
+                          value={dbBackup.mega_email}
+                          onChange={(e) => setDbBackup({ ...dbBackup, mega_email: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Mega password</Label>
+                        <Input
+                          type="password"
+                          value={dbBackupSecrets.mega_password}
+                          onChange={(e) =>
+                            setDbBackupSecrets({ ...dbBackupSecrets, mega_password: e.target.value })
+                          }
+                          placeholder={dbBackup.has_mega_password ? 'Saved — enter to replace' : ''}
+                        />
+                      </div>
+                      <p className="text-xs text-gray-500 sm:col-span-2">
+                        Uploads to the account&apos;s root folder. Use a dedicated Mega account or a
+                        strong unique password — credentials are stored encrypted.
+                      </p>
+                    </div>
+                  )}
+
+                  {dbBackup.destination_type === 'telegram' && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Bot token</Label>
+                        <Input
+                          type="password"
+                          value={dbBackupSecrets.telegram_bot_token}
+                          onChange={(e) =>
+                            setDbBackupSecrets({
+                              ...dbBackupSecrets,
+                              telegram_bot_token: e.target.value,
+                            })
+                          }
+                          placeholder={
+                            dbBackup.has_telegram_bot_token
+                              ? 'Saved — enter to replace'
+                              : '123456:ABC-DEF…'
+                          }
+                        />
+                        <p className="text-xs text-gray-500">From @BotFather on Telegram.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Chat ID</Label>
+                        <Input
+                          value={dbBackup.telegram_chat_id}
+                          onChange={(e) =>
+                            setDbBackup({ ...dbBackup, telegram_chat_id: e.target.value })
+                          }
+                          placeholder="123456789 or -100…"
+                        />
+                        <p className="text-xs text-gray-500">
+                          The chat/group the bot should send backups to. Max ~50 MB per file.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {dbBackup.destination_type === 'custom' && (
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <Label>Endpoint URL</Label>
+                        <Input
+                          value={dbBackup.custom_url}
+                          onChange={(e) => setDbBackup({ ...dbBackup, custom_url: e.target.value })}
+                          placeholder="https://your-app.example.com/backups"
+                        />
+                        <p className="text-xs text-gray-500">
+                          The dump is POSTed as a multipart/form-data file field named
+                          &quot;file&quot;.
+                        </p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Authorization header (optional)</Label>
+                          <Input
+                            type="password"
+                            value={dbBackupSecrets.custom_auth_header}
+                            onChange={(e) =>
+                              setDbBackupSecrets({
+                                ...dbBackupSecrets,
+                                custom_auth_header: e.target.value,
+                              })
+                            }
+                            placeholder={
+                              dbBackup.has_custom_auth_header
+                                ? 'Saved — enter to replace'
+                                : 'Bearer eyJ…'
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Extra headers (optional, JSON)</Label>
+                          <Input
+                            value={dbBackup.custom_headers}
+                            onChange={(e) =>
+                              setDbBackup({ ...dbBackup, custom_headers: e.target.value })
+                            }
+                            placeholder='{"X-Api-Key":"…"}'
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5 rounded-md border bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <div>
+                    <span className="font-medium text-gray-800">IST time:</span>{' '}
+                    {dbBackupInfo?.ist_time || '—'} ({dbBackupInfo?.ist_timezone || 'Asia/Kolkata'})
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-800">Next scheduled run:</span>{' '}
+                    {dbBackupInfo?.next_run_at
+                      ? new Date(dbBackupInfo.next_run_at).toLocaleString()
+                      : '—'}
+                    {!dbBackup.is_enabled && (
+                      <span className="text-gray-400"> (schedule disabled)</span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-800">Last run:</span>{' '}
+                    {dbBackup.last_run_at ? (
+                      <span>
+                        {new Date(dbBackup.last_run_at).toLocaleString()} —{' '}
+                        {dbBackup.last_run_status || 'unknown'}
+                        {dbBackup.last_run_file ? ` · ${dbBackup.last_run_file}` : ''}
+                        {dbBackup.last_run_size_bytes
+                          ? ` · ${formatBytes(dbBackup.last_run_size_bytes)}`
+                          : ''}
+                        {dbBackup.last_run_duration_ms
+                          ? ` · ${(dbBackup.last_run_duration_ms / 1000).toFixed(1)}s`
+                          : ''}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">Never</span>
+                    )}
+                  </div>
+                  {dbBackup.last_run_error && (
+                    <div className="text-red-600">Error: {dbBackup.last_run_error}</div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={runBackupNow}
+                    disabled={dbBackupBusy || dbBackupInfo?.running}
+                  >
+                    {(dbBackupBusy || dbBackupInfo?.running) && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    <DatabaseBackup className="mr-2 h-4 w-4" />
+                    Backup now
+                  </Button>
+                  {dbBackup.destination_type !== 'local' && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={testBackupDestination}
+                      disabled={dbBackupTesting}
+                    >
+                      {dbBackupTesting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Test destination
+                    </Button>
+                  )}
+                  <span className="text-xs text-gray-500">
+                    Saves aren&apos;t needed for &quot;Test destination&quot; — it uses the values in
+                    the form.
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-900">Recent backups</p>
+                  {(dbBackupInfo?.records ?? []).length === 0 ? (
+                    <p className="text-xs text-gray-500">No backups yet.</p>
+                  ) : (
+                    <div className="divide-y rounded-md border">
+                      {(dbBackupInfo?.records ?? []).map((rec) => (
+                        <div
+                          key={rec.id}
+                          className="flex items-center justify-between gap-3 px-3 py-2 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-gray-800">
+                              {rec.file_name || '(failed run)'}
+                            </p>
+                            <p className="text-gray-500">
+                              {new Date(rec.created_at).toLocaleString()} · {rec.trigger} ·{' '}
+                              {formatBytes(rec.size_bytes)} · {rec.destination}
+                              {rec.upload_detail ? ` → ${rec.upload_detail}` : ''}
+                            </p>
+                            {rec.error && <p className="text-red-600">{rec.error}</p>}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                rec.status === 'success'
+                                  ? 'bg-green-100 text-green-700'
+                                  : rec.status === 'partial'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-red-100 text-red-700'
+                              }`}
+                            >
+                              {rec.status}
+                            </span>
+                            {rec.local_available && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => downloadBackupRecord(rec)}
+                                title="Download"
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            )}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteBackupRecord(rec)}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>
