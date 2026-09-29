@@ -14,6 +14,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn, formatCurrency } from '@/lib/utils'
 import { Plus, Trash2, Loader2, Save, Search, Barcode, X, Package } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
+import { SearchableSelect } from '@/components/ui/searchable-select'
+import { AdditionalChargeItemsInput } from '@/components/AdditionalChargeItemsInput'
+import {
+  type AdditionalChargeItem,
+  hydrateAdditionalCharges,
+  sanitizeAdditionalChargeItems,
+  sumAdditionalChargeItems,
+} from '@/lib/additionalCharges'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { notifyError } from '@/lib/notify'
 import { linePayableTotal, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
@@ -30,7 +38,8 @@ interface Party {
 interface Invoice {
   id: string
   invoice_number: string
-  customer: { name: string }
+  party_id: string
+  party?: { name: string }
   date: string
   total_amount: number
   items: InvoiceItem[]
@@ -106,6 +115,7 @@ export default function CreateSalesReturnPage() {
   const [reason, setReason] = useState('')
   const [refundMode, setRefundMode] = useState('cash')
   const [notes, setNotes] = useState('')
+  const [deductionItems, setDeductionItems] = useState<AdditionalChargeItem[]>([])
   const [items, setItems] = useState<SalesReturnItem[]>([
     { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 18, unit: 'PCS', total: 0, reason: '' }
   ])
@@ -119,6 +129,9 @@ export default function CreateSalesReturnPage() {
 
   useEffect(() => {
     fetchData()
+    if (editId) {
+      fetchSalesReturn()
+    }
     if (invoiceParam) {
       setInvoiceId(invoiceParam)
       loadInvoiceItems(invoiceParam)
@@ -127,7 +140,7 @@ export default function CreateSalesReturnPage() {
 
   useEffect(() => {
     filterInvoices()
-  }, [invoiceSearch, invoices])
+  }, [invoiceSearch, invoices, partyId])
 
   useEffect(() => {
     filterProducts()
@@ -145,29 +158,31 @@ export default function CreateSalesReturnPage() {
 
   const fetchData = async () => {
     try {
-      const [partiesRes, productsRes, invoicesRes] = await Promise.all([
+      const [partiesRes, productsRes, invoicesRes, returnsRes] = await Promise.all([
         apiFetch('/parties?party_type=customer'),
         apiFetch('/products'),
         apiFetch('/invoices'),
+        apiFetch('/sales-returns'),
       ])
       if (partiesRes.ok) {
         const data = await partiesRes.json()
-        setParties(data.data || [])
+        setParties(Array.isArray(data) ? data : data.data || [])
       }
       if (productsRes.ok) {
         const data = await productsRes.json()
-        setProducts(data.data || [])
-        const cats = Array.from(new Set(data.data.map((p: Product) => p.category).filter(Boolean))) as string[]
+        const list: Product[] = Array.isArray(data) ? data : data.data || []
+        setProducts(list)
+        const cats = Array.from(new Set(list.map((p: Product) => p.category).filter(Boolean))) as string[]
         setCategories(cats)
       }
       if (invoicesRes.ok) {
         const data = await invoicesRes.json()
-        setInvoices(data.data || [])
+        setInvoices(Array.isArray(data) ? data : data.data || [])
       }
-      if (!editId) {
-        // Generate return number based on existing returns count
-        const count = invoices.length + 1
-        setReturnNumber(`SR-${String(count).padStart(4, '0')}`)
+      if (!editId && returnsRes.ok) {
+        const data = await returnsRes.json()
+        const returns = Array.isArray(data) ? data : data.data || []
+        setReturnNumber(`SR-${String(returns.length + 1).padStart(4, '0')}`)
       }
     } catch (err) {
       console.error(err)
@@ -179,13 +194,13 @@ export default function CreateSalesReturnPage() {
   const filterInvoices = () => {
     let filtered = invoices
     if (partyId) {
-      filtered = filtered.filter(inv => inv.customer?.name && parties.find(p => p.id === partyId)?.name === inv.customer.name)
+      filtered = filtered.filter(inv => inv.party_id === partyId)
     }
     if (invoiceSearch) {
       const search = invoiceSearch.toLowerCase()
       filtered = filtered.filter(inv => 
         inv.invoice_number.toLowerCase().includes(search) ||
-        inv.customer?.name?.toLowerCase().includes(search)
+        inv.party?.name?.toLowerCase().includes(search)
       )
     }
     setFilteredInvoices(filtered)
@@ -221,6 +236,7 @@ export default function CreateSalesReturnPage() {
         setReason(data.reason || '')
         setRefundMode(data.refund_mode || 'cash')
         setNotes(data.notes || '')
+        setDeductionItems(hydrateAdditionalCharges(data.deduction_items, Number(data.deduction_total) || 0))
         setItems(data.items.map((item: SalesReturnItem) => ({
           product_id: item.product_id,
           description: item.description || '',
@@ -244,7 +260,7 @@ export default function CreateSalesReturnPage() {
       const res = await apiFetch(`/invoices/${invoiceId}`)
       if (res.ok) {
         const invoice = await res.json()
-        setPartyId(invoice.customer_id)
+        setPartyId(invoice.party_id || '')
         setItems(invoice.items.map((item: InvoiceItem) => ({
           product_id: item.product_id,
           description: item.description || item.product?.name || '',
@@ -298,7 +314,7 @@ export default function CreateSalesReturnPage() {
     clearFieldError('party_id')
     setPartyId(value)
     setInvoiceId('')
-    filterInvoices()
+    setInvoiceSearch('')
   }
 
   const handleInvoiceSelect = (invoice: Invoice) => {
@@ -347,6 +363,9 @@ export default function CreateSalesReturnPage() {
     return items.reduce((sum, item) => sum + item.total, 0)
   }
 
+  const deductionTotal = sumAdditionalChargeItems(deductionItems)
+  const netRefund = Math.max(0, calculateTotal() - deductionTotal)
+
   const handleSave = async () => {
     if (!partyId) {
       setError('party_id', 'Please select a party')
@@ -356,6 +375,11 @@ export default function CreateSalesReturnPage() {
     if (items.some(item => !item.product_id)) {
       setError('items', 'Please select a product for each item')
       showErrorToast('Please fill in all required fields')
+      return
+    }
+    if (deductionTotal > calculateTotal()) {
+      setError('deduction_items', 'Deductions cannot exceed the return amount')
+      showErrorToast('Deductions cannot exceed the return amount')
       return
     }
 
@@ -368,6 +392,7 @@ export default function CreateSalesReturnPage() {
         reason: reason,
         refund_mode: refundMode,
         notes: notes,
+        deduction_items: sanitizeAdditionalChargeItems(deductionItems),
         items: items.map(item => ({
           product_id: item.product_id,
           quantity: item.quantity,
@@ -439,24 +464,17 @@ export default function CreateSalesReturnPage() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="party">Party Name *</Label>
-                    <select
-                      id="party"
+                    <Label>Party Name *</Label>
+                    <SearchableSelect
                       value={partyId}
-                      onChange={(e) => handlePartyChange(e.target.value)}
-                      className={cn(
-                        'mt-1 h-10 w-full rounded-md border border-input bg-background px-3',
-                        fieldErrors.party_id && 'border-red-500'
-                      )}
-                      required
-                    >
-                      <option value="">Select Party</option>
-                      {parties.map((party) => (
-                        <option key={party.id} value={party.id}>
-                          {party.name}
-                        </option>
-                      ))}
-                    </select>
+                      onValueChange={handlePartyChange}
+                      options={parties.map((party) => ({ value: party.id, label: party.name }))}
+                      placeholder="Select Party"
+                      searchPlaceholder="Search parties..."
+                      emptyMessage="No parties found"
+                      clearable
+                      className={cn('mt-1 h-10 w-full', fieldErrors.party_id && 'border-red-500')}
+                    />
                     <FieldError message={fieldErrors.party_id} />
                   </div>
                   <div className="relative" ref={invoiceDropdownRef}>
@@ -485,7 +503,7 @@ export default function CreateSalesReturnPage() {
                           >
                             <div>
                               <div className="font-medium">{invoice.invoice_number}</div>
-                              <div className="text-sm text-gray-500">{invoice.customer?.name}</div>
+                              <div className="text-sm text-gray-500">{invoice.party?.name}</div>
                             </div>
                             <div className="text-sm text-gray-600">{formatCurrency(invoice.total_amount)}</div>
                           </div>
@@ -518,6 +536,22 @@ export default function CreateSalesReturnPage() {
                       <option value="credit_note">Credit Note</option>
                     </select>
                   </div>
+                </div>
+                <div>
+                  <Label>Additional Deductions</Label>
+                  <p className="mb-2 text-xs text-gray-500">
+                    Amounts withheld from the refund (e.g. restocking fee, damage charges).
+                  </p>
+                  <AdditionalChargeItemsInput
+                    items={deductionItems}
+                    onChange={(items) => {
+                      clearFieldError('deduction_items')
+                      setDeductionItems(items)
+                    }}
+                    addLabel="Add Deduction"
+                    labelPlaceholder="Label (e.g. Restocking fee)"
+                  />
+                  <FieldError message={fieldErrors.deduction_items} />
                 </div>
                 <div>
                   <Label htmlFor="reason">Reason</Label>
@@ -685,7 +719,17 @@ export default function CreateSalesReturnPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Total Amount</span>
-                  <span className="font-bold text-lg">{formatCurrency(calculateTotal())}</span>
+                  <span className="font-medium">{formatCurrency(calculateTotal())}</span>
+                </div>
+                {deductionTotal > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Deductions</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(deductionTotal)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Refund Amount</span>
+                  <span className="font-bold text-lg">{formatCurrency(netRefund)}</span>
                 </div>
               </CardContent>
             </Card>

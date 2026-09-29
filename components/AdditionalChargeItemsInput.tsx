@@ -12,11 +12,18 @@ import { Plus, Trash2 } from 'lucide-react'
 interface AdditionalChargeItemsInputProps {
   items: AdditionalChargeItem[]
   onChange: (items: AdditionalChargeItem[]) => void
+  addLabel?: string
+  labelPlaceholder?: string
 }
 
 // Repeatable labelled charge rows used in the "Additional Charges &
 // Discount" section of invoice/estimate/purchase bill forms.
-export function AdditionalChargeItemsInput({ items, onChange }: AdditionalChargeItemsInputProps) {
+export function AdditionalChargeItemsInput({
+  items,
+  onChange,
+  addLabel = 'Add Charge',
+  labelPlaceholder = 'Label (e.g. Freight)',
+}: AdditionalChargeItemsInputProps) {
   const update = (index: number, patch: Partial<AdditionalChargeItem>) => {
     onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)))
   }
@@ -29,7 +36,7 @@ export function AdditionalChargeItemsInput({ items, onChange }: AdditionalCharge
         <div key={index} className="grid grid-cols-[1fr_120px_auto] gap-2 items-center">
           <Input
             type="text"
-            placeholder="Label (e.g. Freight)"
+            placeholder={labelPlaceholder}
             value={item.label}
             onChange={(e) => update(index, { label: e.target.value })}
             className="min-w-0"
@@ -61,7 +68,7 @@ export function AdditionalChargeItemsInput({ items, onChange }: AdditionalCharge
           size="sm"
           onClick={() => onChange([...items, { label: '', amount: 0 }])}
         >
-          <Plus className="mr-1 h-4 w-4" /> Add Charge
+          <Plus className="mr-1 h-4 w-4" /> {addLabel}
         </Button>
         {items.length > 0 && (
           <span className="text-sm text-gray-600">
