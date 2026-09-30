@@ -15,9 +15,10 @@ import { Label } from '@/components/ui/label'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
 import ExpandableTableCard from '@/components/ui/expandable-table-card'
-import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange, Check, X, Filter } from 'lucide-react'
+import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange, Check, X, Filter, IndianRupee, Package, Boxes, RefreshCw, Pencil } from 'lucide-react'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
-import { asArray } from '@/lib/utils'
+import { asArray, formatCurrency } from '@/lib/utils'
+import StatWidget from '@/components/widgets/StatWidget'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import {
   DATE_PERIOD_OPTIONS,
@@ -99,6 +100,14 @@ interface InventoryStock {
   last_updated: string
 }
 
+interface OpeningStockOverride {
+  id: string
+  effective_date: string
+  quantity: number
+  value: number
+  notes?: string
+}
+
 interface LowStockAlert {
   product_id: string
   product_name: string
@@ -148,6 +157,7 @@ export default function InventoryPage() {
   const router = useRouter()
   const { user, loading: authLoading } = useAuth()
   const canUseCameraBarcodeScanner = isSuperAdmin(user?.role)
+  const canOverrideOpeningStock = isSuperAdmin(user?.role)
   const { confirm, confirmDialog } = useConfirmDialog()
   const [balance, setBalance] = useState<StockBalance[]>([])
   const [entries, setEntries] = useState<StockEntry[]>([])
@@ -222,6 +232,17 @@ export default function InventoryPage() {
   const [transfersPage, setTransfersPage] = useState(1)
   const [transfersTotal, setTransfersTotal] = useState(0)
   const [pendingEntriesCount, setPendingEntriesCount] = useState(0)
+  const [refreshingClosing, setRefreshingClosing] = useState(false)
+  const [showOverrideModal, setShowOverrideModal] = useState(false)
+  const [openingOverrides, setOpeningOverrides] = useState<OpeningStockOverride[]>([])
+  const [savingOverride, setSavingOverride] = useState(false)
+  const [deletingOverrideId, setDeletingOverrideId] = useState<string | null>(null)
+  const [overrideForm, setOverrideForm] = useState({
+    date: '',
+    quantity: 0,
+    value: 0,
+    notes: '',
+  })
   const pageSize = DEFAULT_PAGE_SIZE
   const entriesTotalPages = Math.max(1, Math.ceil(entriesTotal / pageSize))
   const stocksTotalPages = Math.max(1, Math.ceil(stocksTotal / pageSize))
@@ -246,6 +267,14 @@ export default function InventoryPage() {
     ),
     [balance, productSearchQuery]
   )
+
+  const inventoryStats = useMemo(() => {
+    const totalValue = balance.reduce((sum, item) => sum + item.value, 0)
+    const totalQty = balance.reduce((sum, item) => sum + item.stock_qty, 0)
+    const productCount = new Set(balance.map((item) => item.product_id)).size
+    const outletCount = new Set(balance.map((item) => item.outlet_id)).size
+    return { totalValue, totalQty, productCount, outletCount }
+  }, [balance])
   // Inventory stocks always show current batch-level rows; date filter applies to entries/transfers only.
 
   const isProductSearchActive = productSearchQuery.trim().length > 0
@@ -276,6 +305,29 @@ export default function InventoryPage() {
     setEntriesPage(1)
     setTransfersPage(1)
   }, [datePeriod, customFromDate, customToDate, entryApprovalFilter])
+
+  // In the override dialog, the opening defaults to the computed overall
+  // closing stock of the previous day once a date is chosen.
+  useEffect(() => {
+    if (!showOverrideModal) return
+    const { date } = overrideForm
+    if (!date) return
+    const d = new Date(`${date}T00:00:00`)
+    if (Number.isNaN(d.getTime())) return
+    d.setDate(d.getDate() - 1)
+    const prevDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    apiFetch(`/inventory/snapshots/position?date=${prevDate}`)
+      .then(async (res) => {
+        if (!res.ok) return
+        const data = await res.json()
+        setOverrideForm((prev) => ({
+          ...prev,
+          quantity: Number(data.quantity) || 0,
+          value: Number(data.value) || 0,
+        }))
+      })
+      .catch(() => {})
+  }, [showOverrideModal, overrideForm.date])
 
   const toYmd = (d: Date | null) =>
     d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
@@ -383,6 +435,94 @@ export default function InventoryPage() {
     fetchStocks()
     fetchTransfers()
     fetchPendingCount()
+  }
+
+  // Recalculates today's closing stock on the server and records it in the
+  // daily snapshot table (insert or update under the current date).
+  const handleRefreshClosingStock = async () => {
+    setRefreshingClosing(true)
+    try {
+      const res = await apiFetch('/inventory/snapshots/refresh-closing', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        notifySuccess(
+          `Closing stock updated for ${data.date}: ${formatCurrency(data.closing_value)} (${Number(data.closing_qty).toLocaleString('en-IN', { maximumFractionDigits: 2 })} units)`
+        )
+        fetchData()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        notifyError(err.error || 'Failed to refresh closing stock')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to refresh closing stock')
+    } finally {
+      setRefreshingClosing(false)
+    }
+  }
+
+  const fetchOpeningOverrides = async () => {
+    try {
+      const res = await apiFetch('/inventory/snapshots/opening-overrides')
+      if (res.ok) {
+        setOpeningOverrides(asArray(await res.json()))
+      }
+    } catch (err) { console.error(err) }
+  }
+
+  const handleOpenOverrideModal = () => {
+    setOverrideForm((prev) => ({ ...prev, date: prev.date || new Date().toISOString().slice(0, 10) }))
+    setShowOverrideModal(true)
+    fetchOpeningOverrides()
+  }
+
+  const handleSaveOverride = async () => {
+    if (!overrideForm.date) {
+      notifyError('Please select a date')
+      return
+    }
+    setSavingOverride(true)
+    try {
+      const res = await apiFetch('/inventory/snapshots/opening-override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(overrideForm),
+      })
+      if (res.ok) {
+        notifySuccess('Opening stock override saved')
+        setOverrideForm((prev) => ({ date: prev.date, quantity: 0, value: 0, notes: '' }))
+        fetchOpeningOverrides()
+        fetchData()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        notifyError(err.error || 'Failed to save override')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to save override')
+    } finally {
+      setSavingOverride(false)
+    }
+  }
+
+  const handleDeleteOverride = async (id: string) => {
+    setDeletingOverrideId(id)
+    try {
+      const res = await apiFetch(`/inventory/snapshots/opening-override/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        notifySuccess('Override removed')
+        fetchOpeningOverrides()
+        fetchData()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        notifyError(err.error || 'Failed to delete override')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to delete override')
+    } finally {
+      setDeletingOverrideId(null)
+    }
   }
 
   const fetchInventoryItems = async () => {
@@ -1078,6 +1218,27 @@ export default function InventoryPage() {
                 </span>
               )}
             </Button>
+            <Button
+              variant="outline"
+              onClick={handleRefreshClosingStock}
+              disabled={refreshingClosing}
+              className="gap-2"
+              title="Recalculate closing stock and record it under today's date"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshingClosing ? 'animate-spin' : ''}`} />
+              Refresh Closing Stock
+            </Button>
+            {canOverrideOpeningStock && (
+              <Button
+                variant="outline"
+                onClick={handleOpenOverrideModal}
+                className="gap-2"
+                title="Set the opening stock for a product as of a date"
+              >
+                <Pencil className="h-4 w-4" />
+                Override Opening Stock
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setShowBulkStockUpdateDialog(true)} className="gap-2">
               <Upload className="h-4 w-4" />
               Bulk Stock Update
@@ -1296,6 +1457,94 @@ export default function InventoryPage() {
             </Button>
           </PageHeaderActions>
         </div>
+
+        {/* Opening Stock Override Modal — superadmin only */}
+        <Dialog open={showOverrideModal} onOpenChange={setShowOverrideModal}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Override Opening Stock</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-gray-500">
+              Declares the overall opening stock — all products and warehouses — at the
+              start of the selected date. It defaults to the previous day&apos;s closing
+              stock; edit to override. Stock reports and P&L will use this value instead
+              of the computed opening.
+            </p>
+            <div className="grid grid-cols-2 gap-4 py-2">
+              <div className="space-y-2">
+                <Label>Opening as of Date</Label>
+                <Input
+                  type="date"
+                  value={overrideForm.date}
+                  onChange={(e) => setOverrideForm((prev) => ({ ...prev, date: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Total Quantity</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={overrideForm.quantity}
+                  onChange={(e) => setOverrideForm((prev) => ({ ...prev, quantity: parseFloat(e.target.value) || 0 }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Total Stock Value</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={overrideForm.value}
+                  onChange={(e) => setOverrideForm((prev) => ({ ...prev, value: parseFloat(e.target.value) || 0 }))}
+                  placeholder="Defaults to computed closing value"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Notes</Label>
+                <Input
+                  value={overrideForm.notes}
+                  onChange={(e) => setOverrideForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Reason for override"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowOverrideModal(false)}>Close</Button>
+              <Button onClick={handleSaveOverride} disabled={savingOverride}>
+                {savingOverride ? 'Saving...' : 'Save Override'}
+              </Button>
+            </DialogFooter>
+
+            {openingOverrides.length > 0 && (
+              <div className="mt-2 border-t pt-3">
+                <p className="mb-2 text-sm font-medium text-gray-700">Existing overrides</p>
+                <div className="max-h-48 space-y-1 overflow-y-auto">
+                  {openingOverrides.map((o) => (
+                    <div key={o.id} className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2 text-sm">
+                      <div>
+                        <span className="font-medium">{o.effective_date?.slice(0, 10)}</span>
+                        <span className="ml-2 text-gray-500">
+                          {o.quantity} units · {formatCurrency(o.value)}
+                          {o.notes ? ` · ${o.notes}` : ''}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-red-600 hover:text-red-700"
+                        onClick={() => handleDeleteOverride(o.id)}
+                        disabled={deletingOverrideId === o.id}
+                        title="Remove override"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Edit Stock Entry Modal */}
         <Dialog open={showEditEntryModal} onOpenChange={setShowEditEntryModal}>
@@ -1575,6 +1824,35 @@ export default function InventoryPage() {
             )}
           </div>
         )}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatWidget
+            title="Total Stock Value"
+            value={formatCurrency(inventoryStats.totalValue)}
+            icon={IndianRupee}
+            color="success"
+            highlight
+            description={`Across ${inventoryStats.outletCount} outlet${inventoryStats.outletCount === 1 ? '' : 's'}`}
+          />
+          <StatWidget
+            title="Units in Stock"
+            value={inventoryStats.totalQty.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+            icon={Boxes}
+            color="info"
+          />
+          <StatWidget
+            title="Products in Stock"
+            value={inventoryStats.productCount}
+            icon={Package}
+            color="warning"
+          />
+          <StatWidget
+            title="Low Stock Items"
+            value={lowStockAlerts.length}
+            icon={AlertTriangle}
+            color="danger"
+          />
+        </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
