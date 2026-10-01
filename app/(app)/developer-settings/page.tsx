@@ -532,6 +532,7 @@ interface DeveloperSettings {
   aws_region: string
   sendgrid_sms_api_key?: string
   timezone: string
+  async_daily_profit: boolean
 }
 
 // GET/PUT /api/v1/developer-settings/db-maintenance payload shape.
@@ -626,6 +627,7 @@ interface DBBackupInfo {
 
 export default function DeveloperSettingsPage() {
   const { user, loading: authLoading } = useAuth()
+  const { activeStore, canSwitchStores } = useStore()
   const { setPagesLocal, refresh: refreshPageFeatures } = usePageFeatures()
   const [activeTab, setActiveTab] = useState('general')
   const [settings, setSettings] = useState<DeveloperSettings>({
@@ -651,6 +653,7 @@ export default function DeveloperSettingsPage() {
     aws_access_key: '',
     aws_region: '',
     timezone: '',
+    async_daily_profit: false,
   })
   const [pageFeatures, setPageFeatures] = useState<PageFeaturesMap>(defaultPageFeatures)
   const [aiSettings, setAiSettings] = useState<AiBusinessSettings>({
@@ -1279,6 +1282,41 @@ export default function DeveloperSettingsPage() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Daily Profit Report
+                </CardTitle>
+                <CardDescription>
+                  Choose how the Daily Profit Report stays up to date.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Asynchronous daily profit updates
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      When enabled, daily profit rows are stored in a materialized table and a
+                      background cron recalculates them every 2 minutes (the report's Refresh
+                      option recalculates a day instantly). The cron&apos;s &quot;today&quot; is
+                      resolved in the timezone configured above (defaults to UTC+5:30). When
+                      disabled, report columns are computed live from each sale, purchase,
+                      return, expense and stock adjustment at read time.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.async_daily_profit}
+                    onCheckedChange={(checked) =>
+                      setSettings({ ...settings, async_daily_profit: checked })
+                    }
+                  />
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="email">
@@ -1691,13 +1729,24 @@ export default function DeveloperSettingsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <LayoutGrid className="h-5 w-5" />
-                  Pages & Menus
+                  Pages &amp; Menus
                 </CardTitle>
                 <CardDescription>
                   Disable a page to hide it from the side menu. Opening a disabled URL still shows a Coming Soon screen. Dashboard, core Settings tabs, and Developer Settings stay available. Settings &gt; Reminders and Settings &gt; CA Share can be enabled or disabled below.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                <div className="flex items-center gap-2 rounded-md border bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <Store className="h-3.5 w-3.5 text-gray-500" />
+                  {activeStore ? (
+                    <span>
+                      These toggles apply to <span className="font-medium text-gray-800">{activeStore.name}</span>
+                      {canSwitchStores && ' — switch stores to edit another store\u2019s menu visibility'}
+                    </span>
+                  ) : (
+                    <span>These toggles apply globally (no store selected)</span>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={() => setAllPages(true)}>
                     Enable all

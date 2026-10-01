@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
 import ExpandableTableCard from '@/components/ui/expandable-table-card'
-import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange, Check, X, Filter, IndianRupee, Package, Boxes, RefreshCw, Pencil } from 'lucide-react'
+import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange, Check, X, Filter, IndianRupee, Package, Boxes, RefreshCw, Pencil, BarChart3 } from 'lucide-react'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { asArray, formatCurrency } from '@/lib/utils'
 import StatWidget from '@/components/widgets/StatWidget'
@@ -26,8 +26,10 @@ import {
   formatDateRangeLabel,
   getDateRangeForPeriod,
 } from '@/lib/dateFilter'
-import { DEFAULT_PAGE_SIZE, usePagination } from '@/hooks/usePagination'
+import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { isSuperAdmin } from '@/lib/roles'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
@@ -118,6 +120,14 @@ interface LowStockAlert {
   outlet_name: string
 }
 
+interface InventoryStats {
+  total_value: number
+  total_qty: number
+  product_count: number
+  outlet_count: number
+  low_stock_count: number
+}
+
 const STOCK_BULK_UPDATE_HEADERS = [
   'SKU',
   'Product Name',
@@ -142,15 +152,70 @@ const STOCK_BULK_UPDATE_SAMPLE_ROW: (string | number)[] = [
   'Bulk stock update',
 ]
 
-function matchesProductSearch(
-  query: string,
-  fields: { name?: string; sku?: string; itemCode?: string; itemName?: string }
-): boolean {
-  const trimmed = query.trim().toLowerCase()
-  if (!trimmed) return true
-  return [fields.name, fields.sku, fields.itemCode, fields.itemName]
-    .filter(Boolean)
-    .some((field) => field!.toLowerCase().includes(trimmed))
+function HeaderIconAction({
+  label,
+  icon,
+  onClick,
+  disabled,
+}: {
+  label: string
+  icon: ReactNode
+  onClick?: () => void
+  disabled?: boolean
+}) {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="shrink-0"
+            onClick={onClick}
+            disabled={disabled}
+            aria-label={label}
+          >
+            {icon}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{label}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+function StatWidgetSkeleton() {
+  return (
+    <Card className="rounded-xl border-[#e4e6ef] bg-white shadow-sm">
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 space-y-3">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-8 w-36" />
+            <Skeleton className="h-3.5 w-24" />
+          </div>
+          <Skeleton className="h-14 w-14 rounded-xl" />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function TableSkeletonRows({ cols, rows = 8 }: { cols: number; rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, rowIdx) => (
+        <TableRow key={rowIdx}>
+          {Array.from({ length: cols }).map((_, colIdx) => (
+            <TableCell key={colIdx}>
+              <Skeleton className="h-4 w-full" />
+            </TableCell>
+          ))}
+        </TableRow>
+      ))}
+    </>
+  )
 }
 
 export default function InventoryPage() {
@@ -164,7 +229,13 @@ export default function InventoryPage() {
   const [transfers, setTransfers] = useState<StockTransfer[]>([])
   const [stocks, setStocks] = useState<InventoryStock[]>([])
   const [lowStockAlerts, setLowStockAlerts] = useState<LowStockAlert[]>([])
-  const [loading, setLoading] = useState(true)
+  const [inventoryStats, setInventoryStats] = useState<InventoryStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(true)
+  const [balanceLoading, setBalanceLoading] = useState(true)
+  const [entriesLoading, setEntriesLoading] = useState(true)
+  const [transfersLoading, setTransfersLoading] = useState(true)
+  const [stocksLoading, setStocksLoading] = useState(true)
+  const [lowStockLoading, setLowStockLoading] = useState(true)
   const [showCreateEntryModal, setShowCreateEntryModal] = useState(false)
   const [showAdjustStockModal, setShowAdjustStockModal] = useState(false)
   const [showTransferModal, setShowTransferModal] = useState(false)
@@ -225,12 +296,17 @@ export default function InventoryPage() {
   const [debouncedProductSearch, setDebouncedProductSearch] = useState('')
   const [approvingEntryId, setApprovingEntryId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const [entriesPage, setEntriesPage] = useState(1)
   const [entriesTotal, setEntriesTotal] = useState(0)
   const [stocksPage, setStocksPage] = useState(1)
   const [stocksTotal, setStocksTotal] = useState(0)
   const [transfersPage, setTransfersPage] = useState(1)
   const [transfersTotal, setTransfersTotal] = useState(0)
+  const [balancePage, setBalancePage] = useState(1)
+  const [balanceTotal, setBalanceTotal] = useState(0)
+  const [lowStockPage, setLowStockPage] = useState(1)
+  const [lowStockTotal, setLowStockTotal] = useState(0)
   const [pendingEntriesCount, setPendingEntriesCount] = useState(0)
   const [refreshingClosing, setRefreshingClosing] = useState(false)
   const [showOverrideModal, setShowOverrideModal] = useState(false)
@@ -247,6 +323,8 @@ export default function InventoryPage() {
   const entriesTotalPages = Math.max(1, Math.ceil(entriesTotal / pageSize))
   const stocksTotalPages = Math.max(1, Math.ceil(stocksTotal / pageSize))
   const transfersTotalPages = Math.max(1, Math.ceil(transfersTotal / pageSize))
+  const balanceTotalPages = Math.max(1, Math.ceil(balanceTotal / pageSize))
+  const lowStockTotalPages = Math.max(1, Math.ceil(lowStockTotal / pageSize))
 
   const dateRange = useMemo(
     () => getDateRangeForPeriod(datePeriod, customFromDate, customToDate),
@@ -261,42 +339,35 @@ export default function InventoryPage() {
     return Boolean(selectedItem?.type === 'product' && selectedItem.enable_batching)
   }, [inventoryItems, newEntry.selected_item_id])
 
-  const filteredBalance = useMemo(
-    () => balance.filter((item) =>
-      matchesProductSearch(productSearchQuery, { name: item.product_name, sku: item.sku })
-    ),
-    [balance, productSearchQuery]
-  )
+  // Low-stock badge count comes from the stats endpoint so it shows before the
+  // low-stock tab is opened; fall back to the tab's own total if stats failed.
+  const lowStockCount = inventoryStats ? inventoryStats.low_stock_count : lowStockTotal
 
-  const inventoryStats = useMemo(() => {
-    const totalValue = balance.reduce((sum, item) => sum + item.value, 0)
-    const totalQty = balance.reduce((sum, item) => sum + item.stock_qty, 0)
-    const productCount = new Set(balance.map((item) => item.product_id)).size
-    const outletCount = new Set(balance.map((item) => item.outlet_id)).size
-    return { totalValue, totalQty, productCount, outletCount }
-  }, [balance])
   // Inventory stocks always show current batch-level rows; date filter applies to entries/transfers only.
-
   const isProductSearchActive = productSearchQuery.trim().length > 0
 
-  useEffect(() => { if (!authLoading && user) fetchCoreData() }, [authLoading, user])
+  // Lightweight data needed regardless of the active tab: dropdown options for
+  // the dialogs, the pending-approval badge, and the stat widgets.
+  useEffect(() => { if (!authLoading && user) fetchStats() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchInventoryItems() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchWarehouses() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchPendingCount() }, [authLoading, user])
-  useEffect(() => { if (!authLoading && user) fetchEntries() }, [authLoading, user, debouncedProductSearch, entryApprovalFilter, dateRange, entriesPage])
-  useEffect(() => { if (!authLoading && user) fetchStocks() }, [authLoading, user, debouncedProductSearch, stocksPage])
-  useEffect(() => { if (!authLoading && user) fetchTransfers() }, [authLoading, user, dateRange, transfersPage])
 
-  const lowStockPagination = usePagination(lowStockAlerts)
-  const balancePagination = usePagination(filteredBalance)
+  // Each tab fetches its own page of data when opened and when its
+  // filters/page change while it is active.
+  useEffect(() => { if (!authLoading && user && activeTab === 'balance') fetchBalance() }, [authLoading, user, activeTab, debouncedProductSearch, balancePage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'entries') fetchEntries() }, [authLoading, user, activeTab, debouncedProductSearch, entryApprovalFilter, dateRange, entriesPage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'stocks') fetchStocks() }, [authLoading, user, activeTab, debouncedProductSearch, stocksPage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'transfers') fetchTransfers() }, [authLoading, user, activeTab, dateRange, transfersPage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'low-stock') fetchLowStock() }, [authLoading, user, activeTab, lowStockPage])
 
   // Debounce the shared product search so each keystroke doesn't hit the API.
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedProductSearch(productSearchQuery.trim())
+      setBalancePage(1)
       setEntriesPage(1)
       setStocksPage(1)
-      balancePagination.resetPage()
     }, 300)
     return () => clearTimeout(timer)
   }, [productSearchQuery])
@@ -332,21 +403,76 @@ export default function InventoryPage() {
   const toYmd = (d: Date | null) =>
     d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
 
-  // Balance rows and low-stock alerts are bounded by products x outlets, so
-  // they stay client-paginated; entries/stocks/transfers are server-paginated.
-  const fetchCoreData = async () => {
+  // Aggregate figures for the stat widgets, fetched once independently of the
+  // tables so the widgets can render while a tab's data is still loading.
+  const fetchStats = async () => {
+    setStatsLoading(true)
     try {
-      const [b, l] = await Promise.all([
-        apiFetch('/inventory/balance'),
-        apiFetch('/inventory/alerts/low-stock')
-      ])
-      if (b.ok) { setBalance(asArray(await b.json())) }
-      if (l.ok) { setLowStockAlerts(asArray(await l.json())) }
+      const res = await apiFetch('/inventory/stats')
+      if (res.ok) {
+        const data = await res.json()
+        setInventoryStats({
+          total_value: Number(data?.total_value) || 0,
+          total_qty: Number(data?.total_qty) || 0,
+          product_count: Number(data?.product_count) || 0,
+          outlet_count: Number(data?.outlet_count) || 0,
+          low_stock_count: Number(data?.low_stock_count) || 0,
+        })
+      }
     } catch (err) { console.error(err) }
-    finally { setLoading(false) }
+    finally { setStatsLoading(false) }
+  }
+
+  const fetchBalance = async () => {
+    setBalanceLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      params.append('page', String(balancePage))
+      params.append('per_page', String(pageSize))
+      const res = await apiFetch(`/inventory/balance?${params.toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rows = asArray<StockBalance>(data)
+        const nextTotal = typeof data?.total === 'number' ? data.total : rows.length
+        // The current page may no longer exist after deletions or filter changes.
+        const maxPage = Math.max(1, Math.ceil(nextTotal / pageSize))
+        if (balancePage > maxPage) {
+          setBalancePage(maxPage)
+          return
+        }
+        setBalance(rows)
+        setBalanceTotal(nextTotal)
+      }
+    } catch (err) { console.error(err) }
+    finally { setBalanceLoading(false) }
+  }
+
+  const fetchLowStock = async () => {
+    setLowStockLoading(true)
+    try {
+      const params = new URLSearchParams()
+      params.append('page', String(lowStockPage))
+      params.append('per_page', String(pageSize))
+      const res = await apiFetch(`/inventory/alerts/low-stock?${params.toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rows = asArray<LowStockAlert>(data)
+        const nextTotal = typeof data?.total === 'number' ? data.total : rows.length
+        const maxPage = Math.max(1, Math.ceil(nextTotal / pageSize))
+        if (lowStockPage > maxPage) {
+          setLowStockPage(maxPage)
+          return
+        }
+        setLowStockAlerts(rows)
+        setLowStockTotal(nextTotal)
+      }
+    } catch (err) { console.error(err) }
+    finally { setLowStockLoading(false) }
   }
 
   const fetchEntries = async () => {
+    setEntriesLoading(true)
     try {
       const params = new URLSearchParams()
       if (dateRange.from) params.append('from_date', toYmd(dateRange.from))
@@ -370,9 +496,11 @@ export default function InventoryPage() {
         setEntriesTotal(nextTotal)
       }
     } catch (err) { console.error(err) }
+    finally { setEntriesLoading(false) }
   }
 
   const fetchStocks = async () => {
+    setStocksLoading(true)
     try {
       const params = new URLSearchParams()
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
@@ -392,9 +520,11 @@ export default function InventoryPage() {
         setStocksTotal(nextTotal)
       }
     } catch (err) { console.error(err) }
+    finally { setStocksLoading(false) }
   }
 
   const fetchTransfers = async () => {
+    setTransfersLoading(true)
     try {
       const params = new URLSearchParams()
       if (dateRange.from) params.append('from_date', toYmd(dateRange.from))
@@ -415,6 +545,7 @@ export default function InventoryPage() {
         setTransfersTotal(nextTotal)
       }
     } catch (err) { console.error(err) }
+    finally { setTransfersLoading(false) }
   }
 
   // The approval badge needs the pending count across all entries, not just
@@ -429,12 +560,16 @@ export default function InventoryPage() {
     } catch (err) { console.error(err) }
   }
 
+  // Refreshes the widgets and whichever tab is currently on screen; other tabs
+  // refetch when they are opened.
   const fetchData = () => {
-    fetchCoreData()
-    fetchEntries()
-    fetchStocks()
-    fetchTransfers()
+    fetchStats()
     fetchPendingCount()
+    if (activeTab === 'balance') fetchBalance()
+    else if (activeTab === 'entries') fetchEntries()
+    else if (activeTab === 'transfers') fetchTransfers()
+    else if (activeTab === 'stocks') fetchStocks()
+    else if (activeTab === 'low-stock') fetchLowStock()
   }
 
   // Recalculates today's closing stock on the server and records it in the
@@ -995,11 +1130,19 @@ export default function InventoryPage() {
 
   const handleExportBalance = async () => {
     try {
+      // per_page=0 returns every matching row for the export.
+      const params = new URLSearchParams()
+      if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      params.append('page', '1')
+      params.append('per_page', '0')
+      const res = await apiFetch(`/inventory/balance?${params.toString()}`, { timeoutMs: 30000 })
+      if (!res.ok) throw new Error('Failed to fetch stock balance')
+      const rows = asArray<StockBalance>(await res.json())
       await downloadCsv(
         `stock_balance_${accountingExportDateStamp()}.csv`,
         [
           ['Product', 'SKU', 'Stock Qty', 'Cost Price', 'Value', 'Outlet'],
-          ...filteredBalance.map((item) => [
+          ...rows.map((item) => [
             item.product_name,
             item.sku,
             item.stock_qty,
@@ -1125,11 +1268,15 @@ export default function InventoryPage() {
 
   const handleExportLowStock = async () => {
     try {
+      // per_page=0 returns every matching row for the export.
+      const res = await apiFetch('/inventory/alerts/low-stock?page=1&per_page=0', { timeoutMs: 30000 })
+      if (!res.ok) throw new Error('Failed to fetch low stock alerts')
+      const rows = asArray<LowStockAlert>(await res.json())
       await downloadCsv(
         `low_stock_alerts_${accountingExportDateStamp()}.csv`,
         [
           ['Product', 'SKU', 'Current Stock', 'Min Stock', 'Outlet'],
-          ...lowStockAlerts.map((alert) => [
+          ...rows.map((alert) => [
             alert.product_name,
             alert.sku,
             alert.current_stock,
@@ -1165,7 +1312,7 @@ export default function InventoryPage() {
     </div>
   )
 
-  if (authLoading || loading) {
+  if (authLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-64">
@@ -1202,47 +1349,32 @@ export default function InventoryPage() {
               type="button"
               variant="outline"
               size="icon"
-              className={`relative shrink-0 ${activeTab === 'low-stock' ? 'border-orange-300 bg-orange-50 text-orange-800' : ''}`}
-              onClick={() => setActiveTab('low-stock')}
-              aria-label={
-                lowStockAlerts.length > 0
-                  ? `Low stock alerts, ${lowStockAlerts.length} items`
-                  : 'Low stock alerts'
-              }
-              title="Low stock alerts"
+              className={`relative shrink-0 ${showStats ? 'border-slate-300 bg-slate-100 text-slate-800' : ''}`}
+              onClick={() => setShowStats((prev) => !prev)}
+              aria-label={showStats ? 'Hide inventory stats' : 'Show inventory stats'}
+              aria-expanded={showStats}
+              title={showStats ? 'Hide stats' : 'Show stats'}
             >
-              <AlertTriangle className="h-4 w-4" />
-              {lowStockAlerts.length > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
-                  {lowStockAlerts.length > 99 ? '99+' : lowStockAlerts.length}
-                </span>
-              )}
+              <BarChart3 className="h-4 w-4" />
             </Button>
-            <Button
-              variant="outline"
+            <HeaderIconAction
+              label="Refresh Closing Stock"
               onClick={handleRefreshClosingStock}
               disabled={refreshingClosing}
-              className="gap-2"
-              title="Recalculate closing stock and record it under today's date"
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshingClosing ? 'animate-spin' : ''}`} />
-              Refresh Closing Stock
-            </Button>
+              icon={<RefreshCw className={`h-4 w-4 ${refreshingClosing ? 'animate-spin' : ''}`} />}
+            />
             {canOverrideOpeningStock && (
-              <Button
-                variant="outline"
+              <HeaderIconAction
+                label="Override Opening Stock"
                 onClick={handleOpenOverrideModal}
-                className="gap-2"
-                title="Set the opening stock for a product as of a date"
-              >
-                <Pencil className="h-4 w-4" />
-                Override Opening Stock
-              </Button>
+                icon={<Pencil className="h-4 w-4" />}
+              />
             )}
-            <Button variant="outline" onClick={() => setShowBulkStockUpdateDialog(true)} className="gap-2">
-              <Upload className="h-4 w-4" />
-              Bulk Stock Update
-            </Button>
+            <HeaderIconAction
+              label="Bulk Stock Update"
+              onClick={() => setShowBulkStockUpdateDialog(true)}
+              icon={<Upload className="h-4 w-4" />}
+            />
             <Dialog open={showCreateEntryModal} onOpenChange={setShowCreateEntryModal}>
               <DialogTrigger asChild>
                 <Button>
@@ -1825,34 +1957,47 @@ export default function InventoryPage() {
           </div>
         )}
 
+        {showStats && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatWidget
-            title="Total Stock Value"
-            value={formatCurrency(inventoryStats.totalValue)}
-            icon={IndianRupee}
-            color="success"
-            highlight
-            description={`Across ${inventoryStats.outletCount} outlet${inventoryStats.outletCount === 1 ? '' : 's'}`}
-          />
-          <StatWidget
-            title="Units in Stock"
-            value={inventoryStats.totalQty.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-            icon={Boxes}
-            color="info"
-          />
-          <StatWidget
-            title="Products in Stock"
-            value={inventoryStats.productCount}
-            icon={Package}
-            color="warning"
-          />
-          <StatWidget
-            title="Low Stock Items"
-            value={lowStockAlerts.length}
-            icon={AlertTriangle}
-            color="danger"
-          />
+          {inventoryStats === null && statsLoading ? (
+            <>
+              <StatWidgetSkeleton />
+              <StatWidgetSkeleton />
+              <StatWidgetSkeleton />
+              <StatWidgetSkeleton />
+            </>
+          ) : (
+            <>
+              <StatWidget
+                title="Total Stock Value"
+                value={formatCurrency(inventoryStats?.total_value ?? 0)}
+                icon={IndianRupee}
+                color="success"
+                highlight
+                description={`Across ${inventoryStats?.outlet_count ?? 0} outlet${inventoryStats?.outlet_count === 1 ? '' : 's'}`}
+              />
+              <StatWidget
+                title="Units in Stock"
+                value={(inventoryStats?.total_qty ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                icon={Boxes}
+                color="info"
+              />
+              <StatWidget
+                title="Products in Stock"
+                value={inventoryStats?.product_count ?? 0}
+                icon={Package}
+                color="warning"
+              />
+              <StatWidget
+                title="Low Stock Items"
+                value={lowStockCount}
+                icon={AlertTriangle}
+                color="danger"
+              />
+            </>
+          )}
         </div>
+        )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -1869,9 +2014,9 @@ export default function InventoryPage() {
             <TabsTrigger value="stocks">Inventory Stocks</TabsTrigger>
             <TabsTrigger value="low-stock">
               Low Stock Alerts
-              {lowStockAlerts.length > 0 && (
+              {lowStockCount > 0 && (
                 <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
-                  {lowStockAlerts.length}
+                  {lowStockCount}
                 </span>
               )}
             </TabsTrigger>
@@ -1890,7 +2035,7 @@ export default function InventoryPage() {
                 <p className="text-sm text-gray-500">
                   Totals consolidated across all batches per product and outlet.
                   {isProductSearchActive && (
-                    <> · {filteredBalance.length} of {balance.length} records</>
+                    <> · {balanceTotal} records match your product search</>
                   )}
                 </p>
               }
@@ -1907,16 +2052,18 @@ export default function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {balancePagination.paginatedItems.length === 0 ? (
+                  {balanceLoading ? (
+                    <TableSkeletonRows cols={6} />
+                  ) : balance.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                        {balance.length === 0
-                          ? 'No stock balance records'
-                          : 'No stock balance records match your product search'}
+                        {isProductSearchActive
+                          ? 'No stock balance records match your product search'
+                          : 'No stock balance records'}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    balancePagination.paginatedItems.map((item) => (
+                    balance.map((item) => (
                       <TableRow key={`${item.product_id}-${item.outlet_id}`}>
                         <TableCell className="font-medium">{item.product_name}</TableCell>
                         <TableCell>{item.sku}</TableCell>
@@ -1930,11 +2077,11 @@ export default function InventoryPage() {
                 </TableBody>
               </Table>
               <PaginationControls
-                page={balancePagination.page}
-                totalPages={balancePagination.totalPages}
-                totalItems={balancePagination.totalItems}
-                pageSize={balancePagination.pageSize}
-                onPageChange={balancePagination.setPage}
+                page={balancePage}
+                totalPages={balanceTotalPages}
+                totalItems={balanceTotal}
+                pageSize={pageSize}
+                onPageChange={setBalancePage}
               />
             </ExpandableTableCard>
           </TabsContent>
@@ -2009,7 +2156,9 @@ export default function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {entries.length === 0 ? (
+                  {entriesLoading ? (
+                    <TableSkeletonRows cols={11} />
+                  ) : entries.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={11} className="py-8 text-center text-gray-500">
                         {isDateFilterActive || isProductSearchActive || entryApprovalFilter !== 'all'
@@ -2121,7 +2270,9 @@ export default function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {transfers.length === 0 ? (
+                  {transfersLoading ? (
+                    <TableSkeletonRows cols={6} />
+                  ) : transfers.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="py-8 text-center text-gray-500">
                         {isDateFilterActive
@@ -2192,7 +2343,9 @@ export default function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {stocks.length === 0 ? (
+                  {stocksLoading ? (
+                    <TableSkeletonRows cols={11} />
+                  ) : stocks.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={11} className="py-8 text-center text-gray-500">
                         {isProductSearchActive
@@ -2235,14 +2388,14 @@ export default function InventoryPage() {
 
           <TabsContent value="low-stock">
             <ExpandableTableCard
-              className={lowStockAlerts.length > 0 ? 'border-orange-200 bg-orange-50/40' : undefined}
+              className={lowStockCount > 0 ? 'border-orange-200 bg-orange-50/40' : undefined}
               title={
                 <CardTitle className="flex items-center gap-2 text-orange-800">
                   <AlertTriangle className="h-5 w-5" />
                   Low Stock Alerts
-                  {lowStockAlerts.length > 0 && (
+                  {lowStockTotal > 0 && (
                     <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
-                      {lowStockAlerts.length}
+                      {lowStockTotal}
                     </span>
                   )}
                 </CardTitle>
@@ -2265,14 +2418,16 @@ export default function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lowStockPagination.paginatedItems.length === 0 ? (
+                  {lowStockLoading ? (
+                    <TableSkeletonRows cols={5} />
+                  ) : lowStockAlerts.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="py-8 text-center text-gray-500">
                         No low stock alerts
                       </TableCell>
                     </TableRow>
                   ) : (
-                    lowStockPagination.paginatedItems.map((alert) => (
+                    lowStockAlerts.map((alert) => (
                       <TableRow key={`${alert.product_id}-${alert.outlet_id}`}>
                         <TableCell className="font-medium">{alert.product_name}</TableCell>
                         <TableCell>{alert.sku}</TableCell>
@@ -2285,11 +2440,11 @@ export default function InventoryPage() {
                 </TableBody>
               </Table>
               <PaginationControls
-                page={lowStockPagination.page}
-                totalPages={lowStockPagination.totalPages}
-                totalItems={lowStockPagination.totalItems}
-                pageSize={lowStockPagination.pageSize}
-                onPageChange={lowStockPagination.setPage}
+                page={lowStockPage}
+                totalPages={lowStockTotalPages}
+                totalItems={lowStockTotal}
+                pageSize={pageSize}
+                onPageChange={setLowStockPage}
               />
             </ExpandableTableCard>
           </TabsContent>

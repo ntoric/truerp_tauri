@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -176,8 +177,27 @@ function ExportActions({
   )
 }
 
+const ACCOUNTING_TABS = [
+  'accounts',
+  'journal',
+  'ledger',
+  'general-ledger',
+  'trial-balance',
+  'pnl',
+  'balance-sheet',
+  'bank-recon',
+] as const
+type AccountingTab = (typeof ACCOUNTING_TABS)[number]
+
 export default function AccountingPage() {
   const { user, loading: authLoading } = useAuth()
+  const searchParams = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const [activeTab, setActiveTab] = useState<AccountingTab>(
+    (ACCOUNTING_TABS as readonly string[]).includes(requestedTab ?? '')
+      ? (requestedTab as AccountingTab)
+      : 'accounts'
+  )
   const { confirm, confirmDialog } = useConfirmDialog()
   const { accounts: bankAccounts, refresh: refreshBankAccounts } = useBankAccounts()
 
@@ -862,7 +882,7 @@ export default function AccountingPage() {
           </Card>
         )}
 
-        <Tabs defaultValue="accounts">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AccountingTab)}>
           <TabsList className="flex h-auto flex-wrap">
             <TabsTrigger value="accounts">Chart of Accounts</TabsTrigger>
             <TabsTrigger value="journal">Journal Entries</TabsTrigger>

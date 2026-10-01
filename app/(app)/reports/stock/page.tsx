@@ -161,6 +161,12 @@ export default function StockReportPage() {
               Profit &amp; loss
             </Link>
             <Link
+              href="/reports/billwise-profit"
+              className="text-sm font-medium text-blue-600 hover:underline"
+            >
+              Billwise profit
+            </Link>
+            <Link
               href="/reports/daily"
               className="text-sm font-medium text-blue-600 hover:underline"
             >

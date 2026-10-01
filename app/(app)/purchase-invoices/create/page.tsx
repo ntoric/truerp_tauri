@@ -130,6 +130,8 @@ const ITEM_NUMBER_FIELDS: (keyof PurchaseBillItem)[] = [
   'total',
 ]
 
+const PRODUCT_MODAL_PAGE_SIZE = 25
+
 function remapIndexSet(prev: Set<number>, mapIndex: (i: number) => number | null): Set<number> {
   const next = new Set<number>()
   prev.forEach((i) => {
@@ -198,6 +200,12 @@ export default function CreatePurchaseInvoicePage() {
   const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
   const [productSearch, setProductSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
+  const [debouncedProductSearch, setDebouncedProductSearch] = useState('')
+  const [modalPage, setModalPage] = useState(1)
+  const [modalTotal, setModalTotal] = useState(0)
+  const [modalLoading, setModalLoading] = useState(false)
+  const [selectedProductMap, setSelectedProductMap] = useState<Record<string, Product>>({})
+  const modalFetchSeqRef = useRef(0)
   const [showAddVendor, setShowAddVendor] = useState(false)
   const [vendorFormData, setVendorFormData] = useState({
     name: '',
@@ -309,8 +317,15 @@ export default function CreatePurchaseInvoicePage() {
   }, [billDate, paymentTerms])
 
   useEffect(() => {
-    filterProducts()
-  }, [productSearch, selectedCategory, products])
+    const t = setTimeout(() => setDebouncedProductSearch(productSearch), 300)
+    return () => clearTimeout(t)
+  }, [productSearch])
+
+  useEffect(() => {
+    if (!showProductModal) return
+    fetchModalProducts(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showProductModal, debouncedProductSearch, selectedCategory])
 
   useEffect(() => {
     if (editId) {
@@ -567,22 +582,28 @@ export default function CreatePurchaseInvoicePage() {
     }
   }
 
-  const filterProducts = () => {
-    let filtered = products
-    if (selectedCategory) {
-      filtered = filtered.filter(p => p.category === selectedCategory)
+  const fetchModalProducts = async (page: number) => {
+    const seq = ++modalFetchSeqRef.current
+    setModalLoading(true)
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        per_page: String(PRODUCT_MODAL_PAGE_SIZE),
+      })
+      if (debouncedProductSearch.trim()) params.set('search', debouncedProductSearch.trim())
+      if (selectedCategory) params.set('category', selectedCategory)
+      const res = await apiFetch(`/products?${params.toString()}`)
+      if (!res.ok || seq !== modalFetchSeqRef.current) return
+      const data = await res.json()
+      const list: Product[] = Array.isArray(data) ? data : data.products || []
+      setFilteredProducts(list)
+      setModalTotal(typeof data.total === 'number' ? data.total : list.length)
+      setModalPage(page)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      if (seq === modalFetchSeqRef.current) setModalLoading(false)
     }
-    if (productSearch) {
-      const search = productSearch.toLowerCase()
-      filtered = filtered.filter(p => 
-        p.name.toLowerCase().includes(search) ||
-        p.sku?.toLowerCase().includes(search) ||
-        p.item_code?.toLowerCase().includes(search) ||
-        p.hsn_code?.toLowerCase().includes(search) ||
-        p.category?.toLowerCase().includes(search)
-      )
-    }
-    setFilteredProducts(filtered)
   }
 
   const calcItemTotals = (item: PurchaseBillItem, exempt = taxExempt): PurchaseBillItem => {
@@ -716,6 +737,7 @@ export default function CreatePurchaseInvoicePage() {
       setShowProductModal(false)
       setProductSearch('')
       setSelectedProductIds(new Set())
+      setSelectedProductMap({})
       setProductAddQuantities({})
     }
   }
@@ -738,6 +760,7 @@ export default function CreatePurchaseInvoicePage() {
     setShowProductModal(false)
     setProductSearch('')
     setSelectedProductIds(new Set())
+    setSelectedProductMap({})
     setProductAddQuantities({})
   }
 
@@ -768,6 +791,7 @@ export default function CreatePurchaseInvoicePage() {
     setShowProductModal(false)
     setProductSearch('')
     setSelectedProductIds(new Set())
+    setSelectedProductMap({})
     setProductAddQuantities({})
     setToast({ message: `Added custom item: ${trimmed}`, type: 'success' })
     setTimeout(() => setToast(null), 2000)
@@ -865,37 +889,60 @@ export default function CreatePurchaseInvoicePage() {
     setTimeout(() => setToast(null), 2000)
   }
 
-  const toggleProductSelection = (productId: string) => {
+  const toggleProductSelection = (product: Product) => {
     setSelectedProductIds((prev) => {
       const next = new Set(prev)
-      if (next.has(productId)) next.delete(productId)
-      else next.add(productId)
+      if (next.has(product.id)) next.delete(product.id)
+      else next.add(product.id)
+      return next
+    })
+    setSelectedProductMap((prev) => {
+      const next = { ...prev }
+      if (next[product.id]) delete next[product.id]
+      else next[product.id] = product
       return next
     })
   }
 
+  const allModalProductsSelected =
+    filteredProducts.length > 0 && filteredProducts.every((p) => selectedProductIds.has(p.id))
+
   const toggleSelectAllProducts = () => {
-    if (selectedProductIds.size === filteredProducts.length) {
-      setSelectedProductIds(new Set())
-    } else {
-      setSelectedProductIds(new Set(filteredProducts.map((p) => p.id)))
-    }
+    setSelectedProductIds((prev) => {
+      const next = new Set(prev)
+      filteredProducts.forEach((p) => {
+        if (allModalProductsSelected) next.delete(p.id)
+        else next.add(p.id)
+      })
+      return next
+    })
+    setSelectedProductMap((prev) => {
+      const next = { ...prev }
+      filteredProducts.forEach((p) => {
+        if (allModalProductsSelected) delete next[p.id]
+        else next[p.id] = p
+      })
+      return next
+    })
   }
 
   const handleAddSelectedProducts = () => {
-    const selected = filteredProducts.filter((p) => selectedProductIds.has(p.id))
+    const selected = Object.values(selectedProductMap).filter((p) => selectedProductIds.has(p.id))
     addProductsToInvoice(selected, { closeModal: true })
   }
 
   const openProductModal = () => {
     setSelectedProductIds(new Set())
+    setSelectedProductMap({})
     setProductAddQuantities({})
+    setModalPage(1)
     setShowProductModal(true)
   }
 
   const closeProductModal = () => {
     setShowProductModal(false)
     setSelectedProductIds(new Set())
+    setSelectedProductMap({})
     setProductAddQuantities({})
   }
 
@@ -2484,9 +2531,9 @@ export default function CreatePurchaseInvoicePage() {
                       <tr className="border-b text-left text-gray-500">
                         <th className="w-10 min-w-10 whitespace-nowrap pb-2 pr-2">
                           <Checkbox
-                            checked={filteredProducts.length > 0 && selectedProductIds.size === filteredProducts.length}
+                            checked={allModalProductsSelected}
                             onCheckedChange={toggleSelectAllProducts}
-                            aria-label="Select all products"
+                            aria-label="Select all products on this page"
                           />
                         </th>
                         <th className="min-w-[12rem] whitespace-nowrap pb-2 pr-2 font-medium">Item Name</th>
@@ -2504,7 +2551,7 @@ export default function CreatePurchaseInvoicePage() {
                           <td className="py-2 pr-2">
                             <Checkbox
                               checked={selectedProductIds.has(product.id)}
-                              onCheckedChange={() => toggleProductSelection(product.id)}
+                              onCheckedChange={() => toggleProductSelection(product)}
                               aria-label={`Select ${product.name}`}
                             />
                           </td>
@@ -2536,7 +2583,15 @@ export default function CreatePurchaseInvoicePage() {
                           </td>
                         </tr>
                       ))}
-                      {filteredProducts.length === 0 && (
+                      {modalLoading && (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-gray-500">
+                            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                            Loading items…
+                          </td>
+                        </tr>
+                      )}
+                      {!modalLoading && filteredProducts.length === 0 && (
                         <tr>
                           <td colSpan={8} className="py-8 text-center">
                             {productSearch.trim() ? (
@@ -2557,6 +2612,37 @@ export default function CreatePurchaseInvoicePage() {
                     </tbody>
                   </table>
                 </div>
+                {modalTotal > 0 && (
+                  <div className="mt-3 flex items-center justify-between text-sm text-gray-600">
+                    <span>
+                      Showing {(modalPage - 1) * PRODUCT_MODAL_PAGE_SIZE + 1}–
+                      {Math.min(modalPage * PRODUCT_MODAL_PAGE_SIZE, modalTotal)} of {modalTotal}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={modalPage <= 1 || modalLoading}
+                        onClick={() => fetchModalProducts(modalPage - 1)}
+                      >
+                        Prev
+                      </Button>
+                      <span>
+                        Page {modalPage} of {Math.max(1, Math.ceil(modalTotal / PRODUCT_MODAL_PAGE_SIZE))}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={modalPage * PRODUCT_MODAL_PAGE_SIZE >= modalTotal || modalLoading}
+                        onClick={() => fetchModalProducts(modalPage + 1)}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4 flex flex-wrap justify-end gap-2">
                   <Button
                     type="button"

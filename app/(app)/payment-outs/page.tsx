@@ -106,6 +106,7 @@ export default function PaymentOutsPage() {
   const [paymentOuts, setPaymentOuts] = useState<PaymentOut[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [bills, setBills] = useState<PurchaseBill[]>([])
+  const [billsLoading, setBillsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [search, setSearch] = useState('')
@@ -121,9 +122,11 @@ export default function PaymentOutsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [formData, setFormData] = useState(emptyForm)
 
+  // Bills are only needed inside the create dialog and are fetched on open
+  // (handleDialogOpenChange), so the page doesn't pull the full bills table
+  // on every load.
   useEffect(() => {
     fetchVendors()
-    fetchBills()
   }, [])
 
   useEffect(() => {
@@ -219,17 +222,22 @@ export default function PaymentOutsPage() {
   }
 
   const fetchBills = async () => {
+    setBillsLoading(true)
     try {
-      const res = await apiFetch('/purchase/bills')
+      // payable=true returns only bills that still owe money — the picker
+      // never offers fully-paid bills anyway.
+      const res = await apiFetch('/purchase/bills?payable=true')
       if (res.ok) {
         const data = await res.json()
-        setBills(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [])
+        setBills(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : (Array.isArray(data?.bills) ? data.bills : []))
       } else {
         showErrorToast('Unable to load purchase bills', 'Load failed')
       }
     } catch (err) {
       console.error(err)
       showErrorToast('Failed to load purchase bills. Please try again.')
+    } finally {
+      setBillsLoading(false)
     }
   }
 
@@ -537,7 +545,9 @@ export default function PaymentOutsPage() {
                           <SelectValue placeholder="Select bill" />
                         </SelectTrigger>
                         <SelectContent>
-                          {filteredBills.length === 0 ? (
+                          {billsLoading ? (
+                            <div className="px-2 py-3 text-sm text-gray-500">Loading bills…</div>
+                          ) : filteredBills.length === 0 ? (
                             <div className="px-2 py-3 text-sm text-gray-500">
                               {formData.party_id
                                 ? 'No bills due for this vendor'

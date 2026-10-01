@@ -678,6 +678,12 @@ export default function ReportsPage() {
               <Download className="mr-2 h-4 w-4" />
               {exportingAll ? 'Exporting…' : 'Export all (ZIP)'}
             </Button>
+            <Link href="/reports/index" className="text-sm font-medium text-blue-600 hover:underline">
+              All reports →
+            </Link>
+            <Link href="/reports/billwise-profit" className="text-sm font-medium text-blue-600 hover:underline">
+              Billwise profit →
+            </Link>
             <Link href="/reports/daily" className="text-sm font-medium text-blue-600 hover:underline">
               Daily partner report →
             </Link>

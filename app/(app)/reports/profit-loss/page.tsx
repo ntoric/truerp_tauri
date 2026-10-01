@@ -215,12 +215,20 @@ export default function ProfitLossReportPage() {
           <div>
             <h1 className="app-page-title">Profit &amp; Loss Report</h1>
           </div>
-          <Link
-            href="/reports/daily"
-            className="text-sm font-medium text-blue-600 hover:underline"
-          >
-            Business reports
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/reports/billwise-profit"
+              className="text-sm font-medium text-blue-600 hover:underline"
+            >
+              Billwise profit
+            </Link>
+            <Link
+              href="/reports/daily"
+              className="text-sm font-medium text-blue-600 hover:underline"
+            >
+              Business reports
+            </Link>
+          </div>
         </div>
 
         <Card>
