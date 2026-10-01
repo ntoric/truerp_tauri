@@ -166,7 +166,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const [signature, setSignature] = useState('')
   const [businessSignature, setBusinessSignature] = useState('')
   const [items, setItems] = useState<InvoiceItem[]>([
-    { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false, batch_no: '', exp_date: '', enable_batching: false }
+    { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 0, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false, batch_no: '', exp_date: '', enable_batching: false }
   ] as InvoiceItem[])
   const [lineBatches, setLineBatches] = useState<Record<number, ProductBatchStock[]>>({})
   const [loading, setLoading] = useState(false)
@@ -436,7 +436,8 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     const qty = parseItemNumber(item.quantity)
     const price = parseMoney(item.unit_price)
     const disc = parseItemNumber(item.discount)
-    const tax = parseItemNumber(item.tax_rate)
+    // Billing is tax-free: the line tax rate is ignored.
+    const tax = 0
     const itemTotal = qty * price
     const itemDiscount = itemTotal * (disc / 100)
     const taxable = itemTotal - itemDiscount
@@ -688,7 +689,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       hsn_code: String(match.hsn_code ?? ''),
       sale_price: Number(match.sale_price ?? 0),
       purchase_price: Number(match.purchase_price ?? 0),
-      tax_rate: Number(match.tax_rate ?? 18),
+      tax_rate: Number(match.tax_rate ?? 0),
       gst_enabled: typeof match.gst_enabled === 'boolean' ? match.gst_enabled : Number(match.tax_rate ?? 0) > 0,
       unit: String(match.unit ?? 'PCS'),
       stock_qty: Number(match.stock_qty ?? match.quantity ?? 0),
@@ -828,7 +829,8 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     const qty = parseItemNumber(newItems[index].quantity)
     const price = parseMoney(newItems[index].unit_price)
     const disc = parseItemNumber(newItems[index].discount)
-    const tax = parseItemNumber(newItems[index].tax_rate)
+    // Billing is tax-free: the line tax rate is ignored.
+    const tax = 0
 
     const itemTotal = qty * price
     const itemDiscount = itemTotal * (disc / 100)
@@ -856,7 +858,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
 
   const addItem = () => {
     const newIndex = items.length
-    setItems([...items, { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 18, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false, batch_no: '', exp_date: '', enable_batching: false }])
+    setItems([...items, { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 0, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false, batch_no: '', exp_date: '', enable_batching: false }])
     setFocusTarget({ lineIndex: newIndex, field: 'description' })
   }
 
@@ -869,7 +871,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         quantity: parseItemNumber(row.quantity, 1),
         unit_price: parseMoney(row.unitPrice),
         discount: 0,
-        tax_rate: parseItemNumber(row.taxRate, 18),
+        tax_rate: parseItemNumber(row.taxRate, 0),
         unit: 'PCS',
         cgst: 0,
         sgst: 0,
@@ -1077,7 +1079,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             quantity: item.quantity || 1,
             unit_price: item.unit_price || 0,
             discount: item.discount || 0,
-            tax_rate: item.tax_rate ?? 18,
+            tax_rate: item.tax_rate ?? 0,
             unit: item.unit || 'PCS',
             cgst: item.cgst || 0,
             sgst: item.sgst || 0,

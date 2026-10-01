@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
-import { useBankAccounts } from '@/hooks/useBankAccounts'
+import { useBankAccounts, type BankAccountOption } from '@/hooks/useBankAccounts'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
 import PageSkeleton from '@/components/layout/PageSkeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -26,7 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import JSZip from 'jszip'
 import { Plus, Trash2, Info, BookOpen, CheckCircle, Eye, Download, MoreVertical, BarChart3, ChevronDown, ChevronUp, CircleHelp } from 'lucide-react'
-import { usePagination } from '@/hooks/usePagination'
+import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
@@ -79,6 +80,8 @@ interface PLItem {
 interface ProfitLoss {
   income: PLItem[]
   expenses: PLItem[]
+  income_count?: number
+  expenses_count?: number
   total_income: number
   total_expense: number
   net_profit: number
@@ -95,6 +98,9 @@ interface BalanceSheet {
   assets: BSItem[]
   liabilities: BSItem[]
   equity: BSItem[]
+  assets_count?: number
+  liabilities_count?: number
+  equity_count?: number
   total_assets: number
   total_liabilities: number
   total_equity: number
@@ -189,6 +195,63 @@ const ACCOUNTING_TABS = [
 ] as const
 type AccountingTab = (typeof ACCOUNTING_TABS)[number]
 
+const PAGE_SIZE = DEFAULT_PAGE_SIZE
+
+interface PagedData<T> {
+  items: T[]
+  total: number
+  page: number
+}
+
+const emptyPaged = <T,>(): PagedData<T> => ({ items: [], total: 0, page: 1 })
+
+const totalPagesFor = (total: number) => Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+interface AccountingStats {
+  total_assets: number
+  total_liabilities: number
+  total_income: number
+  total_expense: number
+  net_profit: number
+}
+
+/** Pulsing placeholder rows rendered inside a <TableBody> while a tab fetches. */
+function SkeletonTableRows({ cols, rows = 8 }: { cols: number; rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <TableRow key={i}>
+          {Array.from({ length: cols }).map((_, j) => (
+            <TableCell key={j}>
+              <Skeleton className="h-4 w-full" />
+            </TableCell>
+          ))}
+        </TableRow>
+      ))}
+    </>
+  )
+}
+
+/** Skeleton matching the two/three-card report layouts (P&L, balance sheet). */
+function ReportCardsSkeleton() {
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      {[0, 1].map((i) => (
+        <Card key={i}>
+          <CardHeader>
+            <Skeleton className="h-4 w-32" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {Array.from({ length: 5 }).map((_, j) => (
+              <Skeleton key={j} className="h-8 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
 export default function AccountingPage() {
   const { user, loading: authLoading } = useAuth()
   const searchParams = useSearchParams()
@@ -199,36 +262,41 @@ export default function AccountingPage() {
       : 'accounts'
   )
   const { confirm, confirmDialog } = useConfirmDialog()
-  const { accounts: bankAccounts, refresh: refreshBankAccounts } = useBankAccounts()
+  // Bank accounts are only needed on the bank-recon tab; the hook fetches lazily.
+  const { accounts: bankAccounts } = useBankAccounts({ enabled: activeTab === 'bank-recon' })
 
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
-  const [trialBalance, setTrialBalance] = useState<TrialBalanceItem[]>([])
+  // Server-paginated tab data — each slice is fetched on demand when its tab
+  // is opened; `page`/`total` mirror the server response.
+  const [accountsData, setAccountsData] = useState<PagedData<Account>>(emptyPaged)
+  const [journalData, setJournalData] = useState<PagedData<JournalEntry>>(emptyPaged)
+  const [ledgerData, setLedgerData] = useState<PagedData<LedgerEntry>>(emptyPaged)
+  const [reconData, setReconData] = useState<PagedData<BankReconciliation>>(emptyPaged)
+  const [trialBalance, setTrialBalance] = useState<PagedData<TrialBalanceItem>>(emptyPaged)
   const [trialTotals, setTrialTotals] = useState({ debit: 0, credit: 0, balanced: true })
   const [profitLoss, setProfitLoss] = useState<ProfitLoss | null>(null)
+  const [plIncomePage, setPlIncomePage] = useState(1)
+  const [plExpensePage, setPlExpensePage] = useState(1)
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheet | null>(null)
-  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([])
+  const [bsAssetsPage, setBsAssetsPage] = useState(1)
+  const [bsLiabilitiesPage, setBsLiabilitiesPage] = useState(1)
+  const [bsEquityPage, setBsEquityPage] = useState(1)
   const [generalLedger, setGeneralLedger] = useState<{
     opening_balance: number
     closing_balance: number
     entries: LedgerEntry[]
     account?: Account
+    total: number
   } | null>(null)
-  const [reconciliations, setReconciliations] = useState<BankReconciliation[]>([])
+  const [glPage, setGlPage] = useState(1)
+  // Full chart of accounts, fetched lazily for dropdowns and the journal dialog.
+  const [allAccounts, setAllAccounts] = useState<Account[]>([])
+  const allAccountsStatus = useRef<'idle' | 'loading' | 'loaded'>('idle')
+  const [stats, setStats] = useState<AccountingStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [statsKey, setStatsKey] = useState(0)
+  const [loadingTabs, setLoadingTabs] = useState<Partial<Record<AccountingTab, boolean>>>({})
+  const [reloadKey, setReloadKey] = useState(0)
 
-  const accountsPagination = usePagination(accounts)
-  const journalPagination = usePagination(journalEntries)
-  const ledgerPagination = usePagination(ledgerEntries)
-  const generalLedgerPagination = usePagination(generalLedger?.entries ?? [])
-  const trialBalancePagination = usePagination(trialBalance)
-  const plIncomePagination = usePagination(profitLoss?.income ?? [])
-  const plExpensesPagination = usePagination(profitLoss?.expenses ?? [])
-  const bsAssetsPagination = usePagination(balanceSheet?.assets ?? [])
-  const bsLiabilitiesPagination = usePagination(balanceSheet?.liabilities ?? [])
-  const bsEquityPagination = usePagination(balanceSheet?.equity ?? [])
-  const reconciliationsPagination = usePagination(reconciliations)
-
-  const [loading, setLoading] = useState(true)
   const [showStats, setShowStats] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [accountDialogOpen, setAccountDialogOpen] = useState(false)
@@ -269,74 +337,308 @@ export default function AccountingPage() {
     return { debit, credit, balanced: debit === credit && debit > 0 }
   }, [journalForm.lines])
 
-  const fetchCore = useCallback(async () => {
-    const [a, j, tb, pl, bs, recon] = await Promise.all([
-      apiFetch('/accounting/accounts'),
-      apiFetch('/accounting/journal'),
-      apiFetch('/accounting/trial-balance'),
-      apiFetch('/accounting/profit-loss'),
-      apiFetch('/accounting/balance-sheet'),
-      apiFetch('/accounting/bank-reconciliation'),
-    ])
-    if (a.ok) setAccounts(await a.json())
-    if (j.ok) {
-      const d = await j.json()
-      setJournalEntries(d.data || d)
+  // Full account list for dropdowns — fetched once, on first need.
+  const ensureAllAccounts = useCallback(async (force = false) => {
+    if (!force && allAccountsStatus.current !== 'idle') return
+    allAccountsStatus.current = 'loading'
+    try {
+      const res = await apiFetch('/accounting/accounts')
+      if (res.ok) {
+        const d = await res.json()
+        setAllAccounts(Array.isArray(d) ? d : d.data ?? [])
+      }
+      allAccountsStatus.current = 'loaded'
+    } catch (err) {
+      allAccountsStatus.current = 'idle'
+      console.error(err)
     }
-    if (tb.ok) {
-      const data = await tb.json()
-      setTrialBalance(data.items || [])
-      setTrialTotals({
-        debit: data.total_debit ?? 0,
-        credit: data.total_credit ?? 0,
-        balanced: data.is_balanced ?? true,
-      })
-    }
-    if (pl.ok) setProfitLoss(await pl.json())
-    if (bs.ok) setBalanceSheet(await bs.json())
-    if (recon.ok) setReconciliations(await recon.json())
   }, [])
 
-  const fetchLedgers = useCallback(async () => {
-    const params = new URLSearchParams()
-    if (ledgerAccountFilter) params.set('account_id', ledgerAccountFilter)
-    if (ledgerFromDate) params.set('from_date', ledgerFromDate)
-    if (ledgerToDate) params.set('to_date', ledgerToDate)
-    const res = await apiFetch(`/accounting/ledgers?${params.toString()}`)
-    if (res.ok) {
-      const data = await res.json()
-      setLedgerEntries(data.data || [])
+  const fetchAccountsPage = useCallback(async (page: number) => {
+    setLoadingTabs((prev) => ({ ...prev, accounts: true }))
+    try {
+      const res = await apiFetch(`/accounting/accounts?page=${page}&per_page=${PAGE_SIZE}`)
+      if (res.ok) {
+        const d = await res.json()
+        const items: Account[] = Array.isArray(d) ? d : d.data ?? []
+        const total = d.total ?? items.length
+        const maxPage = totalPagesFor(total)
+        if (page > maxPage) setAccountsData((p) => ({ ...p, page: maxPage }))
+        else setAccountsData({ items, total, page })
+      } else {
+        notifyError('Failed to load accounts')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to load accounts')
+    } finally {
+      setLoadingTabs((prev) => ({ ...prev, accounts: false }))
+    }
+  }, [])
+
+  const fetchJournalPage = useCallback(async (page: number) => {
+    setLoadingTabs((prev) => ({ ...prev, journal: true }))
+    try {
+      const res = await apiFetch(`/accounting/journal?page=${page}&per_page=${PAGE_SIZE}`)
+      if (res.ok) {
+        const d = await res.json()
+        const items: JournalEntry[] = d.data ?? []
+        const total = d.total ?? items.length
+        const maxPage = totalPagesFor(total)
+        if (page > maxPage) setJournalData((p) => ({ ...p, page: maxPage }))
+        else setJournalData({ items, total, page })
+      } else {
+        notifyError('Failed to load journal entries')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to load journal entries')
+    } finally {
+      setLoadingTabs((prev) => ({ ...prev, journal: false }))
+    }
+  }, [])
+
+  const fetchLedgerPage = useCallback(async (page: number) => {
+    setLoadingTabs((prev) => ({ ...prev, ledger: true }))
+    try {
+      const params = new URLSearchParams({ page: String(page), per_page: String(PAGE_SIZE) })
+      if (ledgerAccountFilter) params.set('account_id', ledgerAccountFilter)
+      if (ledgerFromDate) params.set('from_date', ledgerFromDate)
+      if (ledgerToDate) params.set('to_date', ledgerToDate)
+      const res = await apiFetch(`/accounting/ledgers?${params.toString()}`)
+      if (res.ok) {
+        const d = await res.json()
+        const items: LedgerEntry[] = d.data ?? []
+        const total = d.total ?? items.length
+        const maxPage = totalPagesFor(total)
+        if (page > maxPage) setLedgerData((p) => ({ ...p, page: maxPage }))
+        else setLedgerData({ items, total, page })
+      } else {
+        notifyError('Failed to load ledger entries')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to load ledger entries')
+    } finally {
+      setLoadingTabs((prev) => ({ ...prev, ledger: false }))
     }
   }, [ledgerAccountFilter, ledgerFromDate, ledgerToDate])
 
-  const fetchGeneralLedger = useCallback(async () => {
+  const fetchGeneralLedger = useCallback(async (page: number) => {
     if (!glAccountId) {
       setGeneralLedger(null)
       return
     }
-    const params = new URLSearchParams()
-    if (glFromDate) params.set('from_date', glFromDate)
-    if (glToDate) params.set('to_date', glToDate)
-    const res = await apiFetch(`/accounting/general-ledger/${glAccountId}?${params.toString()}`)
-    if (res.ok) setGeneralLedger(await res.json())
+    setLoadingTabs((prev) => ({ ...prev, 'general-ledger': true }))
+    try {
+      const params = new URLSearchParams({ page: String(page), per_page: String(PAGE_SIZE) })
+      if (glFromDate) params.set('from_date', glFromDate)
+      if (glToDate) params.set('to_date', glToDate)
+      const res = await apiFetch(`/accounting/general-ledger/${glAccountId}?${params.toString()}`)
+      if (res.ok) {
+        const d = await res.json()
+        const entries: LedgerEntry[] = d.entries ?? []
+        const total = d.total ?? entries.length
+        const maxPage = totalPagesFor(total)
+        if (page > maxPage) {
+          setGlPage(maxPage)
+        } else {
+          setGeneralLedger({
+            opening_balance: d.opening_balance ?? 0,
+            closing_balance: d.closing_balance ?? 0,
+            entries,
+            account: d.account,
+            total,
+          })
+        }
+      } else {
+        notifyError('Failed to load general ledger')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to load general ledger')
+    } finally {
+      setLoadingTabs((prev) => ({ ...prev, 'general-ledger': false }))
+    }
   }, [glAccountId, glFromDate, glToDate])
 
-  useEffect(() => {
-    if (!authLoading && user) {
-      setLoading(true)
-      Promise.all([fetchCore(), refreshBankAccounts()])
-        .catch(console.error)
-        .finally(() => setLoading(false))
+  const fetchTrialBalance = useCallback(async (page: number) => {
+    setLoadingTabs((prev) => ({ ...prev, 'trial-balance': true }))
+    try {
+      const res = await apiFetch(`/accounting/trial-balance?page=${page}&per_page=${PAGE_SIZE}`)
+      if (res.ok) {
+        const d = await res.json()
+        const items: TrialBalanceItem[] = d.items ?? []
+        const total = d.total ?? items.length
+        const maxPage = totalPagesFor(total)
+        if (page > maxPage) {
+          setTrialBalance((p) => ({ ...p, page: maxPage }))
+        } else {
+          setTrialBalance({ items, total, page })
+          setTrialTotals({
+            debit: d.total_debit ?? 0,
+            credit: d.total_credit ?? 0,
+            balanced: d.is_balanced ?? true,
+          })
+        }
+      } else {
+        notifyError('Failed to load trial balance')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to load trial balance')
+    } finally {
+      setLoadingTabs((prev) => ({ ...prev, 'trial-balance': false }))
     }
-  }, [authLoading, user, fetchCore, refreshBankAccounts])
+  }, [])
 
-  useEffect(() => {
-    if (user) fetchLedgers()
-  }, [user, fetchLedgers])
+  const fetchProfitLoss = useCallback(async (incomePage: number, expensePage: number) => {
+    setLoadingTabs((prev) => ({ ...prev, pnl: true }))
+    try {
+      const res = await apiFetch(
+        `/accounting/profit-loss?per_page=${PAGE_SIZE}&income_page=${incomePage}&expense_page=${expensePage}`
+      )
+      if (res.ok) {
+        const d = await res.json()
+        const incomeCount = d.income_count ?? d.income?.length ?? 0
+        const expenseCount = d.expenses_count ?? d.expenses?.length ?? 0
+        const maxIncome = totalPagesFor(incomeCount)
+        const maxExpense = totalPagesFor(expenseCount)
+        if (incomePage > maxIncome || expensePage > maxExpense) {
+          if (incomePage > maxIncome) setPlIncomePage(maxIncome)
+          if (expensePage > maxExpense) setPlExpensePage(maxExpense)
+        } else {
+          setProfitLoss(d)
+        }
+      } else {
+        notifyError('Failed to load profit & loss')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to load profit & loss')
+    } finally {
+      setLoadingTabs((prev) => ({ ...prev, pnl: false }))
+    }
+  }, [])
 
+  const fetchBalanceSheet = useCallback(async (assetsPage: number, liabilitiesPage: number, equityPage: number) => {
+    setLoadingTabs((prev) => ({ ...prev, 'balance-sheet': true }))
+    try {
+      const res = await apiFetch(
+        `/accounting/balance-sheet?per_page=${PAGE_SIZE}&assets_page=${assetsPage}&liabilities_page=${liabilitiesPage}&equity_page=${equityPage}`
+      )
+      if (res.ok) {
+        const d = await res.json()
+        const assetsCount = d.assets_count ?? d.assets?.length ?? 0
+        const liabilitiesCount = d.liabilities_count ?? d.liabilities?.length ?? 0
+        const equityCount = d.equity_count ?? d.equity?.length ?? 0
+        const maxAssets = totalPagesFor(assetsCount)
+        const maxLiabilities = totalPagesFor(liabilitiesCount)
+        const maxEquity = totalPagesFor(equityCount)
+        if (assetsPage > maxAssets || liabilitiesPage > maxLiabilities || equityPage > maxEquity) {
+          if (assetsPage > maxAssets) setBsAssetsPage(maxAssets)
+          if (liabilitiesPage > maxLiabilities) setBsLiabilitiesPage(maxLiabilities)
+          if (equityPage > maxEquity) setBsEquityPage(maxEquity)
+        } else {
+          setBalanceSheet(d)
+        }
+      } else {
+        notifyError('Failed to load balance sheet')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to load balance sheet')
+    } finally {
+      setLoadingTabs((prev) => ({ ...prev, 'balance-sheet': false }))
+    }
+  }, [])
+
+  const fetchReconciliations = useCallback(async (page: number) => {
+    setLoadingTabs((prev) => ({ ...prev, 'bank-recon': true }))
+    try {
+      const res = await apiFetch(`/accounting/bank-reconciliation?page=${page}&per_page=${PAGE_SIZE}`)
+      if (res.ok) {
+        const d = await res.json()
+        const items: BankReconciliation[] = Array.isArray(d) ? d : d.data ?? []
+        const total = d.total ?? items.length
+        const maxPage = totalPagesFor(total)
+        if (page > maxPage) setReconData((p) => ({ ...p, page: maxPage }))
+        else setReconData({ items, total, page })
+      } else {
+        notifyError('Failed to load reconciliations')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to load reconciliations')
+    } finally {
+      setLoadingTabs((prev) => ({ ...prev, 'bank-recon': false }))
+    }
+  }, [])
+
+  // Lazy per-tab loading: only the active tab's data is fetched; reopening a
+  // tab refetches it so mutations elsewhere never show stale numbers.
   useEffect(() => {
-    if (user && glAccountId) fetchGeneralLedger()
-  }, [user, glAccountId, fetchGeneralLedger])
+    if (!user) return
+    switch (activeTab) {
+      case 'accounts':
+        void fetchAccountsPage(accountsData.page)
+        break
+      case 'journal':
+        void fetchJournalPage(journalData.page)
+        break
+      case 'ledger':
+        void ensureAllAccounts()
+        void fetchLedgerPage(ledgerData.page)
+        break
+      case 'general-ledger':
+        void ensureAllAccounts()
+        void fetchGeneralLedger(glPage)
+        break
+      case 'trial-balance':
+        void fetchTrialBalance(trialBalance.page)
+        break
+      case 'pnl':
+        void fetchProfitLoss(plIncomePage, plExpensePage)
+        break
+      case 'balance-sheet':
+        void fetchBalanceSheet(bsAssetsPage, bsLiabilitiesPage, bsEquityPage)
+        break
+      case 'bank-recon':
+        void fetchReconciliations(reconData.page)
+        break
+    }
+  }, [
+    user, activeTab, reloadKey,
+    accountsData.page, journalData.page, ledgerData.page, trialBalance.page,
+    glPage, plIncomePage, plExpensePage, bsAssetsPage, bsLiabilitiesPage, bsEquityPage,
+    reconData.page,
+    fetchAccountsPage, fetchJournalPage, fetchLedgerPage, fetchGeneralLedger,
+    fetchTrialBalance, fetchProfitLoss, fetchBalanceSheet, fetchReconciliations,
+    ensureAllAccounts,
+  ])
+
+  // Stats widgets load separately from the tab data, each time the panel opens.
+  useEffect(() => {
+    if (!user || !showStats) return
+    let cancelled = false
+    setStatsLoading(true)
+    apiFetch('/accounting/stats')
+      .then(async (res) => {
+        if (res.ok && !cancelled) setStats(await res.json())
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (!cancelled) setStatsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user, showStats, statsKey])
+
+  // The journal dialog needs the full account list for its line-item selects.
+  useEffect(() => {
+    if (journalDialogOpen && user) void ensureAllAccounts()
+  }, [journalDialogOpen, user, ensureAllAccounts])
 
   useEffect(() => {
     if (bankAccounts.length && !reconForm.bank_account_id) {
@@ -345,10 +647,12 @@ export default function AccountingPage() {
     }
   }, [bankAccounts, reconForm.bank_account_id])
 
+  // After a mutation, refetch the visible tab (reloadKey) plus any shared
+  // data already loaded; other tabs refetch when reopened.
   const refreshAll = async () => {
-    await fetchCore()
-    await fetchLedgers()
-    if (glAccountId) await fetchGeneralLedger()
+    if (allAccountsStatus.current === 'loaded') void ensureAllAccounts(true)
+    setStatsKey((k) => k + 1)
+    setReloadKey((k) => k + 1)
   }
 
   const handleCreateAccount = async () => {
@@ -469,15 +773,15 @@ export default function AccountingPage() {
   }
 
   const toggleSelectAllAccounts = () => {
-    if (selectedAccounts.size === accounts.length) {
+    if (selectedAccounts.size === accountsData.items.length) {
       setSelectedAccounts(new Set())
     } else {
-      setSelectedAccounts(new Set(accounts.map(a => a.id)))
+      setSelectedAccounts(new Set(accountsData.items.map(a => a.id)))
     }
   }
 
   const handleBulkDeleteAccounts = async () => {
-    const eligible = accounts.filter(a => selectedAccounts.has(a.id) && !a.is_default)
+    const eligible = accountsData.items.filter(a => selectedAccounts.has(a.id) && !a.is_default)
     if (eligible.length === 0) return
     if (!(await confirm({
       title: `Delete ${eligible.length} account(s)?`,
@@ -495,7 +799,7 @@ export default function AccountingPage() {
   }
 
   const handleBulkExportAccounts = async () => {
-    const selected = accounts.filter(a => selectedAccounts.has(a.id))
+    const selected = accountsData.items.filter(a => selectedAccounts.has(a.id))
     await downloadCsv(`selected-accounts-${exportStamp}.csv`, [
       ['Code', 'Name', 'Type', 'Balance'],
       ...selected.map(a => [a.code, a.name, a.account_type, a.balance]),
@@ -513,15 +817,15 @@ export default function AccountingPage() {
   }
 
   const toggleSelectAllJournals = () => {
-    if (selectedJournals.size === journalEntries.length) {
+    if (selectedJournals.size === journalData.items.length) {
       setSelectedJournals(new Set())
     } else {
-      setSelectedJournals(new Set(journalEntries.map(j => j.id)))
+      setSelectedJournals(new Set(journalData.items.map(j => j.id)))
     }
   }
 
   const handleBulkPostJournals = async () => {
-    const eligible = journalEntries.filter(j => selectedJournals.has(j.id) && j.status === 'draft')
+    const eligible = journalData.items.filter(j => selectedJournals.has(j.id) && j.status === 'draft')
     if (eligible.length === 0) return
     try {
       await Promise.all(
@@ -535,7 +839,7 @@ export default function AccountingPage() {
   }
 
   const handleBulkDeleteJournals = async () => {
-    const eligible = journalEntries.filter(j => selectedJournals.has(j.id) && j.status === 'draft')
+    const eligible = journalData.items.filter(j => selectedJournals.has(j.id) && j.status === 'draft')
     if (eligible.length === 0) return
     if (!(await confirm({
       title: `Delete ${eligible.length} draft journal entr${eligible.length === 1 ? 'y' : 'ies'}?`,
@@ -553,7 +857,7 @@ export default function AccountingPage() {
   }
 
   const handleBulkExportJournals = async () => {
-    const selected = journalEntries.filter(j => selectedJournals.has(j.id))
+    const selected = journalData.items.filter(j => selectedJournals.has(j.id))
     const rows: (string | number)[][] = [
       ['Entry Number', 'Entry Date', 'Description', 'Status', 'Debit', 'Credit'],
     ]
@@ -576,15 +880,15 @@ export default function AccountingPage() {
   }
 
   const toggleSelectAllReconciliations = () => {
-    if (selectedReconciliations.size === reconciliations.length) {
+    if (selectedReconciliations.size === reconData.items.length) {
       setSelectedReconciliations(new Set())
     } else {
-      setSelectedReconciliations(new Set(reconciliations.map(r => r.id)))
+      setSelectedReconciliations(new Set(reconData.items.map(r => r.id)))
     }
   }
 
   const handleBulkCompleteReconciliations = async () => {
-    const eligible = reconciliations.filter(r => selectedReconciliations.has(r.id) && r.status === 'draft')
+    const eligible = reconData.items.filter(r => selectedReconciliations.has(r.id) && r.status === 'draft')
     if (eligible.length === 0) return
     try {
       await Promise.all(
@@ -598,7 +902,7 @@ export default function AccountingPage() {
   }
 
   const handleBulkExportReconciliations = async () => {
-    const selected = reconciliations.filter(r => selectedReconciliations.has(r.id))
+    const selected = reconData.items.filter(r => selectedReconciliations.has(r.id))
     await downloadCsv(`selected-bank-reconciliation-${exportStamp}.csv`, [
       ['Statement Date', 'Bank Account', 'Statement Balance', 'Book Balance', 'Difference', 'Status', 'Notes'],
       ...selected.map(r => [
@@ -625,21 +929,86 @@ export default function AccountingPage() {
     return colors[type] || ''
   }
 
-  const bankAccountName = (id: string) =>
-    bankAccounts.find((b) => b.id === id)?.account_name || id.slice(0, 8)
+  const bankAccountNameFor = (list: BankAccountOption[], id: string) =>
+    list.find((b) => b.id === id)?.account_name || id.slice(0, 8)
+  const bankAccountName = (id: string) => bankAccountNameFor(bankAccounts, id)
 
   const exportStamp = accountingExportDateStamp()
 
-  const chartOfAccountsCsvRows = (): (string | number)[][] => [
+  // Full-dataset fetchers used by exports (per_page=0 returns every row).
+  const fetchAllAccounts = async (): Promise<Account[]> => {
+    const res = await apiFetch('/accounting/accounts?per_page=0')
+    if (!res.ok) return []
+    const d = await res.json()
+    return Array.isArray(d) ? d : d.data ?? []
+  }
+
+  const fetchAllJournals = async (): Promise<JournalEntry[]> => {
+    const res = await apiFetch('/accounting/journal?per_page=0')
+    if (!res.ok) return []
+    const d = await res.json()
+    return d.data ?? []
+  }
+
+  const fetchAllLedgers = async (): Promise<LedgerEntry[]> => {
+    const params = new URLSearchParams({ per_page: '0' })
+    if (ledgerAccountFilter) params.set('account_id', ledgerAccountFilter)
+    if (ledgerFromDate) params.set('from_date', ledgerFromDate)
+    if (ledgerToDate) params.set('to_date', ledgerToDate)
+    const res = await apiFetch(`/accounting/ledgers?${params.toString()}`)
+    if (!res.ok) return []
+    const d = await res.json()
+    return d.data ?? []
+  }
+
+  const fetchFullGeneralLedger = async () => {
+    if (!glAccountId) return null
+    const params = new URLSearchParams({ per_page: '0' })
+    if (glFromDate) params.set('from_date', glFromDate)
+    if (glToDate) params.set('to_date', glToDate)
+    const res = await apiFetch(`/accounting/general-ledger/${glAccountId}?${params.toString()}`)
+    return res.ok ? await res.json() : null
+  }
+
+  const fetchFullTrialBalance = async () => {
+    const res = await apiFetch('/accounting/trial-balance?per_page=0')
+    return res.ok ? await res.json() : null
+  }
+
+  const fetchFullProfitLoss = async (): Promise<ProfitLoss | null> => {
+    const res = await apiFetch('/accounting/profit-loss?per_page=0')
+    return res.ok ? await res.json() : null
+  }
+
+  const fetchFullBalanceSheet = async (): Promise<BalanceSheet | null> => {
+    const res = await apiFetch('/accounting/balance-sheet?per_page=0')
+    return res.ok ? await res.json() : null
+  }
+
+  const fetchAllReconciliations = async (): Promise<BankReconciliation[]> => {
+    const res = await apiFetch('/accounting/bank-reconciliation?per_page=0')
+    if (!res.ok) return []
+    const d = await res.json()
+    return Array.isArray(d) ? d : d.data ?? []
+  }
+
+  const fetchBankAccountsList = async (): Promise<BankAccountOption[]> => {
+    const res = await apiFetch('/cash-bank/accounts')
+    if (!res.ok) return []
+    const d = await res.json()
+    return Array.isArray(d) ? d : []
+  }
+
+  const chartOfAccountsCsvRows = (list: Account[]): (string | number)[][] => [
     ['Code', 'Name', 'Type', 'Balance'],
-    ...accounts.map((a) => [a.code, a.name, a.account_type, a.balance]),
+    ...list.map((a) => [a.code, a.name, a.account_type, a.balance]),
   ]
 
-  const journalCsvRows = (): (string | number)[][] => {
+  const journalCsvRows = (entries: JournalEntry[]): (string | number)[][] => {
     const rows: (string | number)[][] = [
       ['Entry Number', 'Entry Date', 'Entry Description', 'Status', 'Account', 'Debit', 'Credit', 'Line Description'],
     ]
-    for (const j of journalEntries) {
+    for (const j of entries) {
       if (j.lines?.length) {
         for (const line of j.lines) {
           rows.push([
@@ -669,9 +1038,9 @@ export default function AccountingPage() {
     return rows
   }
 
-  const ledgerCsvRows = (): (string | number)[][] => [
+  const ledgerCsvRows = (entries: LedgerEntry[]): (string | number)[][] => [
     ['Date', 'Account', 'Transaction Type', 'Reference', 'Description', 'Debit', 'Credit', 'Balance'],
-    ...ledgerEntries.map((row) => [
+    ...entries.map((row) => [
       row.transaction_date,
       row.account?.name || '',
       row.transaction_type,
@@ -683,15 +1052,17 @@ export default function AccountingPage() {
     ]),
   ]
 
-  const generalLedgerCsvRows = (): (string | number)[][] => {
-    const acct = generalLedger?.account
+  const generalLedgerCsvRows = (
+    gl: { opening_balance: number; closing_balance: number; entries: LedgerEntry[]; account?: Account } | null
+  ): (string | number)[][] => {
+    const acct = gl?.account
     const header = acct
-      ? [[`Account: ${acct.code} — ${acct.name}`], [`Opening balance: ${generalLedger?.opening_balance ?? 0}`], []]
+      ? [[`Account: ${acct.code} — ${acct.name}`], [`Opening balance: ${gl?.opening_balance ?? 0}`], []]
       : []
     return [
       ...header,
       ['Date', 'Reference', 'Description', 'Debit', 'Credit', 'Balance'],
-      ...(generalLedger?.entries || []).map((row) => [
+      ...(gl?.entries || []).map((row) => [
         row.transaction_date,
         row.reference_number,
         row.description,
@@ -700,53 +1071,56 @@ export default function AccountingPage() {
         row.balance,
       ]),
       [],
-      ['Closing balance', '', '', '', '', generalLedger?.closing_balance ?? ''],
+      ['Closing balance', '', '', '', '', gl?.closing_balance ?? ''],
     ]
   }
 
-  const trialBalanceCsvRows = (): (string | number)[][] => [
+  const trialBalanceCsvRows = (
+    items: TrialBalanceItem[],
+    totals: { debit: number; credit: number }
+  ): (string | number)[][] => [
     ['Code', 'Account', 'Type', 'Debit', 'Credit'],
-    ...trialBalance.map((row) => [row.account_code, row.account_name, row.account_type, row.debit, row.credit]),
-    ['', '', 'Total', trialTotals.debit, trialTotals.credit],
+    ...items.map((row) => [row.account_code, row.account_name, row.account_type, row.debit, row.credit]),
+    ['', '', 'Total', totals.debit, totals.credit],
   ]
 
-  const profitLossCsvRows = (): (string | number)[][] => {
+  const profitLossCsvRows = (pl: ProfitLoss | null): (string | number)[][] => {
     const rows: (string | number)[][] = [['Section', 'Account', 'Amount']]
-    for (const row of profitLoss?.income || []) {
+    for (const row of pl?.income || []) {
       rows.push(['Income', row.account_name, row.amount])
     }
-    rows.push(['', 'Total income', profitLoss?.total_income ?? 0])
-    for (const row of profitLoss?.expenses || []) {
+    rows.push(['', 'Total income', pl?.total_income ?? 0])
+    for (const row of pl?.expenses || []) {
       rows.push(['Expense', row.account_name, row.amount])
     }
-    rows.push(['', 'Total expenses', profitLoss?.total_expense ?? 0])
-    rows.push(['', 'Net profit', profitLoss?.net_profit ?? 0])
+    rows.push(['', 'Total expenses', pl?.total_expense ?? 0])
+    rows.push(['', 'Net profit', pl?.net_profit ?? 0])
     return rows
   }
 
-  const balanceSheetCsvRows = (): (string | number)[][] => {
+  const balanceSheetCsvRows = (bs: BalanceSheet | null): (string | number)[][] => {
     const rows: (string | number)[][] = [['Section', 'Account', 'Amount']]
-    for (const row of balanceSheet?.assets || []) {
+    for (const row of bs?.assets || []) {
       rows.push(['Assets', row.account_name, row.amount])
     }
-    rows.push(['', 'Total assets', balanceSheet?.total_assets ?? 0])
-    for (const row of balanceSheet?.liabilities || []) {
+    rows.push(['', 'Total assets', bs?.total_assets ?? 0])
+    for (const row of bs?.liabilities || []) {
       rows.push(['Liabilities', row.account_name, row.amount])
     }
-    rows.push(['', 'Total liabilities', balanceSheet?.total_liabilities ?? 0])
-    for (const row of balanceSheet?.equity || []) {
+    rows.push(['', 'Total liabilities', bs?.total_liabilities ?? 0])
+    for (const row of bs?.equity || []) {
       rows.push(['Equity', row.account_name, row.amount])
     }
-    rows.push(['', 'Total equity', balanceSheet?.total_equity ?? 0])
-    rows.push(['', 'Liabilities + equity', balanceSheet?.total_liabilities_equity ?? 0])
+    rows.push(['', 'Total equity', bs?.total_equity ?? 0])
+    rows.push(['', 'Liabilities + equity', bs?.total_liabilities_equity ?? 0])
     return rows
   }
 
-  const bankReconCsvRows = (): (string | number)[][] => [
+  const bankReconCsvRows = (rows: BankReconciliation[], banks: BankAccountOption[]): (string | number)[][] => [
     ['Statement Date', 'Bank Account', 'Statement Balance', 'Book Balance', 'Difference', 'Status', 'Notes'],
-    ...reconciliations.map((r) => [
+    ...rows.map((r) => [
       r.statement_date,
-      bankAccountName(r.bank_account_id),
+      bankAccountNameFor(banks, r.bank_account_id),
       r.statement_balance,
       r.book_balance,
       r.difference,
@@ -759,31 +1133,53 @@ export default function AccountingPage() {
 
   const exportAllAccountingZip = async () => {
     try {
+      // Exports pull the full datasets (per_page=0) rather than the currently
+      // loaded pages.
+      const [allAccs, allJournals, allLedgers, tb, pl, bs, allRecons, gl, banks] =
+        await Promise.all([
+          fetchAllAccounts(),
+          fetchAllJournals(),
+          fetchAllLedgers(),
+          fetchFullTrialBalance(),
+          fetchFullProfitLoss(),
+          fetchFullBalanceSheet(),
+          fetchAllReconciliations(),
+          fetchFullGeneralLedger(),
+          fetchBankAccountsList(),
+        ])
       const zip = new JSZip()
-      zip.file('chart-of-accounts.csv', rowsToCsv(chartOfAccountsCsvRows()))
-      zip.file('journal-entries.csv', rowsToCsv(journalCsvRows()))
-      zip.file('ledger.csv', rowsToCsv(ledgerCsvRows()))
-      zip.file('trial-balance.csv', rowsToCsv(trialBalanceCsvRows()))
-      zip.file('profit-and-loss.csv', rowsToCsv(profitLossCsvRows()))
-      zip.file('balance-sheet.csv', rowsToCsv(balanceSheetCsvRows()))
-      zip.file('bank-reconciliation.csv', rowsToCsv(bankReconCsvRows()))
-      if (generalLedger?.account && generalLedger.entries.length >= 0) {
-        const safe = generalLedger.account.code.replace(/[^a-zA-Z0-9-_]/g, '_')
-        zip.file(`general-ledger-${safe}.csv`, rowsToCsv(generalLedgerCsvRows()))
+      zip.file('chart-of-accounts.csv', rowsToCsv(chartOfAccountsCsvRows(allAccs)))
+      zip.file('journal-entries.csv', rowsToCsv(journalCsvRows(allJournals)))
+      zip.file('ledger.csv', rowsToCsv(ledgerCsvRows(allLedgers)))
+      zip.file('trial-balance.csv', rowsToCsv(trialBalanceCsvRows(tb?.items ?? [], {
+        debit: tb?.total_debit ?? 0,
+        credit: tb?.total_credit ?? 0,
+      })))
+      zip.file('profit-and-loss.csv', rowsToCsv(profitLossCsvRows(pl)))
+      zip.file('balance-sheet.csv', rowsToCsv(balanceSheetCsvRows(bs)))
+      zip.file('bank-reconciliation.csv', rowsToCsv(bankReconCsvRows(allRecons, banks)))
+      if (gl?.account && gl.entries?.length >= 0) {
+        const safe = gl.account.code.replace(/[^a-zA-Z0-9-_]/g, '_')
+        zip.file(`general-ledger-${safe}.csv`, rowsToCsv(generalLedgerCsvRows(gl)))
       }
       zip.file(
         'summary.json',
         JSON.stringify(
           {
             exported_at: new Date().toISOString(),
-            accounts,
-            journal_entries: journalEntries,
-            ledger: ledgerEntries,
-            trial_balance: { items: trialBalance, ...trialTotals },
-            profit_loss: profitLoss,
-            balance_sheet: balanceSheet,
-            bank_reconciliations: reconciliations,
-            general_ledger: generalLedger,
+            accounts: allAccs,
+            journal_entries: allJournals,
+            ledger: allLedgers,
+            trial_balance: {
+              items: tb?.items ?? [],
+              total_debit: tb?.total_debit ?? 0,
+              total_credit: tb?.total_credit ?? 0,
+              is_balanced: tb?.is_balanced ?? true,
+            },
+            profit_loss: pl,
+            balance_sheet: bs,
+            bank_reconciliations: allRecons,
+            general_ledger: gl,
           },
           null,
           2
@@ -800,7 +1196,7 @@ export default function AccountingPage() {
     }
   }
 
-  if (authLoading || loading) {
+  if (authLoading) {
     return (
       <DashboardLayout>
         <PageSkeleton />
@@ -863,10 +1259,21 @@ export default function AccountingPage() {
 
         {showStats && (
           <div id="accounting-stats" className="grid gap-3 md:grid-cols-4">
-            <SummaryStat label="Total Assets" value={formatCurrency(balanceSheet?.total_assets ?? accounts.filter((a) => a.account_type === 'asset').reduce((s, a) => s + a.balance, 0))} />
-            <SummaryStat tone="danger" label="Total Liabilities" value={formatCurrency(balanceSheet?.total_liabilities ?? accounts.filter((a) => a.account_type === 'liability').reduce((s, a) => s + a.balance, 0))} />
-            <SummaryStat tone="success" label="Total Income" value={formatCurrency(profitLoss?.total_income ?? 0)} />
-            <SummaryStat tone={(profitLoss?.net_profit ?? 0) >= 0 ? 'success' : 'danger'} label="Net Profit" value={formatCurrency(profitLoss?.net_profit ?? 0)} />
+            {statsLoading && !stats
+              ? Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="rounded-xl border border-[#e4e6ef] bg-white p-4">
+                    <Skeleton className="h-3 w-20" />
+                    <Skeleton className="mt-2 h-7 w-28" />
+                  </div>
+                ))
+              : (
+                <>
+                  <SummaryStat label="Total Assets" value={formatCurrency(stats?.total_assets ?? 0)} />
+                  <SummaryStat tone="danger" label="Total Liabilities" value={formatCurrency(stats?.total_liabilities ?? 0)} />
+                  <SummaryStat tone="success" label="Total Income" value={formatCurrency(stats?.total_income ?? 0)} />
+                  <SummaryStat tone={(stats?.net_profit ?? 0) >= 0 ? 'success' : 'danger'} label="Net Profit" value={formatCurrency(stats?.net_profit ?? 0)} />
+                </>
+              )}
           </div>
         )}
 
@@ -900,11 +1307,11 @@ export default function AccountingPage() {
                 <CardTitle className="text-base">Chart of accounts</CardTitle>
                 <ExportActions
                   onCsv={async () => {
-                    await downloadCsv(`chart-of-accounts-${exportStamp}.csv`, chartOfAccountsCsvRows())
+                    await downloadCsv(`chart-of-accounts-${exportStamp}.csv`, chartOfAccountsCsvRows(await fetchAllAccounts()))
                     notifyExported('Chart of accounts')
                   }}
                   onJson={async () => {
-                    await downloadJson(`chart-of-accounts-${exportStamp}.json`, accounts)
+                    await downloadJson(`chart-of-accounts-${exportStamp}.json`, await fetchAllAccounts())
                     notifyExported('Chart of accounts')
                   }}
                 />
@@ -928,7 +1335,7 @@ export default function AccountingPage() {
                     <TableRow>
                       <TableHead className="w-10">
                         <Checkbox
-                          checked={accounts.length > 0 && selectedAccounts.size === accounts.length}
+                          checked={accountsData.items.length > 0 && selectedAccounts.size === accountsData.items.length}
                           onCheckedChange={toggleSelectAllAccounts}
                         />
                       </TableHead>
@@ -940,7 +1347,8 @@ export default function AccountingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {accountsPagination.paginatedItems.map((a) => (
+                    {loadingTabs.accounts && <SkeletonTableRows cols={6} />}
+                    {!loadingTabs.accounts && accountsData.items.map((a) => (
                       <TableRow key={a.id}>
                         <TableCell>
                           <Checkbox
@@ -962,7 +1370,11 @@ export default function AccountingPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => setGlAccountId(a.id)}>
+                              <DropdownMenuItem onClick={() => {
+                                setGlAccountId(a.id)
+                                setGlPage(1)
+                                setActiveTab('general-ledger')
+                              }}>
                                 <BookOpen className="mr-2 h-4 w-4" />
                                 View Ledger
                               </DropdownMenuItem>
@@ -980,7 +1392,7 @@ export default function AccountingPage() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {accounts.length === 0 && (
+                    {!loadingTabs.accounts && accountsData.items.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={6} className="py-8 text-center text-gray-500">
                           No accounts
@@ -990,11 +1402,14 @@ export default function AccountingPage() {
                   </TableBody>
                 </Table>
                 <PaginationControls
-                  page={accountsPagination.page}
-                  totalPages={accountsPagination.totalPages}
-                  totalItems={accountsPagination.totalItems}
-                  pageSize={accountsPagination.pageSize}
-                  onPageChange={accountsPagination.setPage}
+                  page={accountsData.page}
+                  totalPages={totalPagesFor(accountsData.total)}
+                  totalItems={accountsData.total}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={(p) => {
+                    setSelectedAccounts(new Set())
+                    setAccountsData((d) => ({ ...d, page: p }))
+                  }}
                 />
               </CardContent>
             </Card>
@@ -1006,11 +1421,11 @@ export default function AccountingPage() {
                 <CardTitle className="text-base">Journal entries</CardTitle>
                 <ExportActions
                   onCsv={async () => {
-                    await downloadCsv(`journal-entries-${exportStamp}.csv`, journalCsvRows())
+                    await downloadCsv(`journal-entries-${exportStamp}.csv`, journalCsvRows(await fetchAllJournals()))
                     notifyExported('Journal entries')
                   }}
                   onJson={async () => {
-                    await downloadJson(`journal-entries-${exportStamp}.json`, journalEntries)
+                    await downloadJson(`journal-entries-${exportStamp}.json`, await fetchAllJournals())
                     notifyExported('Journal entries')
                   }}
                 />
@@ -1037,7 +1452,7 @@ export default function AccountingPage() {
                     <TableRow>
                       <TableHead className="w-10">
                         <Checkbox
-                          checked={journalEntries.length > 0 && selectedJournals.size === journalEntries.length}
+                          checked={journalData.items.length > 0 && selectedJournals.size === journalData.items.length}
                           onCheckedChange={toggleSelectAllJournals}
                         />
                       </TableHead>
@@ -1051,7 +1466,8 @@ export default function AccountingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {journalPagination.paginatedItems.map((j) => (
+                    {loadingTabs.journal && <SkeletonTableRows cols={8} />}
+                    {!loadingTabs.journal && journalData.items.map((j) => (
                       <TableRow key={j.id}>
                         <TableCell>
                           <Checkbox
@@ -1101,7 +1517,7 @@ export default function AccountingPage() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {journalEntries.length === 0 && (
+                    {!loadingTabs.journal && journalData.items.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={8} className="py-8 text-center text-gray-500">
                           No journal entries yet
@@ -1111,11 +1527,14 @@ export default function AccountingPage() {
                   </TableBody>
                 </Table>
                 <PaginationControls
-                  page={journalPagination.page}
-                  totalPages={journalPagination.totalPages}
-                  totalItems={journalPagination.totalItems}
-                  pageSize={journalPagination.pageSize}
-                  onPageChange={journalPagination.setPage}
+                  page={journalData.page}
+                  totalPages={totalPagesFor(journalData.total)}
+                  totalItems={journalData.total}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={(p) => {
+                    setSelectedJournals(new Set())
+                    setJournalData((d) => ({ ...d, page: p }))
+                  }}
                 />
               </CardContent>
             </Card>
@@ -1128,11 +1547,11 @@ export default function AccountingPage() {
                   <CardTitle className="text-base">Ledger management</CardTitle>
                   <ExportActions
                     onCsv={async () => {
-                      await downloadCsv(`ledger-${exportStamp}.csv`, ledgerCsvRows())
+                      await downloadCsv(`ledger-${exportStamp}.csv`, ledgerCsvRows(await fetchAllLedgers()))
                       notifyExported('Ledger')
                     }}
                     onJson={async () => {
-                      await downloadJson(`ledger-${exportStamp}.json`, ledgerEntries)
+                      await downloadJson(`ledger-${exportStamp}.json`, await fetchAllLedgers())
                       notifyExported('Ledger')
                     }}
                   />
@@ -1141,18 +1560,27 @@ export default function AccountingPage() {
                   <select
                     className="rounded border p-2 text-sm"
                     value={ledgerAccountFilter}
-                    onChange={(e) => setLedgerAccountFilter(e.target.value)}
+                    onChange={(e) => {
+                      setLedgerAccountFilter(e.target.value)
+                      setLedgerData((d) => ({ ...d, page: 1 }))
+                    }}
                   >
                     <option value="">All accounts</option>
-                    {accounts.map((a) => (
+                    {allAccounts.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.code} — {a.name}
                       </option>
                     ))}
                   </select>
-                  <Input type="date" value={ledgerFromDate} onChange={(e) => setLedgerFromDate(e.target.value)} className="w-auto" />
-                  <Input type="date" value={ledgerToDate} onChange={(e) => setLedgerToDate(e.target.value)} className="w-auto" />
-                  <Button variant="outline" size="sm" onClick={() => fetchLedgers()}>
+                  <Input type="date" value={ledgerFromDate} onChange={(e) => {
+                    setLedgerFromDate(e.target.value)
+                    setLedgerData((d) => ({ ...d, page: 1 }))
+                  }} className="w-auto" />
+                  <Input type="date" value={ledgerToDate} onChange={(e) => {
+                    setLedgerToDate(e.target.value)
+                    setLedgerData((d) => ({ ...d, page: 1 }))
+                  }} className="w-auto" />
+                  <Button variant="outline" size="sm" onClick={() => fetchLedgerPage(ledgerData.page)}>
                     Apply
                   </Button>
                 </div>
@@ -1172,7 +1600,8 @@ export default function AccountingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {ledgerPagination.paginatedItems.map((row) => (
+                    {loadingTabs.ledger && <SkeletonTableRows cols={8} />}
+                    {!loadingTabs.ledger && ledgerData.items.map((row) => (
                       <TableRow key={row.id}>
                         <TableCell>{formatDate(row.transaction_date)}</TableCell>
                         <TableCell>{row.account?.name || '—'}</TableCell>
@@ -1184,7 +1613,7 @@ export default function AccountingPage() {
                         <TableCell className="text-right">{formatCurrency(row.balance)}</TableCell>
                       </TableRow>
                     ))}
-                    {ledgerEntries.length === 0 && (
+                    {!loadingTabs.ledger && ledgerData.items.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={8} className="py-8 text-center text-gray-500">
                           No ledger entries — post transactions or journal entries to populate
@@ -1194,11 +1623,11 @@ export default function AccountingPage() {
                   </TableBody>
                 </Table>
                 <PaginationControls
-                  page={ledgerPagination.page}
-                  totalPages={ledgerPagination.totalPages}
-                  totalItems={ledgerPagination.totalItems}
-                  pageSize={ledgerPagination.pageSize}
-                  onPageChange={ledgerPagination.setPage}
+                  page={ledgerData.page}
+                  totalPages={totalPagesFor(ledgerData.total)}
+                  totalItems={ledgerData.total}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={(p) => setLedgerData((d) => ({ ...d, page: p }))}
                 />
               </CardContent>
             </Card>
@@ -1215,8 +1644,9 @@ export default function AccountingPage() {
                         notifyError('Select an account first')
                         return
                       }
-                      const code = generalLedger?.account?.code || 'account'
-                      await downloadCsv(`general-ledger-${code}-${exportStamp}.csv`, generalLedgerCsvRows())
+                      const gl = await fetchFullGeneralLedger()
+                      const code = gl?.account?.code || 'account'
+                      await downloadCsv(`general-ledger-${code}-${exportStamp}.csv`, generalLedgerCsvRows(gl))
                       notifyExported('General ledger')
                     }}
                     onJson={async () => {
@@ -1224,7 +1654,7 @@ export default function AccountingPage() {
                         notifyError('Select an account first')
                         return
                       }
-                      await downloadJson(`general-ledger-${exportStamp}.json`, generalLedger)
+                      await downloadJson(`general-ledger-${exportStamp}.json`, await fetchFullGeneralLedger())
                       notifyExported('General ledger')
                     }}
                   />
@@ -1233,18 +1663,27 @@ export default function AccountingPage() {
                   <select
                     className="min-w-[220px] rounded border p-2 text-sm"
                     value={glAccountId}
-                    onChange={(e) => setGlAccountId(e.target.value)}
+                    onChange={(e) => {
+                      setGlAccountId(e.target.value)
+                      setGlPage(1)
+                    }}
                   >
                     <option value="">Select account</option>
-                    {accounts.map((a) => (
+                    {allAccounts.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.code} — {a.name}
                       </option>
                     ))}
                   </select>
-                  <Input type="date" value={glFromDate} onChange={(e) => setGlFromDate(e.target.value)} className="w-auto" />
-                  <Input type="date" value={glToDate} onChange={(e) => setGlToDate(e.target.value)} className="w-auto" />
-                  <Button variant="outline" size="sm" onClick={() => fetchGeneralLedger()}>
+                  <Input type="date" value={glFromDate} onChange={(e) => {
+                    setGlFromDate(e.target.value)
+                    setGlPage(1)
+                  }} className="w-auto" />
+                  <Input type="date" value={glToDate} onChange={(e) => {
+                    setGlToDate(e.target.value)
+                    setGlPage(1)
+                  }} className="w-auto" />
+                  <Button variant="outline" size="sm" onClick={() => fetchGeneralLedger(glPage)}>
                     Load
                   </Button>
                 </div>
@@ -1268,7 +1707,8 @@ export default function AccountingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {generalLedgerPagination.paginatedItems.map((row) => (
+                    {loadingTabs['general-ledger'] && <SkeletonTableRows cols={6} />}
+                    {!loadingTabs['general-ledger'] && (generalLedger?.entries ?? []).map((row) => (
                       <TableRow key={row.id}>
                         <TableCell>{formatDate(row.transaction_date)}</TableCell>
                         <TableCell className="font-mono text-xs">{row.reference_number || '—'}</TableCell>
@@ -1285,7 +1725,7 @@ export default function AccountingPage() {
                         </TableCell>
                       </TableRow>
                     )}
-                    {glAccountId && generalLedger && generalLedger.entries.length === 0 && (
+                    {!loadingTabs['general-ledger'] && glAccountId && generalLedger && generalLedger.entries.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={6} className="py-8 text-center text-gray-500">
                           No entries in this period
@@ -1294,13 +1734,15 @@ export default function AccountingPage() {
                     )}
                   </TableBody>
                 </Table>
-                <PaginationControls
-                  page={generalLedgerPagination.page}
-                  totalPages={generalLedgerPagination.totalPages}
-                  totalItems={generalLedgerPagination.totalItems}
-                  pageSize={generalLedgerPagination.pageSize}
-                  onPageChange={generalLedgerPagination.setPage}
-                />
+                {glAccountId && (
+                  <PaginationControls
+                    page={glPage}
+                    totalPages={totalPagesFor(generalLedger?.total ?? 0)}
+                    totalItems={generalLedger?.total ?? 0}
+                    pageSize={PAGE_SIZE}
+                    onPageChange={setGlPage}
+                  />
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1317,16 +1759,15 @@ export default function AccountingPage() {
                   </div>
                   <ExportActions
                     onCsv={async () => {
-                      await downloadCsv(`trial-balance-${exportStamp}.csv`, trialBalanceCsvRows())
+                      const tb = await fetchFullTrialBalance()
+                      await downloadCsv(`trial-balance-${exportStamp}.csv`, trialBalanceCsvRows(tb?.items ?? [], {
+                        debit: tb?.total_debit ?? 0,
+                        credit: tb?.total_credit ?? 0,
+                      }))
                       notifyExported('Trial balance')
                     }}
                     onJson={async () => {
-                      await downloadJson(`trial-balance-${exportStamp}.json`, {
-                        items: trialBalance,
-                        total_debit: trialTotals.debit,
-                        total_credit: trialTotals.credit,
-                        is_balanced: trialTotals.balanced,
-                      })
+                      await downloadJson(`trial-balance-${exportStamp}.json`, await fetchFullTrialBalance())
                       notifyExported('Trial balance')
                     }}
                   />
@@ -1344,28 +1785,33 @@ export default function AccountingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {trialBalancePagination.paginatedItems.map((row) => (
-                      <TableRow key={row.account_id}>
-                        <TableCell className="font-mono text-sm">{row.account_code}</TableCell>
-                        <TableCell>{row.account_name}</TableCell>
-                        <TableCell className="capitalize">{row.account_type}</TableCell>
-                        <TableCell className="text-right">{row.debit > 0 ? formatCurrency(row.debit) : '—'}</TableCell>
-                        <TableCell className="text-right">{row.credit > 0 ? formatCurrency(row.credit) : '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                    <TableRow className="bg-gray-50 font-semibold">
-                      <TableCell colSpan={3}>Total</TableCell>
-                      <TableCell className="text-right">{formatCurrency(trialTotals.debit)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(trialTotals.credit)}</TableCell>
-                    </TableRow>
+                    {loadingTabs['trial-balance'] && <SkeletonTableRows cols={5} />}
+                    {!loadingTabs['trial-balance'] && (
+                      <>
+                        {trialBalance.items.map((row) => (
+                          <TableRow key={row.account_id}>
+                            <TableCell className="font-mono text-sm">{row.account_code}</TableCell>
+                            <TableCell>{row.account_name}</TableCell>
+                            <TableCell className="capitalize">{row.account_type}</TableCell>
+                            <TableCell className="text-right">{row.debit > 0 ? formatCurrency(row.debit) : '—'}</TableCell>
+                            <TableCell className="text-right">{row.credit > 0 ? formatCurrency(row.credit) : '—'}</TableCell>
+                          </TableRow>
+                        ))}
+                        <TableRow className="bg-gray-50 font-semibold">
+                          <TableCell colSpan={3}>Total</TableCell>
+                          <TableCell className="text-right">{formatCurrency(trialTotals.debit)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(trialTotals.credit)}</TableCell>
+                        </TableRow>
+                      </>
+                    )}
                   </TableBody>
                 </Table>
                 <PaginationControls
-                  page={trialBalancePagination.page}
-                  totalPages={trialBalancePagination.totalPages}
-                  totalItems={trialBalancePagination.totalItems}
-                  pageSize={trialBalancePagination.pageSize}
-                  onPageChange={trialBalancePagination.setPage}
+                  page={trialBalance.page}
+                  totalPages={totalPagesFor(trialBalance.total)}
+                  totalItems={trialBalance.total}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={(p) => setTrialBalance((d) => ({ ...d, page: p }))}
                 />
               </CardContent>
             </Card>
@@ -1375,203 +1821,216 @@ export default function AccountingPage() {
             <div className="mb-4 flex justify-end">
               <ExportActions
                 onCsv={async () => {
-                  await downloadCsv(`profit-and-loss-${exportStamp}.csv`, profitLossCsvRows())
+                  await downloadCsv(`profit-and-loss-${exportStamp}.csv`, profitLossCsvRows(await fetchFullProfitLoss()))
                   notifyExported('Profit & loss')
                 }}
                 onJson={async () => {
-                  await downloadJson(`profit-and-loss-${exportStamp}.json`, profitLoss)
+                  await downloadJson(`profit-and-loss-${exportStamp}.json`, await fetchFullProfitLoss())
                   notifyExported('Profit & loss')
                 }}
               />
             </div>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Income</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 p-0">
-                  <Table>
-                    <TableBody>
-                      {(plIncomePagination.paginatedItems).map((row) => (
-                        <TableRow key={row.account_id}>
-                          <TableCell>{row.account_name}</TableCell>
-                          <TableCell className="text-right text-green-600">{formatCurrency(row.amount)}</TableCell>
-                        </TableRow>
-                      ))}
-                      <TableRow className="font-semibold">
-                        <TableCell>Total income</TableCell>
-                        <TableCell className="text-right text-green-600">{formatCurrency(profitLoss?.total_income ?? 0)}</TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                  <PaginationControls
-                    page={plIncomePagination.page}
-                    totalPages={plIncomePagination.totalPages}
-                    totalItems={plIncomePagination.totalItems}
-                    pageSize={plIncomePagination.pageSize}
-                    onPageChange={plIncomePagination.setPage}
-                  />
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Expenses</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableBody>
-                      {(plExpensesPagination.paginatedItems).map((row) => (
-                        <TableRow key={row.account_id}>
-                          <TableCell>{row.account_name}</TableCell>
-                          <TableCell className="text-right text-orange-600">{formatCurrency(row.amount)}</TableCell>
-                        </TableRow>
-                      ))}
-                      <TableRow className="font-semibold">
-                        <TableCell>Total expenses</TableCell>
-                        <TableCell className="text-right text-orange-600">{formatCurrency(profitLoss?.total_expense ?? 0)}</TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                  <PaginationControls
-                    page={plExpensesPagination.page}
-                    totalPages={plExpensesPagination.totalPages}
-                    totalItems={plExpensesPagination.totalItems}
-                    pageSize={plExpensesPagination.pageSize}
-                    onPageChange={plExpensesPagination.setPage}
-                  />
-                </CardContent>
-              </Card>
-            </div>
-            <Card className="mt-4">
-              <CardContent className="flex justify-between py-6 text-lg font-semibold">
-                <span>Net profit</span>
-                <span className={(profitLoss?.net_profit ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}>
-                  {formatCurrency(profitLoss?.net_profit ?? 0)}
-                </span>
-              </CardContent>
-            </Card>
+            {loadingTabs.pnl ? (
+              <ReportCardsSkeleton />
+            ) : (
+              <>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Income</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 p-0">
+                      <Table>
+                        <TableBody>
+                          {(profitLoss?.income ?? []).map((row) => (
+                            <TableRow key={row.account_id}>
+                              <TableCell>{row.account_name}</TableCell>
+                              <TableCell className="text-right text-green-600">{formatCurrency(row.amount)}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="font-semibold">
+                            <TableCell>Total income</TableCell>
+                            <TableCell className="text-right text-green-600">{formatCurrency(profitLoss?.total_income ?? 0)}</TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                      <PaginationControls
+                        page={plIncomePage}
+                        totalPages={totalPagesFor(profitLoss?.income_count ?? profitLoss?.income?.length ?? 0)}
+                        totalItems={profitLoss?.income_count ?? profitLoss?.income?.length ?? 0}
+                        pageSize={PAGE_SIZE}
+                        onPageChange={setPlIncomePage}
+                      />
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Expenses</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableBody>
+                          {(profitLoss?.expenses ?? []).map((row) => (
+                            <TableRow key={row.account_id}>
+                              <TableCell>{row.account_name}</TableCell>
+                              <TableCell className="text-right text-orange-600">{formatCurrency(row.amount)}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="font-semibold">
+                            <TableCell>Total expenses</TableCell>
+                            <TableCell className="text-right text-orange-600">{formatCurrency(profitLoss?.total_expense ?? 0)}</TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                      <PaginationControls
+                        page={plExpensePage}
+                        totalPages={totalPagesFor(profitLoss?.expenses_count ?? profitLoss?.expenses?.length ?? 0)}
+                        totalItems={profitLoss?.expenses_count ?? profitLoss?.expenses?.length ?? 0}
+                        pageSize={PAGE_SIZE}
+                        onPageChange={setPlExpensePage}
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
+                <Card className="mt-4">
+                  <CardContent className="flex justify-between py-6 text-lg font-semibold">
+                    <span>Net profit</span>
+                    <span className={(profitLoss?.net_profit ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      {formatCurrency(profitLoss?.net_profit ?? 0)}
+                    </span>
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </TabsContent>
 
           <TabsContent value="balance-sheet">
             <div className="mb-4 flex justify-end">
               <ExportActions
                 onCsv={async () => {
-                  await downloadCsv(`balance-sheet-${exportStamp}.csv`, balanceSheetCsvRows())
+                  await downloadCsv(`balance-sheet-${exportStamp}.csv`, balanceSheetCsvRows(await fetchFullBalanceSheet()))
                   notifyExported('Balance sheet')
                 }}
                 onJson={async () => {
-                  await downloadJson(`balance-sheet-${exportStamp}.json`, balanceSheet)
+                  await downloadJson(`balance-sheet-${exportStamp}.json`, await fetchFullBalanceSheet())
                   notifyExported('Balance sheet')
                 }}
               />
             </div>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Assets</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableBody>
-                      {(bsAssetsPagination.paginatedItems).map((row, i) => (
-                        <TableRow key={i}>
-                          <TableCell>{row.account_name}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(row.amount)}</TableCell>
-                        </TableRow>
-                      ))}
-                      <TableRow className="font-semibold">
-                        <TableCell>Total assets</TableCell>
-                        <TableCell className="text-right">{formatCurrency(balanceSheet?.total_assets ?? 0)}</TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                  <PaginationControls
-                    page={bsAssetsPagination.page}
-                    totalPages={bsAssetsPagination.totalPages}
-                    totalItems={bsAssetsPagination.totalItems}
-                    pageSize={bsAssetsPagination.pageSize}
-                    onPageChange={bsAssetsPagination.setPage}
-                  />
-                </CardContent>
-              </Card>
-              <div className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Liabilities</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <Table>
-                      <TableBody>
-                        {(bsLiabilitiesPagination.paginatedItems).map((row, i) => (
-                          <TableRow key={i}>
-                            <TableCell>{row.account_name}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(row.amount)}</TableCell>
+            {loadingTabs['balance-sheet'] ? (
+              <ReportCardsSkeleton />
+            ) : (
+              <>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Assets</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableBody>
+                          {(balanceSheet?.assets ?? []).map((row, i) => (
+                            <TableRow key={i}>
+                              <TableCell>{row.account_name}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(row.amount)}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="font-semibold">
+                            <TableCell>Total assets</TableCell>
+                            <TableCell className="text-right">{formatCurrency(balanceSheet?.total_assets ?? 0)}</TableCell>
                           </TableRow>
-                        ))}
-                        <TableRow className="font-semibold">
-                          <TableCell>Total liabilities</TableCell>
-                          <TableCell className="text-right">{formatCurrency(balanceSheet?.total_liabilities ?? 0)}</TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                    <PaginationControls
-                      page={bsLiabilitiesPagination.page}
-                      totalPages={bsLiabilitiesPagination.totalPages}
-                      totalItems={bsLiabilitiesPagination.totalItems}
-                      pageSize={bsLiabilitiesPagination.pageSize}
-                      onPageChange={bsLiabilitiesPagination.setPage}
-                    />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Equity</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <Table>
-                      <TableBody>
-                        {(bsEquityPagination.paginatedItems).map((row, i) => (
-                          <TableRow key={i}>
-                            <TableCell>{row.account_name}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(row.amount)}</TableCell>
-                          </TableRow>
-                        ))}
-                        <TableRow className="font-semibold">
-                          <TableCell>Total equity</TableCell>
-                          <TableCell className="text-right">{formatCurrency(balanceSheet?.total_equity ?? 0)}</TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                    <PaginationControls
-                      page={bsEquityPagination.page}
-                      totalPages={bsEquityPagination.totalPages}
-                      totalItems={bsEquityPagination.totalItems}
-                      pageSize={bsEquityPagination.pageSize}
-                      onPageChange={bsEquityPagination.setPage}
-                    />
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-            <p className="mt-4 text-sm text-gray-600">
-              Liabilities + equity: {formatCurrency(balanceSheet?.total_liabilities_equity ?? 0)}
-              {balanceSheet && (
-                <span className={balanceSheet.is_balanced ? ' ml-2 text-green-600' : ' ml-2 text-amber-600'}>
-                  {balanceSheet.is_balanced ? '(balanced)' : '(check accounts)'}
-                </span>
-              )}
-            </p>
+                        </TableBody>
+                      </Table>
+                      <PaginationControls
+                        page={bsAssetsPage}
+                        totalPages={totalPagesFor(balanceSheet?.assets_count ?? balanceSheet?.assets?.length ?? 0)}
+                        totalItems={balanceSheet?.assets_count ?? balanceSheet?.assets?.length ?? 0}
+                        pageSize={PAGE_SIZE}
+                        onPageChange={setBsAssetsPage}
+                      />
+                    </CardContent>
+                  </Card>
+                  <div className="space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Liabilities</CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <Table>
+                          <TableBody>
+                            {(balanceSheet?.liabilities ?? []).map((row, i) => (
+                              <TableRow key={i}>
+                                <TableCell>{row.account_name}</TableCell>
+                                <TableCell className="text-right">{formatCurrency(row.amount)}</TableCell>
+                              </TableRow>
+                            ))}
+                            <TableRow className="font-semibold">
+                              <TableCell>Total liabilities</TableCell>
+                              <TableCell className="text-right">{formatCurrency(balanceSheet?.total_liabilities ?? 0)}</TableCell>
+                            </TableRow>
+                          </TableBody>
+                        </Table>
+                        <PaginationControls
+                          page={bsLiabilitiesPage}
+                          totalPages={totalPagesFor(balanceSheet?.liabilities_count ?? balanceSheet?.liabilities?.length ?? 0)}
+                          totalItems={balanceSheet?.liabilities_count ?? balanceSheet?.liabilities?.length ?? 0}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setBsLiabilitiesPage}
+                        />
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Equity</CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <Table>
+                          <TableBody>
+                            {(balanceSheet?.equity ?? []).map((row, i) => (
+                              <TableRow key={i}>
+                                <TableCell>{row.account_name}</TableCell>
+                                <TableCell className="text-right">{formatCurrency(row.amount)}</TableCell>
+                              </TableRow>
+                            ))}
+                            <TableRow className="font-semibold">
+                              <TableCell>Total equity</TableCell>
+                              <TableCell className="text-right">{formatCurrency(balanceSheet?.total_equity ?? 0)}</TableCell>
+                            </TableRow>
+                          </TableBody>
+                        </Table>
+                        <PaginationControls
+                          page={bsEquityPage}
+                          totalPages={totalPagesFor(balanceSheet?.equity_count ?? balanceSheet?.equity?.length ?? 0)}
+                          totalItems={balanceSheet?.equity_count ?? balanceSheet?.equity?.length ?? 0}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setBsEquityPage}
+                        />
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+                <p className="mt-4 text-sm text-gray-600">
+                  Liabilities + equity: {formatCurrency(balanceSheet?.total_liabilities_equity ?? 0)}
+                  {balanceSheet && (
+                    <span className={balanceSheet.is_balanced ? ' ml-2 text-green-600' : ' ml-2 text-amber-600'}>
+                      {balanceSheet.is_balanced ? '(balanced)' : '(check accounts)'}
+                    </span>
+                  )}
+                </p>
+              </>
+            )}
           </TabsContent>
 
           <TabsContent value="bank-recon">
             <div className="mb-4 flex flex-wrap justify-end gap-2">
               <ExportActions
                 onCsv={async () => {
-                  await downloadCsv(`bank-reconciliation-${exportStamp}.csv`, bankReconCsvRows())
+                  const banks = bankAccounts.length ? bankAccounts : await fetchBankAccountsList()
+                  await downloadCsv(`bank-reconciliation-${exportStamp}.csv`, bankReconCsvRows(await fetchAllReconciliations(), banks))
                   notifyExported('Bank reconciliation')
                 }}
                 onJson={async () => {
-                  await downloadJson(`bank-reconciliation-${exportStamp}.json`, reconciliations)
+                  await downloadJson(`bank-reconciliation-${exportStamp}.json`, await fetchAllReconciliations())
                   notifyExported('Bank reconciliation')
                 }}
               />
@@ -1599,7 +2058,7 @@ export default function AccountingPage() {
                     <TableRow>
                       <TableHead className="w-10">
                         <Checkbox
-                          checked={reconciliations.length > 0 && selectedReconciliations.size === reconciliations.length}
+                          checked={reconData.items.length > 0 && selectedReconciliations.size === reconData.items.length}
                           onCheckedChange={toggleSelectAllReconciliations}
                         />
                       </TableHead>
@@ -1613,7 +2072,8 @@ export default function AccountingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {reconciliationsPagination.paginatedItems.map((r) => (
+                    {loadingTabs['bank-recon'] && <SkeletonTableRows cols={8} />}
+                    {!loadingTabs['bank-recon'] && reconData.items.map((r) => (
                       <TableRow key={r.id}>
                         <TableCell>
                           <Checkbox
@@ -1652,7 +2112,7 @@ export default function AccountingPage() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {reconciliations.length === 0 && (
+                    {!loadingTabs['bank-recon'] && reconData.items.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={8} className="py-8 text-center text-gray-500">
                           No bank reconciliations yet
@@ -1662,11 +2122,14 @@ export default function AccountingPage() {
                   </TableBody>
                 </Table>
                 <PaginationControls
-                  page={reconciliationsPagination.page}
-                  totalPages={reconciliationsPagination.totalPages}
-                  totalItems={reconciliationsPagination.totalItems}
-                  pageSize={reconciliationsPagination.pageSize}
-                  onPageChange={reconciliationsPagination.setPage}
+                  page={reconData.page}
+                  totalPages={totalPagesFor(reconData.total)}
+                  totalItems={reconData.total}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={(p) => {
+                    setSelectedReconciliations(new Set())
+                    setReconData((d) => ({ ...d, page: p }))
+                  }}
                 />
               </CardContent>
             </Card>
@@ -1752,7 +2215,7 @@ export default function AccountingPage() {
                       }}
                     >
                       <option value="">Account</option>
-                      {accounts.map((a) => (
+                      {allAccounts.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.code} — {a.name}
                         </option>

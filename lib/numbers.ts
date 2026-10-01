@@ -73,16 +73,16 @@ export type ProductGstFields = {
   tax_rate?: unknown
 }
 
-/** Whether GST applies to a product (defaults from tax_rate for older records). */
+/** Whether GST applies to a product. The business is tax-free, so this is always false. */
 export function isProductGstEnabled(product: ProductGstFields): boolean {
-  if (typeof product.gst_enabled === 'boolean') return product.gst_enabled
-  return parseItemNumber(product.tax_rate) > 0
+  void product
+  return false
 }
 
-/** Effective GST rate for invoice/POS lines (0 when GST is disabled). */
+/** Effective GST rate for invoice/POS lines — always 0, billing is tax-free. */
 export function productTaxRate(product: ProductGstFields): number {
-  if (!isProductGstEnabled(product)) return 0
-  return parseItemNumber(product.tax_rate, 0)
+  void product
+  return 0
 }
 
 /** Tax-exclusive sale unit price respecting product GST settings. */

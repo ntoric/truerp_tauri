@@ -14,9 +14,9 @@ export interface BankAccountOption {
   is_active: boolean
 }
 
-export function useBankAccounts() {
+export function useBankAccounts({ enabled = true }: { enabled?: boolean } = {}) {
   const [accounts, setAccounts] = useState<BankAccountOption[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(enabled)
 
   const refresh = useCallback(async () => {
     try {
@@ -43,8 +43,8 @@ export function useBankAccounts() {
   }, [])
 
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    if (enabled) refresh()
+  }, [enabled, refresh])
 
   const primaryAccount = accounts.find((a) => a.is_primary && a.is_active)
 
