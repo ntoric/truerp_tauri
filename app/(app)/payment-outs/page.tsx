@@ -61,7 +61,9 @@ interface PurchaseBill {
   party_id?: string
   vendor_id?: string
   total_amount: number
+  paid_amount?: number
   balance_due: number
+  status?: string
 }
 
 const emptyForm = () => ({
@@ -78,6 +80,13 @@ const emptyForm = () => ({
 
 function billPartyId(bill: PurchaseBill) {
   return bill.party_id || bill.vendor_id || ''
+}
+
+// Outstanding amount on a bill. total - paid is authoritative; balance_due
+// can be stale on older rows, so take the larger of the two.
+function billDue(bill: PurchaseBill) {
+  const derived = (bill.total_amount ?? 0) - (bill.paid_amount ?? 0)
+  return Math.max(bill.balance_due ?? 0, derived, 0)
 }
 
 export default function PaymentOutsPage() {
@@ -231,7 +240,12 @@ export default function PaymentOutsPage() {
 
   const handleDialogOpenChange = (open: boolean) => {
     setDialogOpen(open)
-    if (!open) resetForm()
+    if (!open) {
+      resetForm()
+      return
+    }
+    // Refresh so bills created or paid since page load are reflected.
+    void fetchBills()
   }
 
   const autoCreateHandled = useRef(false)
@@ -283,8 +297,8 @@ export default function PaymentOutsPage() {
       purchase_bill_id: value,
       party_id: bill ? billPartyId(bill) || formData.party_id : formData.party_id,
       amount_paid:
-        bill && bill.balance_due != null && !formData.amount_paid
-          ? String(bill.balance_due)
+        bill && !formData.amount_paid && billDue(bill) > 0
+          ? String(billDue(bill))
           : formData.amount_paid,
     })
     if (bill && billPartyId(bill)) clearFieldError('party_id')
@@ -433,8 +447,13 @@ export default function PaymentOutsPage() {
     setPage(1)
   }
 
+  // Only bills that still owe money are payable; paid bills and anything
+  // with no outstanding balance stay out of the picker.
   const filteredBills = bills.filter(
-    (b) => !formData.party_id || billPartyId(b) === formData.party_id
+    (b) =>
+      b.status !== 'paid' &&
+      billDue(b) > 0 &&
+      (!formData.party_id || billPartyId(b) === formData.party_id)
   )
 
   const getModeIcon = (mode: string) => {
@@ -527,7 +546,7 @@ export default function PaymentOutsPage() {
                           ) : (
                             filteredBills.map((bill) => (
                               <SelectItem key={bill.id} value={bill.id}>
-                                {bill.bill_number} - {formatCurrency(bill.balance_due)} due
+                                {bill.bill_number} - {formatCurrency(billDue(bill))} due
                               </SelectItem>
                             ))
                           )}
