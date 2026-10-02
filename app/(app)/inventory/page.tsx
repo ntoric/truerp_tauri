@@ -40,6 +40,7 @@ interface InventoryItemOption {
   sku?: string
   type: string
   enable_batching?: boolean
+  unit?: string
 }
 
 interface StockBalance {
@@ -278,9 +279,11 @@ export default function InventoryPage() {
     item_name: '',
     product_id: '',
     outlet_id: '',
-    quantity: 0,
+    quantity: '',
     reason: ''
   })
+  const [adjustCurrentStock, setAdjustCurrentStock] = useState<{ quantity: number; available: number; reserved: number } | null>(null)
+  const [adjustCurrentStockLoading, setAdjustCurrentStockLoading] = useState(false)
   const [showBulkStockUpdateDialog, setShowBulkStockUpdateDialog] = useState(false)
   const [bulkStockUpdateFile, setBulkStockUpdateFile] = useState<File | null>(null)
   const [bulkStockUpdating, setBulkStockUpdating] = useState(false)
@@ -338,6 +341,11 @@ export default function InventoryPage() {
     const selectedItem = inventoryItems.find((item) => item.id === newEntry.selected_item_id)
     return Boolean(selectedItem?.type === 'product' && selectedItem.enable_batching)
   }, [inventoryItems, newEntry.selected_item_id])
+
+  const adjustStockUnit = useMemo(() => {
+    const unit = inventoryItems.find((item) => item.id === adjustStock.selected_item_id)?.unit
+    return unit?.trim() || 'units'
+  }, [inventoryItems, adjustStock.selected_item_id])
 
   // Low-stock badge count comes from the stats endpoint so it shows before the
   // low-stock tab is opened; fall back to the tab's own total if stats failed.
@@ -399,6 +407,38 @@ export default function InventoryPage() {
       })
       .catch(() => {})
   }, [showOverrideModal, overrideForm.date])
+
+  // In the adjust-stock dialog, show the item's current stock once a product is
+  // picked; narrows to the selected warehouse when one is chosen.
+  useEffect(() => {
+    if (!showAdjustStockModal || !adjustStock.product_id) {
+      setAdjustCurrentStock(null)
+      setAdjustCurrentStockLoading(false)
+      return
+    }
+    let cancelled = false
+    setAdjustCurrentStockLoading(true)
+    const params = new URLSearchParams()
+    params.append('product_id', adjustStock.product_id)
+    if (adjustStock.outlet_id) params.append('outlet_id', adjustStock.outlet_id)
+    apiFetch(`/inventory/stocks?${params.toString()}`)
+      .then(async (res) => {
+        if (cancelled) return
+        if (!res.ok) {
+          setAdjustCurrentStock(null)
+          return
+        }
+        const rows = asArray<InventoryStock>(await res.json())
+        setAdjustCurrentStock({
+          quantity: rows.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0),
+          available: rows.reduce((sum, r) => sum + (Number(r.available_qty) || 0), 0),
+          reserved: rows.reduce((sum, r) => sum + (Number(r.reserved_qty) || 0), 0),
+        })
+      })
+      .catch(() => { if (!cancelled) setAdjustCurrentStock(null) })
+      .finally(() => { if (!cancelled) setAdjustCurrentStockLoading(false) })
+    return () => { cancelled = true }
+  }, [showAdjustStockModal, adjustStock.product_id, adjustStock.outlet_id])
 
   const toYmd = (d: Date | null) =>
     d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
@@ -801,6 +841,11 @@ export default function InventoryPage() {
   }
 
   const handleAdjustStock = async () => {
+    const quantity = parseFloat(adjustStock.quantity)
+    if (adjustStock.quantity.trim() === '' || Number.isNaN(quantity) || quantity === 0) {
+      notifyError('Please enter a non-zero quantity')
+      return
+    }
     if (!adjustStock.reason.trim()) {
       notifyError('Please enter a reason for the stock adjustment')
       return
@@ -812,6 +857,7 @@ export default function InventoryPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...adjustStock,
+          quantity,
           reason: adjustStock.reason.trim(),
           product_id: adjustStock.product_id || null
         })
@@ -823,7 +869,7 @@ export default function InventoryPage() {
           item_name: '',
           product_id: '',
           outlet_id: '',
-          quantity: 0,
+          quantity: '',
           reason: ''
         })
         fetchData()
@@ -1557,12 +1603,33 @@ export default function InventoryPage() {
                       addNewLabel="Add New Warehouse"
                     />
                   </div>
+                  {adjustStock.product_id && (
+                    <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm">
+                      <Boxes className="h-4 w-4 shrink-0 text-blue-600" />
+                      {adjustCurrentStockLoading ? (
+                        <span className="text-blue-700">Loading current stock...</span>
+                      ) : (
+                        <span className="text-blue-800">
+                          Current stock{adjustStock.outlet_id ? ` at ${warehouseName(adjustStock.outlet_id)}` : ' across all warehouses'}:{' '}
+                          <span className="font-semibold">
+                            {(adjustCurrentStock?.quantity ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} {adjustStockUnit}
+                          </span>
+                          {adjustCurrentStock && adjustCurrentStock.reserved > 0 && (
+                            <span className="text-blue-700">
+                              {' '}({adjustCurrentStock.available.toLocaleString('en-IN', { maximumFractionDigits: 2 })} available,{' '}
+                              {adjustCurrentStock.reserved.toLocaleString('en-IN', { maximumFractionDigits: 2 })} reserved)
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div>
-                    <Label>Quantity (+/-)</Label>
+                    <Label>Quantity (+/-) *</Label>
                     <Input
                       type="number"
                       value={adjustStock.quantity}
-                      onChange={(e) => setAdjustStock({ ...adjustStock, quantity: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => setAdjustStock({ ...adjustStock, quantity: e.target.value })}
                       placeholder="Positive to add, negative to reduce"
                     />
                   </div>
