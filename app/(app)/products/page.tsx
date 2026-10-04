@@ -143,7 +143,7 @@ export default function ProductsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDraftsModal, setShowDraftsModal] = useState(false)
   const [showPrintDialog, setShowPrintDialog] = useState(false)
-  const [printQuantity, setPrintQuantity] = useState(1)
+  const [printItems, setPrintItems] = useState<{ id: string; name: string; quantity: number }[]>([])
   const [printLabelSize, setPrintLabelSize] = useState<BarcodeLabelSize>('2inch')
   const [printBarcodeMode, setPrintBarcodeMode] = useState<'label' | 'a4'>('a4')
   const [printSheetPreset, setPrintSheetPreset] = useState<A4LabelSheetPresetKey>('48.5x25.4')
@@ -153,7 +153,6 @@ export default function ProductsPage() {
   const [printPreviewHtml, setPrintPreviewHtml] = useState('')
   const [printPreviewLoading, setPrintPreviewLoading] = useState(false)
   const printPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [selectedProductForPrint, setSelectedProductForPrint] = useState<string | null>(null)
   const [showPreviewDialog, setShowPreviewDialog] = useState(false)
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null)
   const [drafts, setDrafts] = useState<any[]>([])
@@ -251,7 +250,7 @@ export default function ProductsPage() {
     try {
       const res = await apiFetch('/categories')
       if (res.ok) {
-        const data = asArray(await res.json())
+        const data = asArray<Category>(await res.json())
         setCategories(data)
         const defaultName = pickDefaultCategoryName(data)
         setNewItem((prev) =>
@@ -534,9 +533,9 @@ export default function ProductsPage() {
     }
   }
 
-  const handlePrintLabel = async (productId: string) => {
-    setSelectedProductForPrint(productId)
-    setPrintQuantity(1)
+  const openPrintDialog = async (items: { id: string; name: string; quantity: number }[]) => {
+    if (!items.length) return
+    setPrintItems(items)
     setPrintStartPosition(1)
     try {
       const res = await apiFetch('/settings/print')
@@ -559,11 +558,30 @@ export default function ProductsPage() {
     setShowPrintDialog(true)
   }
 
+  const handlePrintLabel = (productId: string) => {
+    const product = products.find((p) => p.id === productId)
+    void openPrintDialog([{ id: productId, name: product?.name ?? 'Product', quantity: 1 }])
+  }
+
+  const handleBulkPrintLabels = () => {
+    const items = products
+      .filter((p) => selectedItems.has(p.id))
+      .map((p) => ({ id: p.id, name: p.name, quantity: 1 }))
+    void openPrintDialog(items)
+  }
+
+  const updatePrintItemQuantity = (id: string, quantity: number) => {
+    const q = Number.isFinite(quantity) ? Math.min(500, Math.max(1, Math.round(quantity))) : 1
+    setPrintItems((prev) => prev.map((it) => (it.id === id ? { ...it, quantity: q } : it)))
+  }
+
+  const printTotalLabels = printItems.reduce((sum, it) => sum + (it.quantity || 0), 0)
+
   const printLabelsPerSheet = printSheetColumns * printSheetRows
   const printStartHint = stickerPositionToRowCol(printStartPosition, printSheetColumns)
 
   const refreshPrintPreview = useCallback(async () => {
-    if (!selectedProductForPrint || !showPrintDialog) {
+    if (!printItems.length || !showPrintDialog) {
       setPrintPreviewHtml('')
       return
     }
@@ -583,11 +601,11 @@ export default function ProductsPage() {
         return
       }
 
-      const res = await apiFetch(`/products/${selectedProductForPrint}/print-label`, {
+      const res = await apiFetch('/products/print-labels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          quantity: Math.min(printQuantity, 8),
+          items: printItems.map((it) => ({ product_id: it.id, quantity: it.quantity })),
           format: 'html',
           start_position: printStartPosition,
           preview: true,
@@ -606,9 +624,8 @@ export default function ProductsPage() {
   }, [
     printBarcodeMode,
     printLabelSize,
-    printQuantity,
+    printItems,
     printStartPosition,
-    selectedProductForPrint,
     showPrintDialog,
   ])
 
@@ -631,7 +648,7 @@ export default function ProductsPage() {
   }, [refreshPrintPreview, showPrintDialog])
 
   const handlePrintConfirm = async () => {
-    if (!selectedProductForPrint) return
+    if (!printItems.length) return
 
     const isThermal = printBarcodeMode === 'label'
 
@@ -647,14 +664,14 @@ export default function ProductsPage() {
         /* optional */
       }
 
-      const res = await apiFetch(`/products/${selectedProductForPrint}/print-label`, {
+      const res = await apiFetch('/products/print-labels', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: isThermal ? 'application/json' : 'text/html',
         },
         body: JSON.stringify({
-          quantity: printQuantity,
+          items: printItems.map((it) => ({ product_id: it.id, quantity: it.quantity })),
           format: isThermal ? 'json' : 'html',
           start_position: isThermal ? undefined : printStartPosition,
         }),
@@ -1361,10 +1378,16 @@ export default function ProductsPage() {
                   Export Excel
                 </Button>
                 {selectedItems.size > 0 && (
-                  <Button variant="destructive" size="sm" onClick={handleBulkDelete} className="gap-2">
-                    <Trash2 className="h-4 w-4" />
-                    Delete ({selectedItems.size})
-                  </Button>
+                  <>
+                    <Button variant="outline" size="sm" onClick={handleBulkPrintLabels} className="gap-2">
+                      <Printer className="h-4 w-4" />
+                      Print Labels ({selectedItems.size})
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={handleBulkDelete} className="gap-2">
+                      <Trash2 className="h-4 w-4" />
+                      Delete ({selectedItems.size})
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -1463,15 +1486,30 @@ export default function ProductsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="printQuantity">Quantity</Label>
-              <Input
-                id="printQuantity"
-                type="number"
-                min="1"
-                max="500"
-                value={printQuantity}
-                onChange={(e) => setPrintQuantity(parseInt(e.target.value) || 1)}
-              />
+              <Label>Labels per product</Label>
+              <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3">
+                {printItems.map((item) => (
+                  <div key={item.id} className="flex items-center gap-3">
+                    <span className="flex-1 truncate text-sm" title={item.name}>
+                      {item.name}
+                    </span>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={500}
+                      className="w-24"
+                      aria-label={`Quantity for ${item.name}`}
+                      value={item.quantity}
+                      onChange={(e) =>
+                        updatePrintItemQuantity(item.id, parseInt(e.target.value) || 1)
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {printTotalLabels} label{printTotalLabels === 1 ? '' : 's'} total
+              </p>
             </div>
             <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
               {printBarcodeMode === 'label' ? (
@@ -1557,7 +1595,7 @@ export default function ProductsPage() {
               <Button variant="outline" onClick={() => setShowPrintDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={handlePrintConfirm}>
+              <Button onClick={handlePrintConfirm} disabled={printTotalLabels < 1}>
                 <Printer className="mr-2 h-4 w-4" />
                 Print
               </Button>

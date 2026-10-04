@@ -28,7 +28,7 @@ import {
 } from '@/lib/partyValidation'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { Plus, Search, Phone, ArrowUp, ArrowDown, Trash2, Edit, MoreVertical, Download, BarChart3, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, Search, Phone, ArrowUp, ArrowDown, Trash2, Edit, MoreVertical, Download, BarChart3, ChevronUp, ChevronDown, FileText } from 'lucide-react'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -800,6 +800,10 @@ export default function PartiesPage() {
                               <DropdownMenuItem onClick={() => router.push(`/payment-outs?create=true&party_id=${p.id}`)}>
                                 <ArrowUp className="mr-2 h-4 w-4" />
                                 Create Payment Out
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => router.push(`/parties/ledger?party_id=${p.id}`)}>
+                                <FileText className="mr-2 h-4 w-4" />
+                                View Ledger
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleEditParty(p)}>
                                 <Edit className="mr-2 h-4 w-4" />

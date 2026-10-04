@@ -110,6 +110,7 @@ export const REPORT_GROUPS: ReportGroup[] = [
     entries: [
       { key: 'customer-report', name: 'Party Report (Customer Wise)', href: '/reports?tab=customers', tags: ['party', 'summary'] },
       { key: 'receivable-ageing', name: 'Receivable Ageing Report', href: '/reports?tab=outstanding', tags: ['party', 'payment'] },
+      { key: 'party-ledger', name: 'Party Statement (Ledger)', href: '/parties/ledger', tags: ['party'] },
       { key: 'party-list', name: 'Party Ledger & Balances', href: '/parties', tags: ['party'] },
       { key: 'loyalty-report', name: 'Loyalty Program', href: '/loyalty', tags: ['party', 'summary'] },
     ],
