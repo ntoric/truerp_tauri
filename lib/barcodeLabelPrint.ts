@@ -457,28 +457,32 @@ html, body { width: ${w}mm; margin: 0; padding: 0; font-family: Arial, Helvetica
 .label {
   width: ${w}mm; height: ${h}mm; max-width: ${w}mm; max-height: ${h}mm;
   padding: 1mm; display: flex; flex-direction: column; align-items: stretch;
-  justify-content: space-between; gap: 0.9mm; overflow: hidden;
+  justify-content: flex-start; gap: 0.5mm; overflow: hidden;
   page-break-after: always; break-after: page; page-break-inside: avoid;
 }
 .label:last-child { page-break-after: auto; break-after: auto; }
 .label-brand {
+  flex: 0 0 auto;
   font-size: 9px; font-weight: 600; line-height: 1.15; text-align: center;
   text-transform: uppercase; letter-spacing: 0.2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .product-name {
+  flex: 0 0 auto;
   font-size: 9px; font-weight: 600; line-height: 1.15; text-align: center;
   text-transform: uppercase;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   overflow: hidden; word-break: break-word; overflow-wrap: anywhere;
 }
-.product-barcode { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; margin: 0.5mm 0; }
+.product-barcode { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; margin: 0.3mm 0; }
 .product-barcode .barcode-img { flex: 1 1 auto; min-height: 0; width: 100%; display: block; object-fit: fill; }
 .barcode-text {
+  flex: 0 0 auto;
   font-family: "Courier New", monospace; font-size: 7px; text-align: center;
   width: 100%; word-break: break-all; overflow-wrap: anywhere; white-space: normal;
 }
 .price-row {
+  flex: 0 0 auto;
   display: flex; justify-content: space-between; align-items: baseline;
   gap: 1.5mm; width: 100%; min-width: 0;
 }
