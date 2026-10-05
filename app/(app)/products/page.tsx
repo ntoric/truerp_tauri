@@ -139,7 +139,7 @@ export default function ProductsPage() {
   const [total, setTotal] = useState(0)
   const pageSize = DEFAULT_PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
+  const [selectedItems, setSelectedItems] = useState<Map<string, Product>>(new Map())
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDraftsModal, setShowDraftsModal] = useState(false)
   const [showPrintDialog, setShowPrintDialog] = useState(false)
@@ -219,7 +219,6 @@ export default function ProductsPage() {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery.trim())
       setPage(1)
-      setSelectedItems(new Set())
     }, 300)
     return () => clearTimeout(timer)
   }, [searchQuery])
@@ -409,22 +408,29 @@ export default function ProductsPage() {
     } catch (err) { console.error(err) }
   }
 
-  const handleSelectItem = (id: string) => {
-    const newSelected = new Set(selectedItems)
-    if (newSelected.has(id)) {
-      newSelected.delete(id)
-    } else {
-      newSelected.add(id)
-    }
-    setSelectedItems(newSelected)
+  const handleSelectItem = (product: Product) => {
+    setSelectedItems((prev) => {
+      const next = new Map(prev)
+      if (next.has(product.id)) {
+        next.delete(product.id)
+      } else {
+        next.set(product.id, product)
+      }
+      return next
+    })
   }
 
+  const allVisibleSelected = products.length > 0 && products.every((p) => selectedItems.has(p.id))
+
   const handleSelectAll = () => {
-    if (selectedItems.size === products.length) {
-      setSelectedItems(new Set())
-    } else {
-      setSelectedItems(new Set(products.map(p => p.id)))
-    }
+    setSelectedItems((prev) => {
+      const next = new Map(prev)
+      products.forEach((p) => {
+        if (allVisibleSelected) next.delete(p.id)
+        else next.set(p.id, p)
+      })
+      return next
+    })
   }
 
   const handleBulkDelete = async () => {
@@ -435,9 +441,9 @@ export default function ProductsPage() {
     }))) return
     try {
       await Promise.all(
-        Array.from(selectedItems).map(id => apiFetch(`/products/${id}`, { method: 'DELETE' }))
+        Array.from(selectedItems.keys()).map(id => apiFetch(`/products/${id}`, { method: 'DELETE' }))
       )
-      setSelectedItems(new Set())
+      setSelectedItems(new Map())
       fetchProducts()
     } catch (err) { console.error(err) }
   }
@@ -564,8 +570,7 @@ export default function ProductsPage() {
   }
 
   const handleBulkPrintLabels = () => {
-    const items = products
-      .filter((p) => selectedItems.has(p.id))
+    const items = Array.from(selectedItems.values())
       .map((p) => ({ id: p.id, name: p.name, quantity: 1 }))
     void openPrintDialog(items)
   }
@@ -1340,7 +1345,7 @@ export default function ProductsPage() {
                   className="pl-9"
                 />
               </div>
-              <Select value={selectedCategory} onValueChange={(value) => { setSelectedCategory(value); setPage(1); setSelectedItems(new Set()) }}>
+              <Select value={selectedCategory} onValueChange={(value) => { setSelectedCategory(value); setPage(1) }}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="All Categories" />
                 </SelectTrigger>
@@ -1351,7 +1356,7 @@ export default function ProductsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={selectedUnit} onValueChange={(value) => { setSelectedUnit(value); setPage(1); setSelectedItems(new Set()) }}>
+              <Select value={selectedUnit} onValueChange={(value) => { setSelectedUnit(value); setPage(1) }}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="All Units" />
                 </SelectTrigger>
@@ -1396,7 +1401,7 @@ export default function ProductsPage() {
                 <TableRow>
                   <TableHead className="w-[40px]">
                     <Checkbox
-                      checked={selectedItems.size === products.length && products.length > 0}
+                      checked={allVisibleSelected}
                       onCheckedChange={handleSelectAll}
                     />
                   </TableHead>
@@ -1414,7 +1419,7 @@ export default function ProductsPage() {
                     <TableCell>
                       <Checkbox
                         checked={selectedItems.has(p.id)}
-                        onCheckedChange={() => handleSelectItem(p.id)}
+                        onCheckedChange={() => handleSelectItem(p)}
                       />
                     </TableCell>
                     <TableCell className="font-medium">{p.name}</TableCell>
@@ -1463,7 +1468,7 @@ export default function ProductsPage() {
               totalPages={totalPages}
               totalItems={total}
               pageSize={pageSize}
-              onPageChange={(p) => { setPage(p); setSelectedItems(new Set()) }}
+              onPageChange={(p) => { setPage(p) }}
             />
           </CardContent>
         </Card>
