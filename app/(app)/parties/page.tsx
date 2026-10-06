@@ -42,6 +42,7 @@ interface Party {
   category: string
   party_type: string
   balance: number
+  opening_balance: number
   city: string
   state: string
   gstin: string
@@ -302,7 +303,7 @@ export default function PartiesPage() {
       email: party.email,
       category: party.category,
       party_type: party.party_type,
-      opening_balance: party.balance,
+      opening_balance: party.opening_balance,
       credit_limit: party.credit_limit,
       gstin: party.gstin,
       address: party.address,
