@@ -4,6 +4,20 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { isSuperAdmin } from '@/lib/roles'
 import { clearActiveStoreId, getActiveStoreId, setActiveStoreId } from '@/lib/storeSelection'
+import { getDesktopAppVersion } from '@/lib/desktopBridge'
+
+// Report the Tauri app version for the resolved store so super admins can see
+// it on the Stores page. Fire-and-forget: no-op in browsers, and a 404 from an
+// older backend is harmless — this is how the feature stays backward compatible.
+function reportDesktopAppVersion() {
+  getDesktopAppVersion().then((version) => {
+    if (!version?.trim()) return
+    apiFetch('/auth/app-version', {
+      method: 'POST',
+      body: JSON.stringify({ version: version.trim() }),
+    }).catch(() => {})
+  }).catch(() => {})
+}
 
 export interface StoreSummary {
   id: string
@@ -17,6 +31,8 @@ export interface StoreSummary {
   phone?: string
   email?: string
   is_active: boolean
+  app_version?: string | null
+  app_version_seen_at?: string | null
   user_count?: number
   created_at?: string
   updated_at?: string
@@ -62,6 +78,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     setLoading(true)
+    reportDesktopAppVersion()
     try {
       if (isSuperAdmin(user.role)) {
         const res = await apiFetch('/stores')

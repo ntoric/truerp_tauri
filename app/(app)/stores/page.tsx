@@ -22,7 +22,7 @@ import {
   validateStoreForm,
   type StoreFormValues,
 } from '@/lib/storeValidation'
-import { ExternalLink, Loader2, Plus, RotateCcw, Store, Trash2, Users } from 'lucide-react'
+import { ExternalLink, Loader2, MonitorSmartphone, Plus, RotateCcw, Store, Trash2, Users } from 'lucide-react'
 import {
   StoreResetDialog,
   type StoreResetScopeId,
@@ -464,6 +464,17 @@ export default function StoresPage() {
                     <span className="inline-flex items-center gap-1">
                       <Users className="h-3 w-3" />
                       {store.user_count ?? 0}
+                    </span>
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title={
+                        store.app_version_seen_at
+                          ? `Desktop app last reported ${new Date(store.app_version_seen_at).toLocaleString()}`
+                          : 'No desktop app version reported yet'
+                      }
+                    >
+                      <MonitorSmartphone className="h-3 w-3" />
+                      {store.app_version ? `v${store.app_version}` : '—'}
                     </span>
                   </div>
                 </button>
