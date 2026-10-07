@@ -35,6 +35,7 @@ export interface CreatedProduct {
   name: string
   sku: string
   item_code: string
+  plu?: string
   hsn_code: string
   sale_price: number
   purchase_price: number
@@ -304,6 +305,7 @@ export default function CreateProductDialog({
           name: String(created.name ?? newItem.name),
           sku: String(created.sku ?? newItem.sku ?? ''),
           item_code: String(created.item_code ?? newItem.item_code ?? ''),
+          plu: String(created.plu ?? newItem.plu ?? ''),
           hsn_code: String(created.hsn_code ?? newItem.hsn_code ?? ''),
           sale_price: Number(created.sale_price ?? newItem.sale_price ?? 0),
           purchase_price: Number(created.purchase_price ?? newItem.purchase_price ?? 0),

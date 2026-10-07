@@ -130,6 +130,7 @@ function toCreatedProduct(data: Record<string, unknown>, fallback: BulkRow): Cre
     name: String(data.name ?? fallback.name),
     sku: String(data.sku ?? fallback.sku),
     item_code: String(data.item_code ?? fallback.item_code),
+    plu: String(data.plu ?? ''),
     hsn_code: String(data.hsn_code ?? fallback.hsn_code),
     sale_price: Number(data.sale_price ?? fallback.sale_price) || 0,
     purchase_price: Number(data.purchase_price ?? fallback.purchase_price) || 0,

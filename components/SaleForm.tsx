@@ -2296,7 +2296,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         {/* Product Selection Modal */}
         {showProductModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <Card className="max-h-[80vh] w-full max-w-4xl overflow-auto">
+            <Card className="max-h-[80vh] w-full max-w-5xl overflow-auto">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Select Product</CardTitle>
@@ -2346,6 +2346,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                         </th>
                         <th className="pb-2 font-medium">Item Name</th>
                         <th className="pb-2 font-medium">Item Code/SKU</th>
+                        <th className="pb-2 font-medium">PLU</th>
                         <th className="pb-2 font-medium text-right">Stock</th>
                         <th className="pb-2 font-medium text-right">Sale Price</th>
                         <th className="pb-2 font-medium text-right">Purchase Price</th>
@@ -2365,6 +2366,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                           </td>
                           <td className="py-2 font-medium">{product.name}</td>
                           <td className="py-2 text-gray-600">{product.sku || product.item_code || '-'}</td>
+                          <td className="py-2 text-gray-600">{product.plu || '-'}</td>
                           <td className="py-2 text-right">{product.stock_qty} {product.unit}</td>
                           <td className="py-2 text-right">{formatCurrency(product.sale_price)}</td>
                           <td className="py-2 text-right text-gray-500">{formatCurrency(product.purchase_price)}</td>
@@ -2393,7 +2395,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       ))}
                       {modalLoading && (
                         <tr>
-                          <td colSpan={8} className="py-8 text-center text-gray-500">
+                          <td colSpan={9} className="py-8 text-center text-gray-500">
                             <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                             Loading items…
                           </td>
@@ -2401,7 +2403,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       )}
                       {!modalLoading && filteredProducts.length === 0 && (
                         <tr>
-                          <td colSpan={8} className="py-8 text-center">
+                          <td colSpan={9} className="py-8 text-center">
                             {productSearch.trim() ? (
                               <button
                                 type="button"
@@ -2490,6 +2492,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
               name: created.name,
               sku: created.sku,
               item_code: created.item_code,
+              plu: created.plu,
               hsn_code: created.hsn_code,
               sale_price: created.sale_price,
               purchase_price: created.purchase_price,
@@ -2538,6 +2541,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
               name: created.name,
               sku: created.sku,
               item_code: created.item_code,
+              plu: created.plu,
               hsn_code: created.hsn_code,
               sale_price: created.sale_price,
               purchase_price: created.purchase_price,
