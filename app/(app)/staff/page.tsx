@@ -19,7 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Pencil, Trash2, Search, MoreVertical, Power, Download, Wallet } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, MoreVertical, Power, Download, Wallet, Sparkles } from 'lucide-react'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
@@ -69,6 +69,13 @@ export default function StaffPage() {
   const [advanceDate, setAdvanceDate] = useState(new Date().toISOString().split('T')[0])
   const [advanceAmount, setAdvanceAmount] = useState('')
   const [advanceSaving, setAdvanceSaving] = useState(false)
+  const [extraStaff, setExtraStaff] = useState<Staff | null>(null)
+  const [extraDate, setExtraDate] = useState(new Date().toISOString().split('T')[0])
+  const [extraAmount, setExtraAmount] = useState('')
+  const [extraDirection, setExtraDirection] = useState<'add' | 'deduct'>('deduct')
+  const [extraReason, setExtraReason] = useState('')
+  const [extraPayNow, setExtraPayNow] = useState(true)
+  const [extraSaving, setExtraSaving] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -260,6 +267,61 @@ export default function StaffPage() {
       notifyError('Failed to record advance salary')
     } finally {
       setAdvanceSaving(false)
+    }
+  }
+
+  const openExtraDialog = (s: Staff) => {
+    setExtraStaff(s)
+    setExtraDate(new Date().toISOString().split('T')[0])
+    setExtraAmount('')
+    setExtraDirection('deduct')
+    setExtraReason('')
+    setExtraPayNow(true)
+  }
+
+  const handleSaveExtra = async () => {
+    if (!extraStaff) return
+    const amount = parseFloat(extraAmount)
+    if (!extraDate) {
+      notifyError('Date is required')
+      return
+    }
+    if (!amount || amount <= 0) {
+      notifyError('Enter a valid amount')
+      return
+    }
+    setExtraSaving(true)
+    try {
+      const res = await apiFetch('/staff/extras', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          staff_id: extraStaff.id,
+          direction: extraDirection,
+          amount,
+          reason: extraReason,
+          entry_date: new Date(extraDate).toISOString(),
+          redeem_now: extraPayNow,
+          payment_mode: 'cash',
+        }),
+      })
+      if (res.ok) {
+        notifySuccess(
+          extraDirection === 'add'
+            ? `Extra payable of ${formatCurrency(amount)} recorded for ${extraStaff.name}`
+            : `Extra amount of ${formatCurrency(amount)} recorded for ${extraStaff.name}`
+        )
+        setExtraStaff(null)
+        fetchStaffs()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to record extra amount')
+      }
+    } catch (err) {
+      console.error(err)
+      notifyError('Failed to record extra amount')
+    } finally {
+      setExtraSaving(false)
     }
   }
 
@@ -602,6 +664,10 @@ export default function StaffPage() {
                             <Wallet className="mr-2 h-4 w-4" />
                             Pay Advance Salary
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openExtraDialog(s)}>
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Extra Amount
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleToggleActive(s)}>
                             <Power className="mr-2 h-4 w-4" />
                             {s.is_active ? 'Disable' : 'Enable'}
@@ -683,6 +749,55 @@ export default function StaffPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setAdvanceStaff(null)} disabled={advanceSaving}>Cancel</Button>
               <Button onClick={handlePayAdvance} disabled={advanceSaving}>{advanceSaving ? 'Saving...' : 'Pay Advance'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={extraStaff !== null} onOpenChange={(open) => { if (!open) setExtraStaff(null) }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader><DialogTitle>Extra Amount — {extraStaff?.name}</DialogTitle></DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label>Direction *</Label>
+                <Select value={extraDirection} onValueChange={(v: 'add' | 'deduct') => setExtraDirection(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="deduct">Deduct from next salary</SelectItem>
+                    <SelectItem value="add">Add to next salary</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Date *</Label>
+                <Input type="date" value={extraDate} onChange={(e) => setExtraDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Amount *</Label>
+                <Input type="number" min="0" step="0.01" value={extraAmount} onChange={(e) => setExtraAmount(e.target.value)} placeholder="0.00" />
+              </div>
+              <div className="space-y-2">
+                <Label>Reason</Label>
+                <Input value={extraReason} onChange={(e) => setExtraReason(e.target.value)} placeholder="e.g. Extra draw, incentive, reimbursement" />
+              </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="extra-pay-now"
+                  checked={extraPayNow}
+                  onCheckedChange={(checked) => setExtraPayNow(checked === true)}
+                />
+                <div className="space-y-1">
+                  <Label htmlFor="extra-pay-now" className="cursor-pointer">Pay out now (cash)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {extraDirection === 'add'
+                      ? 'Pays immediately and settles it — no payroll adjustment. Unchecked, it stays due and is added to the next salary.'
+                      : 'Pays now as a Staff Extra expense; it still stays due and is deducted from the next salary. Unchecked, it only stays due.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setExtraStaff(null)} disabled={extraSaving}>Cancel</Button>
+              <Button onClick={handleSaveExtra} disabled={extraSaving}>{extraSaving ? 'Saving...' : 'Save'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

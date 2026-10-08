@@ -110,6 +110,9 @@ interface PayrollCalc {
   period_deductions: number
   advance_recovery: number
   advance_count: number
+  extra_add: number
+  extra_deduct: number
+  extra_count: number
   estimated_net: number
 }
 
@@ -127,6 +130,8 @@ interface StaffBalance {
   salary_paid: number
   advances_pending: number
   deductions_pending: number
+  extras_add_pending?: number
+  extras_deduct_pending?: number
 }
 
 const PAYMENT_MODES = [
@@ -634,7 +639,9 @@ export default function PayrollPage() {
     ? payrollCalc.payable_days * calcDailyRate
     : formData.basic_salary
   const periodDeductions = payrollCalc?.period_deductions || 0
-  const estimatedNet = Math.max(0, calculatedPayable - formData.deductions - periodDeductions - advanceRecovery + formData.bonus)
+  const extraAdd = payrollCalc?.extra_add || 0
+  const extraDeduct = payrollCalc?.extra_deduct || 0
+  const estimatedNet = Math.max(0, calculatedPayable - formData.deductions - periodDeductions - advanceRecovery - extraDeduct + formData.bonus + extraAdd)
 
   const handleExport = async () => {
     const exportList =
@@ -1079,6 +1086,13 @@ export default function PayrollPage() {
                   {periodDeductions > 0 && (
                     <p className="text-xs text-blue-800">Period deductions auto-applied: {formatCurrency(periodDeductions)}</p>
                   )}
+                  {(extraAdd > 0 || extraDeduct > 0) && (
+                    <p className="text-xs text-blue-800">
+                      Extra amounts auto-applied: {extraAdd > 0 && `+${formatCurrency(extraAdd)} payable`}
+                      {extraAdd > 0 && extraDeduct > 0 && ' · '}
+                      {extraDeduct > 0 && `−${formatCurrency(extraDeduct)} recoverable`}
+                    </p>
+                  )}
                 </div>
               )}
               <div className="rounded-md border bg-gray-50 px-3 py-2 text-sm">
@@ -1112,6 +1126,10 @@ export default function PayrollPage() {
                           ` · Advances −${formatCurrency(dueInfo.advances_pending)}`}
                         {dueInfo.deductions_pending > 0 &&
                           ` · Deductions −${formatCurrency(dueInfo.deductions_pending)}`}
+                        {(dueInfo.extras_add_pending || 0) > 0 &&
+                          ` · Extras +${formatCurrency(dueInfo.extras_add_pending || 0)}`}
+                        {(dueInfo.extras_deduct_pending || 0) > 0 &&
+                          ` · Extras −${formatCurrency(dueInfo.extras_deduct_pending || 0)}`}
                       </p>
                       <p className="text-xs text-amber-800">
                         Unpaid payrolls are settled first, then a settlement payroll covers the rest.
