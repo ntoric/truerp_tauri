@@ -15,6 +15,7 @@ import { cn, formatCurrency } from '@/lib/utils'
 import { Plus, Trash2, Loader2, Save, Search, Barcode, X, Package } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { ProductSearchSelect, type ProductSearchResult } from '@/components/ProductSearchSelect'
 import { AdditionalChargeItemsInput } from '@/components/AdditionalChargeItemsInput'
 import {
   type AdditionalChargeItem,
@@ -62,11 +63,14 @@ interface InvoiceItem {
   total: number
 }
 
+const PRODUCT_MODAL_PAGE_SIZE = 25
+
 interface Product {
   id: string
   name: string
   sku: string
   item_code: string
+  plu?: string
   hsn_code: string
   sale_price: number
   sale_price_with_tax?: boolean
@@ -104,8 +108,7 @@ export default function CreateSalesReturnPage() {
   const [parties, setParties] = useState<Party[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
+  const [modalProducts, setModalProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [returnNumber, setReturnNumber] = useState('')
   const [partyId, setPartyId] = useState('')
@@ -117,13 +120,19 @@ export default function CreateSalesReturnPage() {
   const [notes, setNotes] = useState('')
   const [deductionItems, setDeductionItems] = useState<AdditionalChargeItem[]>([])
   const [items, setItems] = useState<SalesReturnItem[]>([
-    { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 18, unit: 'PCS', total: 0, reason: '' }
+    { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 0, unit: 'PCS', total: 0, reason: '' }
   ])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
   const [productSearch, setProductSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
+  const [modalPage, setModalPage] = useState(1)
+  const [modalTotal, setModalTotal] = useState(0)
+  const [modalLoading, setModalLoading] = useState(false)
+  const [debouncedProductSearch, setDebouncedProductSearch] = useState('')
+  const modalFetchSeqRef = useRef(0)
+  const categoriesLoadedRef = useRef(false)
   const [showInvoiceDropdown, setShowInvoiceDropdown] = useState(false)
   const invoiceDropdownRef = useRef<HTMLDivElement>(null)
 
@@ -143,8 +152,33 @@ export default function CreateSalesReturnPage() {
   }, [invoiceSearch, invoices, partyId])
 
   useEffect(() => {
-    filterProducts()
-  }, [productSearch, selectedCategory, products])
+    const t = setTimeout(() => setDebouncedProductSearch(productSearch), 300)
+    return () => clearTimeout(t)
+  }, [productSearch])
+
+  useEffect(() => {
+    if (!showProductModal) return
+    fetchModalProducts(1)
+    if (!categoriesLoadedRef.current) {
+      categoriesLoadedRef.current = true
+      void (async () => {
+        try {
+          const res = await apiFetch('/categories')
+          if (!res.ok) return
+          const data = await res.json()
+          const list = Array.isArray(data) ? data : data.categories || []
+          setCategories(
+            list
+              .filter((c: { name: string; is_active?: boolean }) => c.is_active !== false)
+              .map((c: { name: string }) => c.name)
+          )
+        } catch {
+          /* keep the category filter empty on failure */
+        }
+      })()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showProductModal, debouncedProductSearch, selectedCategory])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -158,22 +192,14 @@ export default function CreateSalesReturnPage() {
 
   const fetchData = async () => {
     try {
-      const [partiesRes, productsRes, invoicesRes, returnsRes] = await Promise.all([
+      const [partiesRes, invoicesRes, returnsRes] = await Promise.all([
         apiFetch('/parties?party_type=customer'),
-        apiFetch('/products'),
         apiFetch('/invoices'),
         apiFetch('/sales-returns'),
       ])
       if (partiesRes.ok) {
         const data = await partiesRes.json()
         setParties(Array.isArray(data) ? data : data.data || [])
-      }
-      if (productsRes.ok) {
-        const data = await productsRes.json()
-        const list: Product[] = Array.isArray(data) ? data : data.data || []
-        setProducts(list)
-        const cats = Array.from(new Set(list.map((p: Product) => p.category).filter(Boolean))) as string[]
-        setCategories(cats)
       }
       if (invoicesRes.ok) {
         const data = await invoicesRes.json()
@@ -206,21 +232,28 @@ export default function CreateSalesReturnPage() {
     setFilteredInvoices(filtered)
   }
 
-  const filterProducts = () => {
-    let filtered = products
-    if (selectedCategory) {
-      filtered = filtered.filter(p => p.category === selectedCategory)
+  const fetchModalProducts = async (page: number) => {
+    const seq = ++modalFetchSeqRef.current
+    setModalLoading(true)
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        per_page: String(PRODUCT_MODAL_PAGE_SIZE),
+      })
+      if (debouncedProductSearch.trim()) params.set('search', debouncedProductSearch.trim())
+      if (selectedCategory) params.set('category', selectedCategory)
+      const res = await apiFetch(`/products?${params.toString()}`)
+      if (!res.ok || seq !== modalFetchSeqRef.current) return
+      const data = await res.json()
+      const list: Product[] = Array.isArray(data) ? data : data.products || []
+      setModalProducts(list)
+      setModalTotal(typeof data.total === 'number' ? data.total : list.length)
+      setModalPage(page)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      if (seq === modalFetchSeqRef.current) setModalLoading(false)
     }
-    if (productSearch) {
-      const search = productSearch.toLowerCase()
-      filtered = filtered.filter(p => 
-        p.name.toLowerCase().includes(search) ||
-        p.sku?.toLowerCase().includes(search) ||
-        p.item_code?.toLowerCase().includes(search) ||
-        p.hsn_code?.toLowerCase().includes(search)
-      )
-    }
-    setFilteredProducts(filtered)
   }
 
   const fetchSalesReturn = async () => {
@@ -302,12 +335,41 @@ export default function CreateSalesReturnPage() {
   }
 
   const handleItemCodeScan = async (code: string) => {
-    const product = products.find(p => p.item_code === code)
-    if (product) {
-      addProductToReturn(product)
-    } else {
-      notifyError('Product not found with this item code')
+    try {
+      const res = await apiFetch(`/products?per_page=20&search=${encodeURIComponent(code)}`)
+      if (!res.ok) {
+        notifyError('Failed to search products')
+        return
+      }
+      const data = await res.json()
+      const list: Product[] = Array.isArray(data) ? data : data.products || []
+      const product = list.find((p) => p.item_code === code || p.plu === code)
+      if (product) {
+        addProductToReturn(product)
+      } else {
+        notifyError('Product not found with this item code')
+      }
+    } catch {
+      notifyError('Failed to search products')
     }
+  }
+
+  const selectProduct = (index: number, product: ProductSearchResult) => {
+    clearFieldError('items')
+    const gstEnabled = isProductGstEnabled(product)
+    const taxRate = productTaxRate(product)
+    const unitPrice = productSaleUnitPrice(product)
+    const newItems = [...items]
+    const item = { ...newItems[index] }
+    item.product_id = product.id
+    item.description = product.name
+    item.unit_price = unitPrice
+    item.tax_rate = taxRate
+    item.unit = product.unit || 'PCS'
+    const taxAmount = item.unit_price * item.quantity * (item.tax_rate / 100)
+    item.total = item.unit_price * item.quantity + taxAmount
+    newItems[index] = item
+    setItems(newItems)
   }
 
   const handlePartyChange = (value: string) => {
@@ -325,7 +387,7 @@ export default function CreateSalesReturnPage() {
   }
 
   const addItem = () => {
-    setItems([...items, { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 18, unit: 'PCS', total: 0, reason: '' }])
+    setItems([...items, { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 0, unit: 'PCS', total: 0, reason: '' }])
   }
 
   const removeItem = (index: number) => {
@@ -338,16 +400,6 @@ export default function CreateSalesReturnPage() {
     if (field === 'product_id') clearFieldError('items')
     const newItems = [...items]
     ;(newItems[index] as any)[field] = value
-
-    if (field === 'product_id') {
-      const product = products.find(p => p.id === value)
-      if (product) {
-        newItems[index].description = product.name
-        newItems[index].unit_price = productSaleUnitPrice(product)
-        newItems[index].tax_rate = productTaxRate(product)
-        newItems[index].unit = product.unit
-      }
-    }
 
     if (field === 'product_id' || field === 'quantity' || field === 'unit_price' || field === 'tax_rate') {
       const item = newItems[index]
@@ -446,8 +498,8 @@ export default function CreateSalesReturnPage() {
           }
         />
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-4">
+        <div className="space-y-4">
+          <div className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle>Basic Information</CardTitle>
@@ -532,7 +584,8 @@ export default function CreateSalesReturnPage() {
                       className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3"
                     >
                       <option value="cash">Cash</option>
-                      <option value="original_payment">Original Payment</option>
+                      <option value="bank">Bank</option>
+                      <option value="upi">UPI</option>
                       <option value="credit_note">Credit Note</option>
                     </select>
                   </div>
@@ -589,21 +642,14 @@ export default function CreateSalesReturnPage() {
                         <div className="flex-1">
                           <Label>Product *</Label>
                           <div className="flex gap-2 mt-1">
-                            <select
+                            <ProductSearchSelect
                               value={item.product_id}
-                              onChange={(e) => {
-                                updateItem(index, 'product_id', e.target.value)
-                              }}
-                              className="h-10 flex-1 rounded-md border border-input bg-background px-3"
-                              required
-                            >
-                              <option value="">Select Product</option>
-                              {products.map((product) => (
-                                <option key={product.id} value={product.id}>
-                                  {product.name} - {formatCurrency(product.sale_price)}
-                                </option>
-                              ))}
-                            </select>
+                              label={item.description}
+                              priceField="sale_price"
+                              placeholder="Search product by name, SKU, item code..."
+                              onSelect={(product) => selectProduct(index, product)}
+                              onClear={() => updateItem(index, 'product_id', '')}
+                            />
                             <Button
                               type="button"
                               variant="outline"
@@ -781,7 +827,7 @@ export default function CreateSalesReturnPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProducts.map((product) => (
+                    {modalProducts.map((product) => (
                       <tr key={product.id} className="border-b hover:bg-gray-50">
                         <td className="py-2">
                           <div className="font-medium">{product.name}</div>
@@ -800,7 +846,15 @@ export default function CreateSalesReturnPage() {
                         </td>
                       </tr>
                     ))}
-                    {filteredProducts.length === 0 && (
+                    {modalLoading && (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-gray-500">
+                          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                          Loading items...
+                        </td>
+                      </tr>
+                    )}
+                    {!modalLoading && modalProducts.length === 0 && (
                       <tr>
                         <td colSpan={5} className="py-8 text-center text-gray-500">
                           No products found
@@ -810,6 +864,37 @@ export default function CreateSalesReturnPage() {
                   </tbody>
                 </table>
               </div>
+              {modalTotal > 0 && (
+                <div className="mt-3 flex items-center justify-between text-sm text-gray-600">
+                  <span>
+                    Showing {(modalPage - 1) * PRODUCT_MODAL_PAGE_SIZE + 1}–
+                    {Math.min(modalPage * PRODUCT_MODAL_PAGE_SIZE, modalTotal)} of {modalTotal}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={modalPage <= 1 || modalLoading}
+                      onClick={() => fetchModalProducts(modalPage - 1)}
+                    >
+                      Prev
+                    </Button>
+                    <span>
+                      Page {modalPage} of {Math.max(1, Math.ceil(modalTotal / PRODUCT_MODAL_PAGE_SIZE))}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={modalPage * PRODUCT_MODAL_PAGE_SIZE >= modalTotal || modalLoading}
+                      onClick={() => fetchModalProducts(modalPage + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

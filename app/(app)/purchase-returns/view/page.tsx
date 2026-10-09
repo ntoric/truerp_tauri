@@ -95,7 +95,7 @@ function PurchaseReturnViewContent() {
   const refundModeLabel: Record<string, string> = {
     cash: 'Cash',
     original_payment: 'Original Payment',
-    credit_note: 'Credit Note',
+    credit_note: 'Debit Note',
   }
 
   return (
