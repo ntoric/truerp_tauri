@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -32,6 +33,14 @@ interface Invoice {
   status: string
 }
 
+interface SalesReturn {
+  id: string
+  return_number: string
+  date: string
+  amount: number
+  status: string
+}
+
 interface CreditNoteItem {
   id: string
   description: string
@@ -47,6 +56,7 @@ interface CreditNote {
   credit_note_number: string
   party: Party
   invoice: Invoice
+  sales_return?: SalesReturn | null
   status: string
   date: string
   total_amount: number
@@ -247,6 +257,32 @@ export default function CreditNoteDetailPage() {
             </CardContent>
           </Card>
         </div>
+
+        {creditNote.sales_return && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Linked Sales Return</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Return Number</p>
+                  <Link href={`/sales-returns/view?id=${creditNote.sales_return.id}`} className="font-medium text-blue-600 hover:underline">
+                    {creditNote.sales_return.return_number}
+                  </Link>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Return Date</p>
+                  <p className="font-medium">{creditNote.sales_return.date ? new Date(creditNote.sales_return.date).toLocaleDateString() : '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Return Amount</p>
+                  <p className="font-medium">{formatCurrency(creditNote.sales_return.amount)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
