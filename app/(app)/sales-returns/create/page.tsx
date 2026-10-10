@@ -43,6 +43,7 @@ interface Invoice {
   party?: { name: string }
   date: string
   total_amount: number
+  amount_paid: number
   items: InvoiceItem[]
 }
 
@@ -135,6 +136,10 @@ export default function CreateSalesReturnPage() {
   const categoriesLoadedRef = useRef(false)
   const [showInvoiceDropdown, setShowInvoiceDropdown] = useState(false)
   const invoiceDropdownRef = useRef<HTMLDivElement>(null)
+  const [settleInvoiceId, setSettleInvoiceId] = useState('')
+  const [settleInvoiceSearch, setSettleInvoiceSearch] = useState('')
+  const [showSettleDropdown, setShowSettleDropdown] = useState(false)
+  const settleDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchData()
@@ -184,6 +189,9 @@ export default function CreateSalesReturnPage() {
     const handleClickOutside = (event: MouseEvent) => {
       if (invoiceDropdownRef.current && !invoiceDropdownRef.current.contains(event.target as Node)) {
         setShowInvoiceDropdown(false)
+      }
+      if (settleDropdownRef.current && !settleDropdownRef.current.contains(event.target as Node)) {
+        setShowSettleDropdown(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -265,6 +273,8 @@ export default function CreateSalesReturnPage() {
         setReturnNumber(data.return_number)
         setPartyId(data.party_id)
         setInvoiceId(data.invoice_id || '')
+        setSettleInvoiceId(data.settle_invoice_id || '')
+        setSettleInvoiceSearch(data.settle_invoice?.invoice_number || '')
         setDate(data.date.split('T')[0])
         setReason(data.reason || '')
         setRefundMode(data.refund_mode || 'cash')
@@ -377,6 +387,8 @@ export default function CreateSalesReturnPage() {
     setPartyId(value)
     setInvoiceId('')
     setInvoiceSearch('')
+    setSettleInvoiceId('')
+    setSettleInvoiceSearch('')
   }
 
   const handleInvoiceSelect = (invoice: Invoice) => {
@@ -418,6 +430,14 @@ export default function CreateSalesReturnPage() {
   const deductionTotal = sumAdditionalChargeItems(deductionItems)
   const netRefund = Math.max(0, calculateTotal() - deductionTotal)
 
+  const filteredSettleInvoices = invoices.filter((inv) => {
+    if (partyId && inv.party_id !== partyId) return false
+    if (!settleInvoiceSearch || settleInvoiceId === inv.id) return true
+    const search = settleInvoiceSearch.toLowerCase()
+    return inv.invoice_number.toLowerCase().includes(search) ||
+      inv.party?.name?.toLowerCase().includes(search)
+  })
+
   const handleSave = async () => {
     if (!partyId) {
       setError('party_id', 'Please select a party')
@@ -440,7 +460,8 @@ export default function CreateSalesReturnPage() {
       const payload = {
         party_id: partyId,
         invoice_id: invoiceId || null,
-        date: date,
+        settle_invoice_id: refundMode === 'credit_note' ? (settleInvoiceId || null) : null,
+        date: new Date(date).toISOString(),
         reason: reason,
         refund_mode: refundMode,
         notes: notes,
@@ -580,7 +601,13 @@ export default function CreateSalesReturnPage() {
                     <select
                       id="refundMode"
                       value={refundMode}
-                      onChange={(e) => setRefundMode(e.target.value)}
+                      onChange={(e) => {
+                        setRefundMode(e.target.value)
+                        if (e.target.value !== 'credit_note') {
+                          setSettleInvoiceId('')
+                          setSettleInvoiceSearch('')
+                        }
+                      }}
                       className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3"
                     >
                       <option value="cash">Cash</option>
@@ -589,6 +616,57 @@ export default function CreateSalesReturnPage() {
                       <option value="credit_note">Credit Note</option>
                     </select>
                   </div>
+                  {refundMode === 'credit_note' && (
+                    <div className="relative md:col-span-2" ref={settleDropdownRef}>
+                      <Label htmlFor="settleInvoice">Apply Credit To Invoice (Optional)</Label>
+                      <p className="mb-1 text-xs text-gray-500">
+                        The credit settles this invoice's outstanding instead of the source invoice — use it for exchanges.
+                      </p>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <Input
+                          id="settleInvoice"
+                          placeholder="Search invoice..."
+                          className="pl-10"
+                          value={settleInvoiceSearch}
+                          onChange={(e) => {
+                            setSettleInvoiceSearch(e.target.value)
+                            setSettleInvoiceId('')
+                            setShowSettleDropdown(true)
+                          }}
+                          onFocus={() => setShowSettleDropdown(true)}
+                        />
+                      </div>
+                      {showSettleDropdown && filteredSettleInvoices.length > 0 && (
+                        <div className="absolute z-10 mt-1 w-full rounded-md border bg-white shadow-lg max-h-60 overflow-auto">
+                          {filteredSettleInvoices.map((invoice) => (
+                            <div
+                              key={invoice.id}
+                              className="flex items-center justify-between px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                              onClick={() => {
+                                setSettleInvoiceId(invoice.id)
+                                setSettleInvoiceSearch(invoice.invoice_number)
+                                setShowSettleDropdown(false)
+                              }}
+                            >
+                              <div>
+                                <div className="font-medium">{invoice.invoice_number}</div>
+                                <div className="text-sm text-gray-500">{invoice.party?.name}</div>
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                {formatCurrency(invoice.total_amount)}
+                                {(invoice.total_amount - invoice.amount_paid) > 0.009 && (
+                                  <span className="ml-2 text-xs text-orange-600">
+                                    due {formatCurrency(invoice.total_amount - invoice.amount_paid)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <Label>Additional Deductions</Label>

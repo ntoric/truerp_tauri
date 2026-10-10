@@ -698,7 +698,7 @@ export default function AccountingPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        entry_date: journalForm.entry_date,
+        entry_date: new Date(journalForm.entry_date).toISOString(),
         description: journalForm.description,
         lines,
       }),
@@ -746,7 +746,7 @@ export default function AccountingPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         bank_account_id: reconForm.bank_account_id,
-        statement_date: reconForm.statement_date,
+        statement_date: new Date(reconForm.statement_date).toISOString(),
         statement_balance: parseFloat(reconForm.statement_balance) || 0,
         notes: reconForm.notes,
       }),
