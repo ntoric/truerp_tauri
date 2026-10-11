@@ -71,6 +71,7 @@ interface Product {
 
 interface PurchaseReturnItem {
   product_id: string
+  purchase_bill_item_id: string
   description: string
   quantity: number
   unit_price: number
@@ -100,7 +101,7 @@ export default function CreatePurchaseReturnPage() {
   const [refundMode, setRefundMode] = useState('cash')
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState<PurchaseReturnItem[]>([
-    { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 0, unit: 'PCS', total: 0, reason: '' }
+    { product_id: '', purchase_bill_item_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 0, unit: 'PCS', total: 0, reason: '' }
   ])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -165,6 +166,7 @@ export default function CreatePurchaseReturnPage() {
               const quantity = item.quantity || 1
               return {
                 product_id: matchedProduct?.id || '',
+                purchase_bill_item_id: '',
                 description: matchedProduct?.name || item.description || '',
                 quantity,
                 unit_price: unitPrice,
@@ -304,7 +306,8 @@ export default function CreatePurchaseReturnPage() {
         setRefundMode(data.refund_mode || 'cash')
         setNotes(data.notes || '')
         setItems(data.items.map((item: PurchaseReturnItem) => ({
-          product_id: item.product_id,
+          product_id: item.product_id || '',
+          purchase_bill_item_id: item.purchase_bill_item_id || '',
           description: item.description || '',
           quantity: item.quantity,
           unit_price: item.unit_price,
@@ -340,6 +343,7 @@ export default function CreatePurchaseReturnPage() {
 
         setItems(bill.items.map((item: PurchaseBillItem) => ({
           product_id: item.product_id,
+          purchase_bill_item_id: item.id,
           description: item.description || item.product?.name || '',
           quantity: item.quantity,
           unit_price: item.unit_price,
@@ -357,6 +361,7 @@ export default function CreatePurchaseReturnPage() {
   const addProductToReturn = (product: Product) => {
     const newItem: PurchaseReturnItem = {
       product_id: product.id,
+      purchase_bill_item_id: '',
       description: product.name,
       quantity: 1,
       unit_price: productPurchaseUnitPrice(product),
@@ -394,6 +399,7 @@ export default function CreatePurchaseReturnPage() {
     const newItems = [...items]
     const item = { ...newItems[index] }
     item.product_id = product.id
+    item.purchase_bill_item_id = ''
     item.description = product.name
     item.unit_price = productPurchaseUnitPrice(product)
     item.tax_rate = productTaxRate(product)
@@ -418,7 +424,7 @@ export default function CreatePurchaseReturnPage() {
   }
 
   const addItem = () => {
-    setItems([...items, { product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 0, unit: 'PCS', total: 0, reason: '' }])
+    setItems([...items, { product_id: '', purchase_bill_item_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 0, unit: 'PCS', total: 0, reason: '' }])
   }
 
   const removeItem = (index: number) => {
@@ -445,7 +451,7 @@ export default function CreatePurchaseReturnPage() {
   }
 
   const handleSave = async () => {
-    if (!vendorId || items.some(item => !item.product_id)) {
+    if (!vendorId || items.some(item => !item.product_id && !item.description.trim())) {
       notifyError('Please fill in all required fields')
       return
     }
@@ -460,7 +466,9 @@ export default function CreatePurchaseReturnPage() {
         refund_mode: refundMode,
         notes: notes,
         items: items.map(item => ({
-          product_id: item.product_id,
+          purchase_bill_item_id: item.purchase_bill_item_id || null,
+          product_id: item.product_id || null,
+          description: item.description,
           quantity: item.quantity,
           unit_price: item.unit_price,
           tax_rate: item.tax_rate,
