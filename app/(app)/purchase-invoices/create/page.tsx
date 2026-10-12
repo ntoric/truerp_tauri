@@ -31,11 +31,17 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { ProductCombobox } from '@/components/ui/ProductCombobox'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { INITIAL_INVESTMENT_METHOD, isInitialInvestmentMethod } from '@/lib/paymentSplits'
+import {
+  PAYMENT_METHODS,
+  appendPaymentSplit,
+  formatPaymentMethod,
+  isInitialInvestmentMethod,
+  splitsFromInvoice,
+  sumPaymentSplits,
+} from '@/lib/paymentSplits'
+import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { fetchBusinessSignature } from '@/lib/businessSignature'
 import {
-  CASH_IN_HAND_ACCOUNT,
-  bankAccountIdForApi,
   useBankAccounts,
 } from '@/hooks/useBankAccounts'
 import ItemsEmptyState, { type PastedItemRow } from '@/components/ItemsEmptyState'
@@ -183,10 +189,12 @@ export default function CreatePurchaseInvoicePage() {
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
   const [taxExempt, setTaxExempt] = useState(true)
   const [autoRoundOff, setAutoRoundOff] = useState(true)
-  const [amountPaid, setAmountPaid] = useState(0)
+  const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: number; bank_account_id: string | null }[]>([
+    { mode: 'cash', amount: 0, bank_account_id: null },
+  ])
   const [amountPaidEdited, setAmountPaidEdited] = useState(false)
-  const [paidFrom, setPaidFrom] = useState(CASH_IN_HAND_ACCOUNT)
   const { accounts: bankAccounts, loading: bankAccountsLoading } = useBankAccounts()
+  const { getDepositHint } = usePaymentMethodMappings()
   const [signature, setSignature] = useState('')
   const [businessSignature, setBusinessSignature] = useState('')
   const [items, setItems] = useState<PurchaseBillItem[]>([])
@@ -260,13 +268,17 @@ export default function CreatePurchaseInvoicePage() {
     fetchData()
   }, [])
 
+  // Drop per-split account selections that no longer resolve to a known
+  // account (e.g. deleted since the draft was saved).
   useEffect(() => {
     if (bankAccountsLoading) return
-    setPaidFrom((prev) => {
-      if (prev === CASH_IN_HAND_ACCOUNT || isInitialInvestmentMethod(prev)) return prev
-      if (bankAccounts.some((a) => a.id === prev)) return prev
-      return CASH_IN_HAND_ACCOUNT
-    })
+    setPaymentSplits((prev) =>
+      prev.map((split) =>
+        split.bank_account_id && !bankAccounts.some((a) => a.id === split.bank_account_id)
+          ? { ...split, bank_account_id: null }
+          : split
+      )
+    )
   }, [bankAccounts, bankAccountsLoading])
 
   // Listen for bottom menubar action buttons (purchase invoice create page only)
@@ -495,13 +507,20 @@ export default function CreatePurchaseInvoicePage() {
         setChargeItems(hydrateAdditionalCharges(bill.additional_charge_items, bill.additional_charges || 0))
         const loadedPaid = bill.paid_amount || 0
         const loadedTotal = bill.total_amount || 0
-        setAmountPaid(loadedPaid)
-        setAmountPaidEdited(loadedPaid + 0.01 < loadedTotal)
-        setPaidFrom(
-          isInitialInvestmentMethod(bill.payment_mode)
-            ? INITIAL_INVESTMENT_METHOD
-            : bill.bank_account_id || CASH_IN_HAND_ACCOUNT
-        )
+        const loadedSplits = splitsFromInvoice({
+          payment_splits: bill.payment_splits,
+          payment_mode: bill.payment_mode,
+          amount_paid: bill.paid_amount,
+          bank_account_id: bill.bank_account_id,
+        }).map((split) => ({
+          mode: split.mode,
+          amount: Number(split.amount) || 0,
+          bank_account_id: split.bank_account_id ?? null,
+        }))
+        setPaymentSplits(loadedSplits)
+        // A fully-paid single tender keeps tracking the bill total (auto mode);
+        // partial or multi-tender bills keep their explicit amounts.
+        setAmountPaidEdited(!(loadedSplits.length === 1 && loadedPaid + 0.01 >= loadedTotal))
         setBillStatus(bill.status || '')
         setSavedBillId(bill.id || editId)
         savedBillIdRef.current = bill.id || editId
@@ -1261,8 +1280,71 @@ export default function CreatePurchaseInvoicePage() {
     totalBeforeRound = rounded
   }
   const totalAmount = totalBeforeRound
-  const effectiveAmountPaid = amountPaidEdited ? amountPaid : totalAmount
+  // An untouched single tender auto-follows the bill total; once the user
+  // edits an amount or adds a tender, the paid amount is the split sum.
+  const effectiveAmountPaid = !amountPaidEdited && paymentSplits.length === 1
+    ? totalAmount
+    : sumPaymentSplits(paymentSplits)
   const balance = totalAmount - effectiveAmountPaid
+
+  const splitAmountValue = (index: number) => {
+    if (paymentSplits.length === 1 && !amountPaidEdited) return totalAmount
+    return paymentSplits[index]?.amount || 0
+  }
+
+  const updateSplit = (index: number, patch: Partial<{ mode: string; amount: number; bank_account_id: string | null }>) => {
+    if ('amount' in patch) setAmountPaidEdited(true)
+    setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  const addPaymentSplit = () => {
+    setAmountPaidEdited(true)
+    setPaymentSplits((prev) => {
+      const normalized = prev.map((row, i) => (
+        prev.length === 1 && !amountPaidEdited && i === 0
+          ? { ...row, amount: totalAmount }
+          : row
+      ))
+      return appendPaymentSplit(normalized, totalAmount, (mode, amount) => ({ mode, amount, bank_account_id: null }))
+    })
+  }
+
+  const removePaymentSplit = (index: number) => {
+    setPaymentSplits((prev) => {
+      if (prev.length <= 1) return prev
+      const next = prev.filter((_, i) => i !== index)
+      if (next.length === 1 && Math.abs((next[0].amount || 0) - totalAmount) <= 0.01) {
+        setAmountPaidEdited(false)
+      } else {
+        setAmountPaidEdited(true)
+      }
+      return next
+    })
+  }
+
+  const markFullyPaid = () => {
+    if (paymentSplits.length <= 1) {
+      setAmountPaidEdited(false)
+      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'cash', amount: totalAmount, bank_account_id: paymentSplits[0]?.bank_account_id ?? null }])
+      return
+    }
+    setAmountPaidEdited(true)
+    setPaymentSplits((prev) => {
+      const others = prev.slice(0, -1)
+      const last = Math.max(0, parseMoney(totalAmount - sumPaymentSplits(others)))
+      return [...others, { ...prev[prev.length - 1], amount: last }]
+    })
+  }
+
+  // Human-readable destination for a split: explicit account, method-mapped
+  // account/primary, or Cash in hand — matching the backend resolver.
+  const splitAccountLabel = (split: { mode: string; bank_account_id: string | null }) => {
+    if (isInitialInvestmentMethod(split.mode)) return "Owner's Equity"
+    if (split.bank_account_id) {
+      return bankAccounts.find((a) => a.id === split.bank_account_id)?.account_name || 'the selected account'
+    }
+    return getDepositHint(split.mode, bankAccounts)
+  }
 
   const itemNeedsBatch = (item: PurchaseBillItem, productList: Product[] = products) =>
     Boolean(item.enable_batching) ||
@@ -1301,13 +1383,25 @@ export default function CreatePurchaseInvoicePage() {
     }
   }
 
-  const paidFromPayload = () => {
-    if (isInitialInvestmentMethod(paidFrom)) {
-      return { payment_mode: INITIAL_INVESTMENT_METHOD, bank_account_id: null }
-    }
+  const paymentSplitsPayload = () =>
+    paymentSplits.map((split, index) => ({
+      mode: split.mode || 'cash',
+      amount:
+        paymentSplits.length === 1 && !amountPaidEdited && index === 0
+          ? totalAmount
+          : Math.max(0, Number(split.amount) || 0),
+      bank_account_id: split.bank_account_id || null,
+    }))
+
+  // Top-level payment fields stay populated for older clients / list views;
+  // the backend treats payment_splits as authoritative when present.
+  const paymentFieldsPayload = () => {
+    const splits = paymentSplitsPayload()
+    const primarySplit = splits.find((s) => s.amount > 0.009) || splits[0]
     return {
-      payment_mode: paidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
-      bank_account_id: bankAccountIdForApi(paidFrom),
+      payment_mode: primarySplit?.mode || 'cash',
+      bank_account_id: splits.find((s) => s.bank_account_id)?.bank_account_id ?? null,
+      payment_splits: splits,
     }
   }
 
@@ -1327,7 +1421,7 @@ export default function CreatePurchaseInvoicePage() {
         total_amount: totalAmount,
         paid_amount: effectiveAmountPaid,
         balance_due: balance,
-        ...paidFromPayload(),
+        ...paymentFieldsPayload(),
         status,
         notes,
         terms,
@@ -1397,7 +1491,7 @@ export default function CreatePurchaseInvoicePage() {
           total_amount: totalAmount,
           paid_amount: effectiveAmountPaid,
           balance_due: balance,
-          ...paidFromPayload(),
+          ...paymentFieldsPayload(),
           status: 'draft',
           notes,
           terms,
@@ -1474,9 +1568,8 @@ export default function CreatePurchaseInvoicePage() {
     warehouseId,
     notes,
     terms,
-    amountPaid,
+    paymentSplits,
     amountPaidEdited,
-    paidFrom,
     invoiceDiscount,
     additionalCharges,
     autoRoundOff,
@@ -2276,74 +2369,113 @@ export default function CreatePurchaseInvoicePage() {
               <CardHeader>
                 <CardTitle>Payment Details</CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="min-w-0 space-y-2">
-                  <Label>Amount Paid</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={effectiveAmountPaid}
-                    onChange={(e) => {
-                      setAmountPaidEdited(true)
-                      setAmountPaid(Number(e.target.value))
-                    }}
-                    className="w-full min-w-0"
-                  />
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Paid From</Label>
-                  {bankAccountsLoading ? (
-                    <div className="h-8 animate-pulse rounded-md bg-gray-200" />
-                  ) : (
-                    <select
-                      value={paidFrom}
-                      onChange={(e) => setPaidFrom(e.target.value)}
-                      className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
-                    >
-                      <option value={CASH_IN_HAND_ACCOUNT}>Cash in-hand</option>
-                      {bankAccounts
-                        .filter((a) => a.is_active || a.id === paidFrom)
-                        .map((account) => (
-                          <option key={account.id} value={account.id}>
-                            {account.account_name}
-                            {account.bank_name ? ` (${account.bank_name})` : ''}
-                            {' — '}
-                            {formatCurrency(account.balance)}
-                          </option>
-                        ))}
-                      <option value={INITIAL_INVESTMENT_METHOD}>Initial Investment</option>
-                    </select>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    {effectiveAmountPaid > 0
-                      ? isInitialInvestmentMethod(paidFrom)
-                        ? `${formatCurrency(effectiveAmountPaid)} will be recorded as owner's capital (Initial Investment) and will not affect cash or bank balances.`
-                        : `${formatCurrency(effectiveAmountPaid)} will be deducted from ${
-                            paidFrom === CASH_IN_HAND_ACCOUNT
-                              ? 'Cash in-hand'
-                              : bankAccounts.find((a) => a.id === paidFrom)?.account_name || 'the selected account'
-                          }.`
-                      : 'Select Initial Investment for opening stock so cash in-hand is not reduced, or choose the account to pay from.'}
-                  </p>
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Balance</Label>
-                  <Input value={formatCurrency(balance)} readOnly className="w-full min-w-0 bg-gray-50" />
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Mark as Fully Paid</Label>
-                  <Button
-                    type="button"
-                    variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
-                    className="h-8 w-full"
-                    onClick={() => {
-                      setAmountPaidEdited(false)
-                      setAmountPaid(totalAmount)
-                    }}
-                  >
-                    {effectiveAmountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
+              <CardContent className="space-y-4">
+                {paymentSplits.map((split, index) => {
+                  const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
+                  const initialInvestment = isInitialInvestmentMethod(split.mode)
+                  return (
+                    <div key={index} className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
+                      <div className="min-w-0 space-y-2">
+                        <Label>{index === 0 ? 'Payment Method' : `Method ${index + 1}`}</Label>
+                        <select
+                          value={split.mode}
+                          onChange={(e) => updateSplit(index, { mode: e.target.value })}
+                          className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
+                        >
+                          {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
+                            <option key={method.value} value={method.value}>
+                              {method.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="min-w-0 space-y-2">
+                        <Label>Paid From</Label>
+                        {initialInvestment ? (
+                          <div className="flex h-8 min-w-0 items-center rounded-md border border-input bg-gray-50 px-2.5 text-sm text-muted-foreground">
+                            Owner&apos;s Equity
+                          </div>
+                        ) : bankAccountsLoading ? (
+                          <div className="h-8 animate-pulse rounded-md bg-gray-200" />
+                        ) : (
+                          <select
+                            value={split.bank_account_id || ''}
+                            onChange={(e) => updateSplit(index, { bank_account_id: e.target.value || null })}
+                            className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
+                          >
+                            <option value="">
+                              {split.mode === 'cash' ? 'Cash in-hand' : `Auto — ${getDepositHint(split.mode, bankAccounts)}`}
+                            </option>
+                            {bankAccounts
+                              .filter((a) => a.is_active || a.id === split.bank_account_id)
+                              .map((account) => (
+                                <option key={account.id} value={account.id}>
+                                  {account.account_name}
+                                  {account.bank_name ? ` (${account.bank_name})` : ''}
+                                  {' — '}
+                                  {formatCurrency(account.balance)}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                      </div>
+                      <div className="min-w-0 space-y-2">
+                        <Label>{index === 0 ? 'Amount Paid' : 'Amount'}</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={splitAmountValue(index)}
+                          onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
+                          className="w-full min-w-0"
+                        />
+                      </div>
+                      {paymentSplits.length > 1 ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => removePaymentSplit(index)}
+                          aria-label="Remove payment method"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <div className="h-8 w-8" />
+                      )}
+                    </div>
+                  )
+                })}
+                <p className="text-xs text-muted-foreground">
+                  {paymentSplits.length === 1
+                    ? isInitialInvestmentMethod(paymentSplits[0]?.mode)
+                      ? `${formatCurrency(effectiveAmountPaid)} will be recorded as owner's capital (Initial Investment) and will not affect cash or bank balances.`
+                      : `${formatCurrency(effectiveAmountPaid)} will be deducted from ${splitAccountLabel(paymentSplits[0] || { mode: 'cash', bank_account_id: null })}.`
+                    : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${splitAccountLabel(split)}`).join(' · ')}
+                </p>
+                {PAYMENT_METHODS.length > paymentSplits.length && (
+                  <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
+                    <Plus className="h-4 w-4" />
+                    Add payment method
                   </Button>
+                )}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="min-w-0 space-y-2">
+                    <Label>Balance</Label>
+                    <Input value={formatCurrency(balance)} readOnly className="w-full min-w-0 bg-gray-50" />
+                  </div>
+                  <div className="min-w-0 space-y-2">
+                    <Label>Mark as Fully Paid</Label>
+                    <Button
+                      type="button"
+                      variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
+                      className="h-8 w-full"
+                      onClick={markFullyPaid}
+                    >
+                      {effectiveAmountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
 

@@ -18,6 +18,7 @@ export function isInitialInvestmentMethod(mode?: string | null): boolean {
 export interface PaymentSplit {
   mode: string
   amount: number
+  bank_account_id?: string | null
 }
 
 export function formatPaymentMethod(mode?: string | null): string {
@@ -58,7 +59,11 @@ export function clampPaymentSplitsToTotal(
     if (remaining <= 0.009) break
     const amount = Math.min(numericSplitAmount(split.amount), remaining)
     if (amount > 0.009) {
-      out.push({ mode: split.mode || 'cash', amount })
+      out.push({
+        mode: split.mode || 'cash',
+        amount,
+        ...(split.bank_account_id ? { bank_account_id: split.bank_account_id } : {}),
+      })
       remaining -= amount
     }
   }
@@ -66,7 +71,7 @@ export function clampPaymentSplitsToTotal(
 }
 
 export function materializePaymentSplits(
-  splits: Array<{ mode: string; amount?: number | string }>,
+  splits: Array<{ mode: string; amount?: number | string; bank_account_id?: string | null }>,
   options?: { implicitFullAmount?: number; edited?: boolean }
 ): PaymentSplit[] {
   const implicit =
@@ -79,6 +84,7 @@ export function materializePaymentSplits(
       amount: implicit && index === 0
         ? numericSplitAmount(options?.implicitFullAmount)
         : numericSplitAmount(split.amount),
+      ...(split.bank_account_id ? { bank_account_id: split.bank_account_id } : {}),
     }))
     .filter((split) => split.amount > 0.009)
 }
@@ -87,18 +93,21 @@ export function splitsFromInvoice(invoice: {
   payment_splits?: PaymentSplit[] | null
   payment_mode?: string | null
   amount_paid?: number | null
+  bank_account_id?: string | null
 }): PaymentSplit[] {
   const fromApi = (invoice.payment_splits || []).filter((split) => Number(split.amount) > 0.009)
   if (fromApi.length > 0) {
     return fromApi.map((split) => ({
       mode: split.mode || 'cash',
       amount: Number(split.amount) || 0,
+      ...(split.bank_account_id ? { bank_account_id: split.bank_account_id } : {}),
     }))
   }
   return [
     {
       mode: invoice.payment_mode || 'cash',
       amount: Number(invoice.amount_paid) || 0,
+      ...(invoice.bank_account_id ? { bank_account_id: invoice.bank_account_id } : {}),
     },
   ]
 }
