@@ -145,12 +145,14 @@ const STATUS_OPTIONS = [
   { value: 'paid', label: 'Paid' },
   { value: 'partial', label: 'Partial' },
   { value: 'pending', label: 'Pending' },
+  { value: 'cancelled', label: 'Cancelled' },
 ] as const
 
 const PAYROLL_STATUS_BADGES: Record<string, string> = {
   paid: 'bg-green-100 text-green-700',
   partial: 'bg-blue-100 text-blue-700',
   pending: 'bg-yellow-100 text-yellow-700',
+  cancelled: 'bg-red-100 text-red-700',
 }
 
 function payrollStatusBadge(status: string) {
@@ -514,6 +516,25 @@ export default function PayrollPage() {
       } else {
         const data = await res.json().catch(() => ({}))
         notifyError((data as { error?: string }).error || 'Failed to delete payment')
+      }
+    } catch (err) { console.error(err) }
+  }
+
+  const handleCancelPayroll = async () => {
+    if (!historyPayroll) return
+    if (!(await confirm({
+      title: 'Cancel payroll?',
+      description: 'This will cancel the payroll, refund every payment into Cash & Banks as a revert entry, and restore the staff balance. The record stays for history but cannot be edited or paid again.',
+    }))) return
+    try {
+      const res = await apiFetch(`/payroll/${historyPayroll.id}/cancel`, { method: 'POST' })
+      if (res.ok) {
+        const updated: Payroll = await res.json()
+        setHistoryPayroll(updated)
+        refreshData()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        notifyError((data as { error?: string }).error || 'Failed to cancel payroll')
       }
     } catch (err) { console.error(err) }
   }
@@ -921,7 +942,7 @@ export default function PayrollPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {payrollRemaining(p) > 0 && (
+                            {p.status !== 'cancelled' && payrollRemaining(p) > 0 && (
                               <DropdownMenuItem onClick={() => openPayDialog(p)}>
                                 <Wallet className="mr-2 h-4 w-4" />
                                 Record Payment
@@ -931,10 +952,12 @@ export default function PayrollPage() {
                               <History className="mr-2 h-4 w-4" />
                               Payment History
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleEdit(p)}>
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Edit
-                            </DropdownMenuItem>
+                            {p.status !== 'cancelled' && (
+                              <DropdownMenuItem onClick={() => handleEdit(p)}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem onClick={() => handleDelete(p.id)} className="text-red-600">
                               <Trash2 className="mr-2 h-4 w-4" />
                               Delete
@@ -1438,7 +1461,14 @@ export default function PayrollPage() {
         <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Payment History - {historyPayroll?.payment_number}</DialogTitle>
+              <DialogTitle>
+                Payment History - {historyPayroll?.payment_number}
+                {historyPayroll?.status === 'cancelled' && (
+                  <span className={`ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${payrollStatusBadge('cancelled')}`}>
+                    CANCELLED
+                  </span>
+                )}
+              </DialogTitle>
             </DialogHeader>
             {historyPayroll && (
               <div className="py-2 space-y-3">
@@ -1448,8 +1478,11 @@ export default function PayrollPage() {
                     Paid {formatCurrency(historyPayroll.paid_amount || 0)}
                   </span>
                   <span className="text-gray-500"> of {formatCurrency(historyPayroll.net_salary)} net</span>
-                  {payrollRemaining(historyPayroll) > 0 && (
+                  {historyPayroll.status !== 'cancelled' && payrollRemaining(historyPayroll) > 0 && (
                     <span className="text-blue-700"> · Due {formatCurrency(payrollRemaining(historyPayroll))}</span>
+                  )}
+                  {historyPayroll.status === 'cancelled' && (
+                    <span className="text-red-600"> · Cancelled — payments refunded to Cash & Banks</span>
                   )}
                 </div>
                 {paymentsLoading ? (
@@ -1481,14 +1514,16 @@ export default function PayrollPage() {
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-sm text-gray-700">{payment.reference || '—'}</TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 text-red-600"
-                              onClick={() => handleDeletePayment(payment.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {historyPayroll.status !== 'cancelled' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-red-600"
+                                onClick={() => handleDeletePayment(payment.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1499,7 +1534,12 @@ export default function PayrollPage() {
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsHistoryOpen(false)}>Close</Button>
-              {historyPayroll && payrollRemaining(historyPayroll) > 0 && (
+              {historyPayroll && historyPayroll.status !== 'cancelled' && (
+                <Button variant="destructive" onClick={handleCancelPayroll}>
+                  Cancel Payroll
+                </Button>
+              )}
+              {historyPayroll && historyPayroll.status !== 'cancelled' && payrollRemaining(historyPayroll) > 0 && (
                 <Button onClick={() => { setIsHistoryOpen(false); openPayDialog(historyPayroll) }}>
                   Record Payment
                 </Button>

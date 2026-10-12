@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
 import {
   DropdownMenu,
@@ -36,6 +37,9 @@ interface PaymentOut {
   date: string
   reference: string
   notes: string
+  purchase_bill_id?: string
+  sales_return_id?: string
+  credit_note_id?: string
   party?: {
     id: string
     name: string
@@ -48,11 +52,20 @@ interface PaymentOut {
     id: string
     bill_number: string
   }
+  sales_return?: {
+    id: string
+    return_number: string
+  }
+  credit_note?: {
+    id: string
+    credit_note_number: string
+  }
 }
 
-interface Vendor {
+interface Party {
   id: string
   name: string
+  party_type?: string
 }
 
 interface PurchaseBill {
@@ -66,9 +79,58 @@ interface PurchaseBill {
   status?: string
 }
 
+interface SalesReturnDoc {
+  id: string
+  return_number: string
+  party_id: string
+  status?: string
+  refund_mode?: string
+  amount?: number
+  deduction_total?: number
+  refund_amount?: number
+}
+
+interface CreditNoteDoc {
+  id: string
+  credit_note_number: string
+  party_id: string
+  status?: string
+  total_amount: number
+}
+
+type BillDocKind = 'purchase_bill' | 'sales_return' | 'credit_note'
+
+interface BillDocOption {
+  key: string
+  kind: BillDocKind
+  id: string
+  number: string
+  partyId: string
+  due: number
+}
+
+const BILL_DOC_KIND_LABELS: Record<BillDocKind, string> = {
+  purchase_bill: 'Purchase Bill',
+  sales_return: 'Sales Return',
+  credit_note: 'Credit Note',
+}
+
+// Refund modes that pay money out (mirroring the backend's
+// refundSettlesInMoney). Credit-settled returns issue a credit note
+// instead — the note itself is what appears in the picker.
+const MONEY_REFUND_MODES = new Set([
+  'cash',
+  'bank',
+  'upi',
+  'card',
+  'cheque',
+  'bank_transfer',
+  'original_payment',
+])
+
 const emptyForm = () => ({
   party_id: '',
-  purchase_bill_id: '',
+  bill_key: '',
   amount_paid: '',
   payment_out_discount: '0',
   payment_out_number: '',
@@ -104,14 +166,19 @@ export default function PaymentOutsPage() {
     showSuccessToast,
   } = useFormErrors()
   const [paymentOuts, setPaymentOuts] = useState<PaymentOut[]>([])
-  const [vendors, setVendors] = useState<Vendor[]>([])
+  const [parties, setParties] = useState<Party[]>([])
   const [bills, setBills] = useState<PurchaseBill[]>([])
-  const [billsLoading, setBillsLoading] = useState(false)
+  const [salesReturns, setSalesReturns] = useState<SalesReturnDoc[]>([])
+  const [creditNotes, setCreditNotes] = useState<CreditNoteDoc[]>([])
+  // Return/credit-note ids that already have a payment out recorded —
+  // a refunded document must not be offered for payment again.
+  const [paidDocIds, setPaidDocIds] = useState<Set<string>>(new Set())
+  const [docsLoading, setDocsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [vendorFilter, setVendorFilter] = useState('all')
+  const [partyFilter, setPartyFilter] = useState('all')
   const [modeFilter, setModeFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -126,12 +193,12 @@ export default function PaymentOutsPage() {
   // (handleDialogOpenChange), so the page doesn't pull the full bills table
   // on every load.
   useEffect(() => {
-    fetchVendors()
+    fetchParties()
   }, [])
 
   useEffect(() => {
     fetchPaymentOuts()
-  }, [debouncedSearch, vendorFilter, modeFilter, dateFrom, dateTo, page])
+  }, [debouncedSearch, partyFilter, modeFilter, dateFrom, dateTo, page])
 
   // Debounce the search box so each keystroke doesn't hit the API.
   useEffect(() => {
@@ -142,12 +209,17 @@ export default function PaymentOutsPage() {
     return () => clearTimeout(timer)
   }, [search])
 
-  function getVendorName(paymentOut: PaymentOut) {
+  function getPartyName(paymentOut: PaymentOut) {
     return paymentOut.party?.name || paymentOut.vendor?.name || '-'
   }
 
-  function getBillNumber(paymentOut: PaymentOut) {
-    return paymentOut.purchase_bill?.bill_number || '-'
+  function getDocNumber(paymentOut: PaymentOut) {
+    return (
+      paymentOut.purchase_bill?.bill_number ||
+      paymentOut.sales_return?.return_number ||
+      paymentOut.credit_note?.credit_note_number ||
+      '-'
+    )
   }
 
   function getNetAmount(paymentOut: PaymentOut) {
@@ -156,7 +228,7 @@ export default function PaymentOutsPage() {
 
   const buildPaymentOutParams = (targetPage: number, perPage: number) => {
     const params = new URLSearchParams()
-    if (vendorFilter !== 'all') params.append('party_id', vendorFilter)
+    if (partyFilter !== 'all') params.append('party_id', partyFilter)
     if (modeFilter !== 'all') params.append('mode', modeFilter)
     if (dateFrom) params.append('from', dateFrom)
     if (dateTo) params.append('to', dateTo)
@@ -193,51 +265,85 @@ export default function PaymentOutsPage() {
     }
   }
 
-  const fetchVendors = async () => {
+  // Payment outs can go to vendors or customers (e.g. refunds), so the
+  // picker lists every party, grouped by type in the dropdown.
+  const fetchParties = async () => {
     try {
-      const res = await apiFetch('/parties?party_type=vendor')
+      const res = await apiFetch('/parties')
       if (res.ok) {
         const data = await res.json()
-        const list: Vendor[] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : []
-        // When arriving from the parties page, the preselected party may not be
-        // a vendor — fetch it so it still appears in the dropdown.
+        const list: Party[] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : []
+        // When arriving from the parties page, the preselected party may be
+        // missing from the list — fetch it so it still appears in the dropdown.
         const preselectId = searchParams.get('party_id')
-        if (preselectId && !list.some((v) => v.id === preselectId)) {
+        if (preselectId && !list.some((p) => p.id === preselectId)) {
           const partyRes = await apiFetch(`/parties/${preselectId}`)
           if (partyRes.ok) {
             const party = await partyRes.json()
             if (party?.id) {
-              list.unshift({ id: party.id, name: party.name })
+              list.unshift({ id: party.id, name: party.name, party_type: party.party_type })
             }
           }
         }
-        setVendors(list)
+        setParties(list)
       } else {
-        showErrorToast('Unable to load vendors', 'Load failed')
+        showErrorToast('Unable to load parties', 'Load failed')
       }
     } catch (err) {
       console.error(err)
-      showErrorToast('Failed to load vendors. Please try again.')
+      showErrorToast('Failed to load parties. Please try again.')
     }
   }
 
-  const fetchBills = async () => {
-    setBillsLoading(true)
+  // The Bill picker offers every document money can still go out against:
+  // unpaid purchase bills, sales returns awaiting a money refund, and
+  // issued credit notes not yet refunded.
+  const fetchPayableDocs = async () => {
+    setDocsLoading(true)
     try {
-      // payable=true returns only bills that still owe money — the picker
-      // never offers fully-paid bills anyway.
-      const res = await apiFetch('/purchase/bills?payable=true')
-      if (res.ok) {
-        const data = await res.json()
+      const [billsRes, returnsRes, notesRes, paidRes] = await Promise.all([
+        // payable=true returns only bills that still owe money — the picker
+        // never offers fully-paid bills anyway.
+        apiFetch('/purchase/bills?payable=true'),
+        apiFetch('/sales-returns'),
+        apiFetch('/credit-notes'),
+        apiFetch('/payment-outs?per_page=0'),
+      ])
+      if (billsRes.ok) {
+        const data = await billsRes.json()
         setBills(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : (Array.isArray(data?.bills) ? data.bills : []))
       } else {
         showErrorToast('Unable to load purchase bills', 'Load failed')
       }
+      if (returnsRes.ok) {
+        const data = await returnsRes.json()
+        setSalesReturns(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [])
+      } else {
+        showErrorToast('Unable to load sales returns', 'Load failed')
+      }
+      if (notesRes.ok) {
+        const data = await notesRes.json()
+        setCreditNotes(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [])
+      } else {
+        showErrorToast('Unable to load credit notes', 'Load failed')
+      }
+      if (paidRes.ok) {
+        const data = await paidRes.json()
+        const rows: PaymentOut[] = Array.isArray(data)
+          ? data
+          : data?.payment_outs ?? (Array.isArray(data?.data) ? data.data : [])
+        const paid = new Set<string>()
+        for (const row of rows) {
+          if (row.sales_return_id) paid.add(row.sales_return_id)
+          if (row.credit_note_id) paid.add(row.credit_note_id)
+        }
+        setPaidDocIds(paid)
+      }
     } catch (err) {
       console.error(err)
-      showErrorToast('Failed to load purchase bills. Please try again.')
+      showErrorToast('Failed to load bills. Please try again.')
     } finally {
-      setBillsLoading(false)
+      setDocsLoading(false)
     }
   }
 
@@ -252,8 +358,8 @@ export default function PaymentOutsPage() {
       resetForm()
       return
     }
-    // Refresh so bills created or paid since page load are reflected.
-    void fetchBills()
+    // Refresh so documents created or paid since page load are reflected.
+    void fetchPayableDocs()
   }
 
   const autoCreateHandled = useRef(false)
@@ -270,10 +376,10 @@ export default function PaymentOutsPage() {
           if (res.ok) {
             const party = await res.json()
             if (party?.id) {
-              setVendors((prev) =>
-                prev.some((v) => v.id === party.id)
+              setParties((prev) =>
+                prev.some((p) => p.id === party.id)
                   ? prev
-                  : [{ id: party.id, name: party.name }, ...prev]
+                  : [{ id: party.id, name: party.name, party_type: party.party_type }, ...prev]
               )
             }
           }
@@ -286,37 +392,36 @@ export default function PaymentOutsPage() {
     router.replace('/payment-outs', { scroll: false })
   }, [searchParams, router])
 
-  const handleVendorChange = (value: string) => {
+  const handlePartyChange = (value: string) => {
     clearFieldError('party_id')
-    const currentBill = bills.find((b) => b.id === formData.purchase_bill_id)
-    const billMatches = currentBill && billPartyId(currentBill) === value
+    const currentDoc = formData.bill_key ? docByKey.get(formData.bill_key) : undefined
     setFormData({
       ...formData,
       party_id: value,
-      purchase_bill_id: billMatches ? formData.purchase_bill_id : '',
+      bill_key: currentDoc && currentDoc.partyId === value ? formData.bill_key : '',
     })
   }
 
-  const handleBillChange = (value: string) => {
-    clearFieldError('purchase_bill_id')
-    const bill = bills.find((b) => b.id === value)
+  const handleDocChange = (value: string) => {
+    clearFieldError('bill')
+    const doc = docByKey.get(value)
     setFormData({
       ...formData,
-      purchase_bill_id: value,
-      party_id: bill ? billPartyId(bill) || formData.party_id : formData.party_id,
+      bill_key: value,
+      party_id: doc && doc.partyId ? doc.partyId : formData.party_id,
       amount_paid:
-        bill && !formData.amount_paid && billDue(bill) > 0
-          ? String(billDue(bill))
+        doc && !formData.amount_paid && doc.due > 0
+          ? String(doc.due)
           : formData.amount_paid,
     })
-    if (bill && billPartyId(bill)) clearFieldError('party_id')
+    if (doc && doc.partyId) clearFieldError('party_id')
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (
       !validateRequired(formData, {
-        party_id: 'Vendor',
+        party_id: 'Party',
         amount_paid: 'Amount paid',
         mode: 'Payment mode',
         date: 'Payment date',
@@ -351,8 +456,15 @@ export default function PaymentOutsPage() {
         notes: formData.notes,
       }
 
-      if (formData.purchase_bill_id) {
-        payload.purchase_bill_id = formData.purchase_bill_id
+      const linkedDoc = formData.bill_key ? docByKey.get(formData.bill_key) : undefined
+      if (linkedDoc) {
+        if (linkedDoc.kind === 'purchase_bill') {
+          payload.purchase_bill_id = linkedDoc.id
+        } else if (linkedDoc.kind === 'sales_return') {
+          payload.sales_return_id = linkedDoc.id
+        } else {
+          payload.credit_note_id = linkedDoc.id
+        }
       }
 
       const res = await apiFetch('/payment-outs', {
@@ -409,7 +521,7 @@ export default function PaymentOutsPage() {
         [
           'Date',
           'Payment Out Number',
-          'Vendor',
+          'Party',
           'Bill #',
           'Amount Paid',
           'Discount',
@@ -421,8 +533,8 @@ export default function PaymentOutsPage() {
         ...exportRows.map((paymentOut) => [
           formatDate(paymentOut.date),
           paymentOut.payment_out_number || '',
-          getVendorName(paymentOut),
-          getBillNumber(paymentOut),
+          getPartyName(paymentOut),
+          getDocNumber(paymentOut),
           paymentOut.amount_paid,
           paymentOut.payment_out_discount,
           getNetAmount(paymentOut),
@@ -440,7 +552,7 @@ export default function PaymentOutsPage() {
 
   const hasActiveFilters =
     search !== '' ||
-    vendorFilter !== 'all' ||
+    partyFilter !== 'all' ||
     modeFilter !== 'all' ||
     dateFrom !== '' ||
     dateTo !== ''
@@ -448,21 +560,60 @@ export default function PaymentOutsPage() {
   const clearFilters = () => {
     setSearch('')
     setDebouncedSearch('')
-    setVendorFilter('all')
+    setPartyFilter('all')
     setModeFilter('all')
     setDateFrom('')
     setDateTo('')
     setPage(1)
   }
 
-  // Only bills that still owe money are payable; paid bills and anything
-  // with no outstanding balance stay out of the picker.
-  const filteredBills = bills.filter(
-    (b) =>
-      b.status !== 'paid' &&
-      billDue(b) > 0 &&
-      (!formData.party_id || billPartyId(b) === formData.party_id)
-  )
+  // Every document a payment out can still settle: purchase bills owing
+  // money, sales returns awaiting a money refund, and issued credit notes
+  // not yet refunded. Returns settled as credit appear through their
+  // issued credit note instead of the return itself.
+  const billDocs: BillDocOption[] = []
+  for (const bill of bills) {
+    if (bill.status === 'paid') continue
+    const due = billDue(bill)
+    if (due <= 0) continue
+    billDocs.push({
+      key: `purchase_bill:${bill.id}`,
+      kind: 'purchase_bill',
+      id: bill.id,
+      number: bill.bill_number,
+      partyId: billPartyId(bill),
+      due,
+    })
+  }
+  for (const ret of salesReturns) {
+    if (ret.status === 'cancelled') continue
+    if (!MONEY_REFUND_MODES.has((ret.refund_mode || '').toLowerCase())) continue
+    if (paidDocIds.has(ret.id)) continue
+    const due = ret.refund_amount ?? Math.max((ret.amount ?? 0) - (ret.deduction_total ?? 0), 0)
+    if (due <= 0) continue
+    billDocs.push({
+      key: `sales_return:${ret.id}`,
+      kind: 'sales_return',
+      id: ret.id,
+      number: ret.return_number,
+      partyId: ret.party_id,
+      due,
+    })
+  }
+  for (const note of creditNotes) {
+    if (note.status !== 'issued' || note.total_amount <= 0) continue
+    if (paidDocIds.has(note.id)) continue
+    billDocs.push({
+      key: `credit_note:${note.id}`,
+      kind: 'credit_note',
+      id: note.id,
+      number: note.credit_note_number,
+      partyId: note.party_id,
+      due: note.total_amount,
+    })
+  }
+  const docByKey = new Map(billDocs.map((d) => [d.key, d]))
+  const filteredDocs = billDocs.filter((d) => !formData.party_id || d.partyId === formData.party_id)
 
   const getModeIcon = (mode: string) => {
     const colors: Record<string, string> = {
@@ -510,59 +661,54 @@ export default function PaymentOutsPage() {
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-1.5">
-                      <Label htmlFor="vendor">Vendor Name *</Label>
-                      <Select value={formData.party_id || undefined} onValueChange={handleVendorChange}>
-                        <SelectTrigger
-                          className={cn(fieldErrors.party_id && 'border-red-500 focus:ring-red-500')}
-                        >
-                          <SelectValue placeholder="Select vendor" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {vendors.length === 0 ? (
-                            <div className="px-2 py-3 text-sm text-gray-500">No vendors found</div>
-                          ) : (
-                            vendors.map((vendor) => (
-                              <SelectItem key={vendor.id} value={vendor.id}>
-                                {vendor.name}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
+                      <Label htmlFor="party">Party *</Label>
+                      <SearchableSelect
+                        value={formData.party_id}
+                        onValueChange={handlePartyChange}
+                        options={parties.map((party) => ({
+                          value: party.id,
+                          label:
+                            party.party_type === 'customer'
+                              ? `${party.name} (Customer)`
+                              : party.name,
+                        }))}
+                        placeholder="Select vendor or customer"
+                        searchPlaceholder="Search parties..."
+                        emptyMessage="No parties found"
+                        clearable
+                        className={cn(fieldErrors.party_id && 'border-red-500')}
+                      />
                       <FieldError message={fieldErrors.party_id || fieldErrors.PartyID} />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="purchase_bill">Purchase Bill (Optional)</Label>
-                      <Select
-                        value={formData.purchase_bill_id || undefined}
-                        onValueChange={handleBillChange}
-                      >
-                        <SelectTrigger
-                          className={cn(
-                            fieldErrors.purchase_bill_id && 'border-red-500 focus:ring-red-500'
-                          )}
-                        >
-                          <SelectValue placeholder="Select bill" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {billsLoading ? (
-                            <div className="px-2 py-3 text-sm text-gray-500">Loading bills…</div>
-                          ) : filteredBills.length === 0 ? (
-                            <div className="px-2 py-3 text-sm text-gray-500">
-                              {formData.party_id
-                                ? 'No bills due for this vendor'
-                                : 'No purchase bills found'}
-                            </div>
-                          ) : (
-                            filteredBills.map((bill) => (
-                              <SelectItem key={bill.id} value={bill.id}>
-                                {bill.bill_number} - {formatCurrency(billDue(bill))} due
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <FieldError message={fieldErrors.purchase_bill_id} />
+                      <Label htmlFor="bill">Bill (Optional)</Label>
+                      <SearchableSelect
+                        value={formData.bill_key}
+                        onValueChange={handleDocChange}
+                        options={filteredDocs.map((doc) => ({
+                          value: doc.key,
+                          label: `${doc.number} (${BILL_DOC_KIND_LABELS[doc.kind]}) - ${formatCurrency(doc.due)} due`,
+                        }))}
+                        placeholder="Select bill"
+                        searchPlaceholder="Search bills..."
+                        emptyMessage={
+                          docsLoading
+                            ? 'Loading bills…'
+                            : formData.party_id
+                              ? 'No bills due for this party'
+                              : 'No bills found'
+                        }
+                        clearable
+                        className={cn(fieldErrors.bill && 'border-red-500')}
+                      />
+                      <FieldError
+                        message={
+                          fieldErrors.bill ||
+                          fieldErrors.purchase_bill_id ||
+                          fieldErrors.sales_return_id ||
+                          fieldErrors.credit_note_id
+                        }
+                      />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="amount_paid">Amount Paid *</Label>
@@ -699,20 +845,20 @@ export default function PaymentOutsPage() {
                 />
               </div>
               <Select
-                value={vendorFilter}
+                value={partyFilter}
                 onValueChange={(value) => {
-                  setVendorFilter(value)
+                  setPartyFilter(value)
                   setPage(1)
                 }}
               >
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Vendor" />
+                  <SelectValue placeholder="Party" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Vendors</SelectItem>
-                  {vendors.map((vendor) => (
-                    <SelectItem key={vendor.id} value={vendor.id}>
-                      {vendor.name}
+                  <SelectItem value="all">All Parties</SelectItem>
+                  {parties.map((party) => (
+                    <SelectItem key={party.id} value={party.id}>
+                      {party.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -775,7 +921,7 @@ export default function PaymentOutsPage() {
                     <tr className="border-b text-left text-gray-500">
                       <th className="pb-3 font-medium">Date</th>
                       <th className="pb-3 font-medium">Payment ID</th>
-                      <th className="pb-3 font-medium">Vendor Name</th>
+                      <th className="pb-3 font-medium">Party Name</th>
                       <th className="pb-3 font-medium">Bill #</th>
                       <th className="pb-3 font-medium">Amount Paid</th>
                       <th className="pb-3 font-medium">Discount</th>
@@ -800,8 +946,8 @@ export default function PaymentOutsPage() {
                         <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
                           <td className="py-3 text-gray-600">{formatDate(p.date)}</td>
                           <td className="py-3 font-mono text-xs text-gray-600">{p.id.slice(0, 8)}...</td>
-                          <td className="py-3 font-medium text-gray-900">{getVendorName(p)}</td>
-                          <td className="py-3 text-gray-600">{getBillNumber(p)}</td>
+                          <td className="py-3 font-medium text-gray-900">{getPartyName(p)}</td>
+                          <td className="py-3 text-gray-600">{getDocNumber(p)}</td>
                           <td className="py-3 font-medium text-gray-900">{formatCurrency(p.amount_paid)}</td>
                           <td className="py-3 font-medium text-gray-900">
                             {formatCurrency(p.payment_out_discount)}

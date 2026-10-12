@@ -303,6 +303,7 @@ export default function StaffDetailPage() {
   }, [attendances])
 
   const totalSalaryPaid = payrolls
+    .filter((p) => p.status !== 'cancelled')
     .reduce((sum, p) => sum + (p.paid_amount || (p.status === 'paid' ? p.net_salary : 0)), 0)
   const totalAdvancePending = advances.reduce((sum, a) => sum + (a.pending_amount || 0), 0)
 
@@ -623,7 +624,9 @@ export default function StaffDetailPage() {
                             ? 'bg-green-100 text-green-700'
                             : p.status === 'partial'
                               ? 'bg-blue-100 text-blue-700'
-                              : 'bg-yellow-100 text-yellow-700'
+                              : p.status === 'cancelled'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-yellow-100 text-yellow-700'
                         }`}
                       >
                         {p.status.toUpperCase()}

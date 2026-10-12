@@ -26,6 +26,7 @@ interface SalesReturn {
   invoice?: { invoice_number: string }
   date: string
   amount: number
+  refund_amount: number
   status: string
 }
 
@@ -264,7 +265,7 @@ export default function SalesReturnsPage() {
                         </td>
                         <td className="py-3 text-gray-600">{ret.party?.name || 'N/A'}</td>
                         <td className="py-3 text-gray-500">{ret.invoice?.invoice_number || '-'}</td>
-                        <td className="py-3 font-medium text-gray-900">{formatCurrency(ret.amount)}</td>
+                        <td className="py-3 font-medium text-gray-900">{formatCurrency(ret.refund_amount)}</td>
                         <td className="py-3">{getStatusBadge(ret.status)}</td>
                         <td className="py-3">
                           <DropdownMenu>
