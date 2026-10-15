@@ -553,7 +553,7 @@ function ReportSummaryBody({
       <LoyaltySummaryTable report={report} />
 
       <p className="mt-4 text-xs text-gray-500">
-        Period profit = sales − expenses − sales returns/credit notes (accrual). Product profit =
+        Period profit = sales − expenses − sales returns/credit notes/invoice refunds (accrual). Product profit =
         taxable sale value − product purchase cost on invoice lines, net of sales returns and credit
         notes. Purchase expense = full bill total; Payment out = amount paid; Accounts payable =
         unpaid balance. Profit distributions are paid out to partners and reduce cash/bank and net

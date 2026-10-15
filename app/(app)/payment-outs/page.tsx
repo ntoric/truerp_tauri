@@ -40,6 +40,7 @@ interface PaymentOut {
   purchase_bill_id?: string
   sales_return_id?: string
   credit_note_id?: string
+  invoice_id?: string
   party?: {
     id: string
     name: string
@@ -59,6 +60,10 @@ interface PaymentOut {
   credit_note?: {
     id: string
     credit_note_number: string
+  }
+  invoice?: {
+    id: string
+    invoice_number: string
   }
 }
 
@@ -98,7 +103,16 @@ interface CreditNoteDoc {
   total_amount: number
 }
 
-type BillDocKind = 'purchase_bill' | 'sales_return' | 'credit_note'
+interface SalesInvoiceDoc {
+  id: string
+  invoice_number: string
+  party_id: string
+  status?: string
+  total_amount: number
+  amount_paid?: number
+}
+
+type BillDocKind = 'purchase_bill' | 'sales_return' | 'credit_note' | 'invoice'
 
 interface BillDocOption {
   key: string
@@ -113,6 +127,7 @@ const BILL_DOC_KIND_LABELS: Record<BillDocKind, string> = {
   purchase_bill: 'Purchase Bill',
   sales_return: 'Sales Return',
   credit_note: 'Credit Note',
+  invoice: 'Sales Invoice',
 }
 
 // Refund modes that pay money out (mirroring the backend's
@@ -170,9 +185,13 @@ export default function PaymentOutsPage() {
   const [bills, setBills] = useState<PurchaseBill[]>([])
   const [salesReturns, setSalesReturns] = useState<SalesReturnDoc[]>([])
   const [creditNotes, setCreditNotes] = useState<CreditNoteDoc[]>([])
+  const [invoices, setInvoices] = useState<SalesInvoiceDoc[]>([])
   // Return/credit-note ids that already have a payment out recorded —
   // a refunded document must not be offered for payment again.
   const [paidDocIds, setPaidDocIds] = useState<Set<string>>(new Set())
+  // Net amount already refunded against each sales invoice — the picker
+  // offers only the unrefunded share of what the invoice received.
+  const [invoiceRefunds, setInvoiceRefunds] = useState<Map<string, number>>(new Map())
   const [docsLoading, setDocsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -218,6 +237,7 @@ export default function PaymentOutsPage() {
       paymentOut.purchase_bill?.bill_number ||
       paymentOut.sales_return?.return_number ||
       paymentOut.credit_note?.credit_note_number ||
+      paymentOut.invoice?.invoice_number ||
       '-'
     )
   }
@@ -296,17 +316,19 @@ export default function PaymentOutsPage() {
   }
 
   // The Bill picker offers every document money can still go out against:
-  // unpaid purchase bills, sales returns awaiting a money refund, and
-  // issued credit notes not yet refunded.
+  // unpaid purchase bills, sales returns awaiting a money refund, issued
+  // credit notes not yet refunded, and sales invoices with money received
+  // that can be refunded (a standalone refund when no return doc exists).
   const fetchPayableDocs = async () => {
     setDocsLoading(true)
     try {
-      const [billsRes, returnsRes, notesRes, paidRes] = await Promise.all([
+      const [billsRes, returnsRes, notesRes, invoicesRes, paidRes] = await Promise.all([
         // payable=true returns only bills that still owe money — the picker
         // never offers fully-paid bills anyway.
         apiFetch('/purchase/bills?payable=true'),
         apiFetch('/sales-returns'),
         apiFetch('/credit-notes'),
+        apiFetch('/invoices?per_page=0'),
         apiFetch('/payment-outs?per_page=0'),
       ])
       if (billsRes.ok) {
@@ -327,17 +349,36 @@ export default function PaymentOutsPage() {
       } else {
         showErrorToast('Unable to load credit notes', 'Load failed')
       }
+      if (invoicesRes.ok) {
+        const data = await invoicesRes.json()
+        const rows: SalesInvoiceDoc[] = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.invoices)
+            ? data.invoices
+            : Array.isArray(data?.data)
+              ? data.data
+              : []
+        setInvoices(rows)
+      } else {
+        showErrorToast('Unable to load sales invoices', 'Load failed')
+      }
       if (paidRes.ok) {
         const data = await paidRes.json()
         const rows: PaymentOut[] = Array.isArray(data)
           ? data
           : data?.payment_outs ?? (Array.isArray(data?.data) ? data.data : [])
         const paid = new Set<string>()
+        const refunded = new Map<string, number>()
         for (const row of rows) {
           if (row.sales_return_id) paid.add(row.sales_return_id)
           if (row.credit_note_id) paid.add(row.credit_note_id)
+          if (row.invoice_id) {
+            const net = row.amount_paid - row.payment_out_discount
+            refunded.set(row.invoice_id, (refunded.get(row.invoice_id) ?? 0) + net)
+          }
         }
         setPaidDocIds(paid)
+        setInvoiceRefunds(refunded)
       }
     } catch (err) {
       console.error(err)
@@ -462,6 +503,8 @@ export default function PaymentOutsPage() {
           payload.purchase_bill_id = linkedDoc.id
         } else if (linkedDoc.kind === 'sales_return') {
           payload.sales_return_id = linkedDoc.id
+        } else if (linkedDoc.kind === 'invoice') {
+          payload.invoice_id = linkedDoc.id
         } else {
           payload.credit_note_id = linkedDoc.id
         }
@@ -568,9 +611,10 @@ export default function PaymentOutsPage() {
   }
 
   // Every document a payment out can still settle: purchase bills owing
-  // money, sales returns awaiting a money refund, and issued credit notes
-  // not yet refunded. Returns settled as credit appear through their
-  // issued credit note instead of the return itself.
+  // money, sales returns awaiting a money refund, issued credit notes not
+  // yet refunded, and sales invoices with a refundable paid amount. Returns
+  // settled as credit appear through their issued credit note instead of
+  // the return itself.
   const billDocs: BillDocOption[] = []
   for (const bill of bills) {
     if (bill.status === 'paid') continue
@@ -610,6 +654,22 @@ export default function PaymentOutsPage() {
       number: note.credit_note_number,
       partyId: note.party_id,
       due: note.total_amount,
+    })
+  }
+  // A refund tagged to an invoice settles in money — the invoice itself
+  // stays untouched — so the refundable amount is what it received minus
+  // what earlier payment outs already refunded.
+  for (const invoice of invoices) {
+    if (invoice.status === 'draft' || invoice.status === 'cancelled') continue
+    const due = Math.max((invoice.amount_paid ?? 0) - (invoiceRefunds.get(invoice.id) ?? 0), 0)
+    if (due <= 0) continue
+    billDocs.push({
+      key: `invoice:${invoice.id}`,
+      kind: 'invoice',
+      id: invoice.id,
+      number: invoice.invoice_number,
+      partyId: invoice.party_id,
+      due,
     })
   }
   const docByKey = new Map(billDocs.map((d) => [d.key, d]))
@@ -681,16 +741,16 @@ export default function PaymentOutsPage() {
                       <FieldError message={fieldErrors.party_id || fieldErrors.PartyID} />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="bill">Bill (Optional)</Label>
+                      <Label htmlFor="bill">Bill / Document (Optional)</Label>
                       <SearchableSelect
                         value={formData.bill_key}
                         onValueChange={handleDocChange}
                         options={filteredDocs.map((doc) => ({
                           value: doc.key,
-                          label: `${doc.number} (${BILL_DOC_KIND_LABELS[doc.kind]}) - ${formatCurrency(doc.due)} due`,
+                          label: `${doc.number} (${BILL_DOC_KIND_LABELS[doc.kind]}) - ${formatCurrency(doc.due)} ${doc.kind === 'invoice' ? 'refundable' : 'due'}`,
                         }))}
-                        placeholder="Select bill"
-                        searchPlaceholder="Search bills..."
+                        placeholder="Select bill or invoice"
+                        searchPlaceholder="Search bills, invoices..."
                         emptyMessage={
                           docsLoading
                             ? 'Loading bills…'
@@ -706,7 +766,8 @@ export default function PaymentOutsPage() {
                           fieldErrors.bill ||
                           fieldErrors.purchase_bill_id ||
                           fieldErrors.sales_return_id ||
-                          fieldErrors.credit_note_id
+                          fieldErrors.credit_note_id ||
+                          fieldErrors.invoice_id
                         }
                       />
                     </div>

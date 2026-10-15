@@ -152,9 +152,9 @@ export const dailyReportSummaryHelp: Record<string, string> = {
     'Unpaid vendor balance across all open purchase bills, not only bills from this period.',
   gst_collected: 'GST collected on sales invoices in this period.',
   daily_profit:
-    'Accrual profit for this period: sales − expenses − sales returns and credit notes. Purchases are not deducted. This is not cash in hand.',
+    'Accrual profit for this period: sales − expenses − sales returns, credit notes and invoice refunds. Purchases are not deducted. This is not cash in hand.',
   product_profit:
-    'Gross margin on items sold: taxable sale value minus product purchase cost, net of sales returns and credit notes.',
+    'Gross margin on items sold: taxable sale value minus product purchase cost, net of sales returns, credit notes and invoice refunds.',
   net_cash_flow:
     'Cash movement for this period: payments received − payment out − expenses − profit distributions.',
   loyalty_points_earned:
