@@ -1,0 +1,29 @@
+# Keep the web image build context small (context = frontend/).
+.git
+**/.DS_Store
+**/*.log
+
+# Build outputs / caches
+node_modules
+.next
+out
+dist
+.staging
+*.tsbuildinfo
+
+# Desktop packaging — built by scripts/, not needed in the image
+src-tauri
+splash
+scripts
+README-desktop.md
+
+# Docker/deploy meta
+Dockerfile
+docker-compose*.yml
+netlify.toml
+
+# Local secrets & env — API URLs are passed via build args
+.env
+.env.*
+!.env.example
+!.env*.example

@@ -1,0 +1,77 @@
+name: Frontend Docker
+
+# Builds the web UI image (Dockerfile at repo root) and pushes it to Docker Hub
+# whenever app code changes land on main. Desktop-only paths (src-tauri,
+# scripts, splash) don't affect the image and are ignored.
+#
+# Required repository secrets:
+#   DOCKERHUB_USERNAME   Docker Hub user that owns the image
+#   DOCKERHUB_TOKEN      Docker Hub access token
+# Optional (baked into the image at build time):
+#   NEXT_PUBLIC_API_URL  What the browser calls (default /api/v1 = same-origin
+#                        proxy). Already used by the desktop release workflow —
+#                        an absolute URL like https://api.example.com/api/v1
+#                        makes the browser call the API directly.
+#   TRUERP_API_PROXY     Server-side proxy target for /api, /uploads, /health
+#                        (default https://truerp-backend.ntoric.com)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**"
+      - "!src-tauri/**"
+      - "!scripts/**"
+      - "!splash/**"
+      - "!README-desktop.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: truerp-web
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL || '/api/v1' }}
+            TRUERP_API_PROXY=${{ secrets.TRUERP_API_PROXY || 'https://truerp-backend.ntoric.com' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

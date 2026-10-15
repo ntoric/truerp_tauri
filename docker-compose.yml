@@ -1,0 +1,68 @@
+# TruERP web UI — standalone container, independent of backend/docker-compose.yml.
+#
+#   cp .env.docker.example .env   # optional — defaults work out of the box
+#   docker compose up --build -d
+#
+# API wiring (same-origin proxy, default):
+#   Browser  ->  web:3000  ->  Next.js rewrite  ->  TRUERP_API_PROXY
+#   /api/v1/*, /uploads/*, /health are proxied to the backend, so only
+#   port 3000 needs to be exposed publicly.
+#
+# Both NEXT_PUBLIC_API_URL and TRUERP_API_PROXY are baked into the image at
+# build time — rebuild after changing them:
+#   docker compose up --build -d
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # What the browser calls. /api/v1 = same-origin via the proxy above.
+        # Alternatively point the browser straight at the API (CORS is open):
+        #   NEXT_PUBLIC_API_URL=https://api.example.com/api/v1
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+        # Server-side proxy target — must be reachable from this container.
+        #   Public API URL:            https://truerp-backend.ntoric.com
+        #   Backend on this host:      http://host.docker.internal:8088
+        #   Shared docker network:     http://truerp-api:8088
+        TRUERP_API_PROXY: ${TRUERP_API_PROXY:-https://truerp-backend.ntoric.com}
+    image: ntoric/truerp-web:latest
+    container_name: truerp-web
+    ports:
+      - "${WEB_PUBLISH_PORT:-3000}:3000"
+    extra_hosts:
+      # Makes http://host.docker.internal:8088 usable as proxy target on Linux.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - truerp-web-net
+
+networks:
+  truerp-web-net:
+    driver: bridge
+
+# If the backend runs via backend/docker-compose.yml on the same host, you can
+# instead attach this service to its external network and proxy by container
+# name (TRUERP_API_PROXY=http://truerp-api:8088):
+#
+#   services:
+#     web:
+#       networks:
+#         - truerp-web-net
+#         - generic-network
+#   networks:
+#     generic-network:
+#       external: true
