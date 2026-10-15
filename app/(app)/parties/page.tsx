@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { formatCurrency, cn, formatDate } from '@/lib/utils'
-import { mergePartyCategories } from '@/lib/partyCategories'
+import { DEFAULT_PARTY_CATEGORIES, mergePartyCategories } from '@/lib/partyCategories'
 import {
   EMPTY_PARTY_FORM,
   firstValidationMessage,
@@ -30,7 +30,7 @@ import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { Plus, Search, Phone, ArrowUp, ArrowDown, Trash2, Edit, MoreVertical, Download, BarChart3, ChevronUp, ChevronDown, FileText } from 'lucide-react'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
-import { usePagination } from '@/hooks/usePagination'
+import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
@@ -73,13 +73,19 @@ export default function PartiesPage() {
     showErrorToast,
   } = useFormErrors()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const pageSize = DEFAULT_PAGE_SIZE
   const [parties, setParties] = useState<Party[]>([])
+  const [categories, setCategories] = useState<string[]>(DEFAULT_PARTY_CATEGORIES)
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [stats, setStats] = useState<PartyStats>({ total_parties: 0, to_collect: 0, to_pay: 0 })
   const [showStats, setShowStats] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [selectedParties, setSelectedParties] = useState<Set<string>>(new Set())
+  const [selectAllMatching, setSelectAllMatching] = useState(false)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editingParty, setEditingParty] = useState<Party | null>(null)
@@ -105,13 +111,73 @@ export default function PartiesPage() {
 
   useEffect(() => {
     fetchParties()
+  }, [debouncedSearch, categoryFilter, page])
+
+  useEffect(() => {
     fetchStats()
   }, [])
 
+  // Debounce the search box so each keystroke doesn't hit the API.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim())
+      setPage(1)
+      setSelectedParties(new Set())
+      setSelectAllMatching(false)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  const handleCategoryFilterChange = (value: string) => {
+    setCategoryFilter(value)
+    setPage(1)
+    setSelectedParties(new Set())
+    setSelectAllMatching(false)
+  }
+
+  const clearSelection = () => {
+    setSelectAllMatching(false)
+    setSelectedParties(new Set())
+  }
+
+  const selectedCount = selectAllMatching ? total : selectedParties.size
+
+  const bulkSelectionPayload = () =>
+    selectAllMatching
+      ? {
+          all_matching: true,
+          filters: {
+            search: debouncedSearch,
+            category: categoryFilter === 'all' ? '' : categoryFilter,
+          },
+        }
+      : { ids: Array.from(selectedParties) }
+
+  const buildPartyParams = (targetPage: number, perPage: number) => {
+    const params = new URLSearchParams()
+    if (debouncedSearch) params.append('search', debouncedSearch)
+    if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
+    params.append('page', String(targetPage))
+    params.append('per_page', String(perPage))
+    return params
+  }
+
   const fetchParties = async () => {
     try {
-      const res = await apiFetch('/parties')
-      if (res.ok) setParties(await res.json())
+      const res = await apiFetch(`/parties?${buildPartyParams(page, pageSize).toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rows: Party[] = Array.isArray(data) ? data : data?.parties ?? []
+        // The current page may no longer exist after deletions or filter changes.
+        const maxPage = Math.max(1, Math.ceil((data.total ?? rows.length) / pageSize))
+        if (page > maxPage) {
+          setPage(maxPage)
+          return
+        }
+        setParties(rows)
+        setTotal(data.total ?? rows.length)
+        setCategories(mergePartyCategories(data.categories ?? []))
+      }
     } catch (err) {
       console.error(err)
     } finally {
@@ -128,25 +194,13 @@ export default function PartiesPage() {
     }
   }
 
-  const filteredParties = parties.filter(p => {
-    const matchesSearch = 
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.phone?.includes(search) ||
-      p.email?.toLowerCase().includes(search.toLowerCase()) ||
-      p.category?.toLowerCase().includes(search.toLowerCase())
-    const matchesCategory = categoryFilter === 'all' || !categoryFilter || p.category === categoryFilter
-    return matchesSearch && matchesCategory
-  })
-
-  const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(filteredParties)
-
-  useEffect(() => {
-    resetPage()
-  }, [search, categoryFilter])
-
-  const categories = mergePartyCategories(parties.map((p) => p.category))
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   const handleExport = async () => {
+    // per_page=0 returns every matching row for the export.
+    const res = await apiFetch(`/parties?${buildPartyParams(1, 0).toString()}`, { timeoutMs: 30000 })
+    const data = res.ok ? await res.json() : { parties: [] }
+    const allParties: Party[] = Array.isArray(data) ? data : data?.parties ?? []
     const rows: (string | number)[][] = [
       [
         'Name',
@@ -168,7 +222,7 @@ export default function PartiesPage() {
         'Created',
         'Last Updated',
       ],
-      ...filteredParties.map((p) => [
+      ...allParties.map((p) => [
         p.name,
         p.category || '',
         p.phone || '',
@@ -193,7 +247,12 @@ export default function PartiesPage() {
   }
 
   const handleSelectParty = (id: string) => {
-    const newSelected = new Set(selectedParties)
+    // Unchecking a row while "all matching" is active drops back to an
+    // explicit selection of the loaded page.
+    const newSelected = selectAllMatching
+      ? new Set(parties.map((p) => p.id))
+      : new Set(selectedParties)
+    setSelectAllMatching(false)
     if (newSelected.has(id)) {
       newSelected.delete(id)
     } else {
@@ -203,27 +262,31 @@ export default function PartiesPage() {
   }
 
   const handleSelectAll = () => {
-    if (selectedParties.size === filteredParties.length) {
+    if (selectAllMatching) {
+      clearSelection()
+      return
+    }
+    if (selectedParties.size === parties.length) {
       setSelectedParties(new Set())
     } else {
-      setSelectedParties(new Set(filteredParties.map(p => p.id)))
+      setSelectedParties(new Set(parties.map(p => p.id)))
     }
   }
 
   const handleBulkDelete = async () => {
-    if (selectedParties.size === 0) return
+    if (selectedCount === 0) return
     if (!(await confirm({
       title: 'Delete parties?',
-      description: `Are you sure you want to delete ${selectedParties.size} parties? This action cannot be undone.`,
+      description: `Are you sure you want to delete ${selectedCount} parties? This action cannot be undone.`,
     }))) return
     try {
       const res = await apiFetch('/parties/bulk/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: Array.from(selectedParties) })
+        body: JSON.stringify(bulkSelectionPayload())
       })
       if (res.ok) {
-        setSelectedParties(new Set())
+        clearSelection()
         fetchParties()
         fetchStats()
       }
@@ -233,7 +296,7 @@ export default function PartiesPage() {
   }
 
   const handleBulkUpdateCategory = () => {
-    if (selectedParties.size === 0 || !bulkCategory) return
+    if (selectedCount === 0 || !bulkCategory) return
     setIsCategoryUpdateConfirmOpen(true)
   }
 
@@ -242,10 +305,10 @@ export default function PartiesPage() {
       const res = await apiFetch('/parties/bulk/update-category', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: Array.from(selectedParties), category: bulkCategory })
+        body: JSON.stringify({ ...bulkSelectionPayload(), category: bulkCategory })
       })
       if (res.ok) {
-        setSelectedParties(new Set())
+        clearSelection()
         setBulkCategory('')
         setIsBulkCategoryModalOpen(false)
         setIsCategoryUpdateConfirmOpen(false)
@@ -372,7 +435,7 @@ export default function PartiesPage() {
                 Stats
                 {showStats ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
               </Button>
-              <Button variant="outline" onClick={handleExport} disabled={loading || filteredParties.length === 0}>
+              <Button variant="outline" onClick={handleExport} disabled={loading || total === 0}>
                 <Download className="mr-2 h-4 w-4" /> Export
               </Button>
               <Dialog open={isCreateModalOpen} onOpenChange={handleCreateModalChange}>
@@ -645,7 +708,7 @@ export default function PartiesPage() {
                 <DialogTitle>Confirm Category Update</DialogTitle>
               </DialogHeader>
               <p className="py-4 text-sm text-gray-600">
-                Are you sure you want to update the category to "{bulkCategory}" for {selectedParties.size} parties?
+                Are you sure you want to update the category to "{bulkCategory}" for {selectedCount} parties?
               </p>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsCategoryUpdateConfirmOpen(false)}>Cancel</Button>
@@ -675,7 +738,7 @@ export default function PartiesPage() {
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <Select value={categoryFilter} onValueChange={handleCategoryFilterChange}>
                   <SelectTrigger className="w-[150px]">
                     <SelectValue placeholder="Category" />
                   </SelectTrigger>
@@ -687,7 +750,7 @@ export default function PartiesPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {selectedParties.size > 0 && (
+              {selectedCount > 0 && (
                 <div className="flex gap-2">
                   <Dialog open={isBulkCategoryModalOpen} onOpenChange={setIsBulkCategoryModalOpen}>
                     <DialogTrigger asChild>
@@ -695,7 +758,7 @@ export default function PartiesPage() {
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Update Category for {selectedParties.size} Parties</DialogTitle>
+                        <DialogTitle>Update Category for {selectedCount} Parties</DialogTitle>
                       </DialogHeader>
                       <div className="py-4">
                         <Label htmlFor="bulk_category">Category</Label>
@@ -708,7 +771,7 @@ export default function PartiesPage() {
                     </DialogContent>
                   </Dialog>
                   <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
-                    <Trash2 className="h-4 w-4 mr-2" /> Delete ({selectedParties.size})
+                    <Trash2 className="h-4 w-4 mr-2" /> Delete ({selectedCount})
                   </Button>
                 </div>
               )}
@@ -720,12 +783,28 @@ export default function PartiesPage() {
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
               </div>
             ) : (
+              <>
+              {selectAllMatching ? (
+                <div className="mb-2 flex items-center justify-between rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                  <span>All {total} parties are selected.</span>
+                  <button type="button" className="font-medium underline" onClick={clearSelection}>
+                    Clear selection
+                  </button>
+                </div>
+              ) : parties.length > 0 && total > parties.length && selectedParties.size === parties.length ? (
+                <div className="mb-2 flex items-center justify-between rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                  <span>All {parties.length} parties on this page are selected.</span>
+                  <button type="button" className="font-medium underline" onClick={() => setSelectAllMatching(true)}>
+                    Select all {total} parties
+                  </button>
+                </div>
+              ) : null}
               <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-gray-500">
                       <th className="pb-3 font-medium w-10">
-                        <Checkbox checked={selectedParties.size === filteredParties.length && filteredParties.length > 0} onCheckedChange={handleSelectAll} />
+                        <Checkbox checked={selectAllMatching || (selectedParties.size === parties.length && parties.length > 0)} onCheckedChange={handleSelectAll} />
                       </th>
                       <th className="pb-3 font-medium">Name</th>
                       <th className="pb-3 font-medium">Category</th>
@@ -739,7 +818,7 @@ export default function PartiesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedItems.map((p) => (
+                    {parties.map((p) => (
                       <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
                         <td className="py-3">
                           <Checkbox checked={selectedParties.has(p.id)} onCheckedChange={() => handleSelectParty(p.id)} />
@@ -819,7 +898,7 @@ export default function PartiesPage() {
                         </td>
                       </tr>
                     ))}
-                    {filteredParties.length === 0 && (
+                    {parties.length === 0 && (
                       <tr>
                         <td colSpan={10} className="py-8 text-center text-gray-500">
                           No parties found
@@ -829,12 +908,13 @@ export default function PartiesPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
             {!loading && (
               <PaginationControls
                 page={page}
                 totalPages={totalPages}
-                totalItems={totalItems}
+                totalItems={total}
                 pageSize={pageSize}
                 onPageChange={setPage}
               />
