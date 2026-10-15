@@ -1,0 +1,35 @@
+# TruERP web UI — standalone container, independent of backend/docker-compose.yml.
+
+# API wiring (same-origin proxy, default):
+#   Browser  ->  web:3000  ->  Next.js rewrite  ->  TRUERP_API_PROXY
+#   /api/v1/*, /uploads/*, /health are proxied to the backend, so only
+#   port 3000 needs to be exposed publicly.
+#
+services:
+  web:
+    image: ntoric/truerp-web:latest
+    container_name: truerp-web
+    ports:
+      - "${WEB_PUBLISH_PORT:-3000}:3000"
+    extra_hosts:
+      # Makes http://host.docker.internal:8088 usable as proxy target on Linux.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - generic-network
+
+  networks:
+    generic-network:
+      external: true
