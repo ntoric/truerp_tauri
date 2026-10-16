@@ -6,6 +6,7 @@ import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 import PageHeader from '@/components/layout/PageHeader'
 import PageActionBar from '@/components/layout/PageActionBar'
 import { Button } from '@/components/ui/button'
@@ -1059,25 +1060,46 @@ export default function CreatePurchaseInvoicePage() {
     setTimeout(() => setToast(null), 2000)
   }
 
-  const startDrawing = (e: React.MouseEvent) => {
+  // Map a pointer position to bitmap coordinates — the canvas is CSS-scaled
+  // down on narrow screens, so raw offsets would draw in the wrong place.
+  const signaturePoint = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    if (!rect.width || !rect.height) return null
+    return {
+      x: ((clientX - rect.left) / rect.width) * canvas.width,
+      y: ((clientY - rect.top) / rect.height) * canvas.height,
+    }
+  }
+
+  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    const { clientX, clientY } =
+      'touches' in e.nativeEvent ? e.nativeEvent.touches[0] : e.nativeEvent
+    const point = signaturePoint(clientX, clientY)
+    if (!point) return
     setIsDrawing(true)
     const canvas = canvasRef.current
     if (canvas) {
       const ctx = canvas.getContext('2d')
       if (ctx) {
         ctx.beginPath()
-        ctx.moveTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY)
+        ctx.moveTo(point.x, point.y)
       }
     }
   }
 
-  const draw = (e: React.MouseEvent) => {
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing) return
+    const { clientX, clientY } =
+      'touches' in e.nativeEvent ? e.nativeEvent.touches[0] : e.nativeEvent
+    const point = signaturePoint(clientX, clientY)
+    if (!point) return
     const canvas = canvasRef.current
     if (canvas) {
       const ctx = canvas.getContext('2d')
       if (ctx) {
-        ctx.lineTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY)
+        ctx.lineTo(point.x, point.y)
         ctx.stroke()
       }
     }
@@ -2396,7 +2418,7 @@ export default function CreatePurchaseInvoicePage() {
                             Owner&apos;s Equity
                           </div>
                         ) : bankAccountsLoading ? (
-                          <div className="h-8 animate-pulse rounded-md bg-gray-200" />
+                          <Skeleton className="h-8" />
                         ) : (
                           <select
                             value={split.bank_account_id || ''}
@@ -2492,11 +2514,14 @@ export default function CreatePurchaseInvoicePage() {
                   ref={canvasRef}
                   width={400}
                   height={150}
-                  className="max-w-full cursor-crosshair rounded border"
+                  className="max-w-full cursor-crosshair touch-none rounded border"
                   onMouseDown={startDrawing}
                   onMouseMove={draw}
                   onMouseUp={stopDrawing}
                   onMouseLeave={stopDrawing}
+                  onTouchStart={startDrawing}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDrawing}
                 />
                 <div className="mt-2 flex gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={clearSignature}>Clear</Button>

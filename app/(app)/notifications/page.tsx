@@ -406,7 +406,7 @@ export default function NotificationsPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4">
+          <TabsList className="grid h-auto w-full grid-cols-2 lg:grid-cols-4">
             <TabsTrigger value="preferences">Reminder settings</TabsTrigger>
             <TabsTrigger value="alerts">Internal alerts</TabsTrigger>
             <TabsTrigger value="templates">Message templates</TabsTrigger>

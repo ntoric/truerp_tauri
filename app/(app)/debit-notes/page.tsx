@@ -6,6 +6,7 @@ import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { StatusBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -119,17 +120,7 @@ export default function DebitNotesPage() {
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val)
 
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      draft: 'bg-gray-100 text-gray-700',
-      issued: 'bg-green-100 text-green-700',
-    }
-    return (
-      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-700'}`}>
-        {status}
-      </span>
-    )
-  }
+  const getStatusBadge = (status: string) => <StatusBadge status={status} />
 
   const handleExport = async () => {
     const rows: (string | number)[][] = [
@@ -234,7 +225,7 @@ export default function DebitNotesPage() {
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-full sm:w-[150px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -244,7 +235,7 @@ export default function DebitNotesPage() {
                 </SelectContent>
               </Select>
               <Select value={vendorFilter} onValueChange={setVendorFilter}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="Vendor" />
                 </SelectTrigger>
                 <SelectContent>

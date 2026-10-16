@@ -6,6 +6,7 @@ import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatCurrency } from '@/lib/utils'
@@ -121,15 +122,7 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      draft: 'bg-gray-100 text-gray-700',
-      submitted: 'bg-blue-100 text-blue-700',
-      received: 'bg-green-100 text-green-700',
-      cancelled: 'bg-red-100 text-red-700'
-    }
-    return <span className={`px-2 py-1 rounded text-xs ${colors[status] || 'bg-gray-100'}`}>{status}</span>
-  }
+  const getStatusBadge = (status: string) => <StatusBadge status={status} />
 
   if (loading) {
     return (
@@ -185,7 +178,7 @@ export default function PurchaseOrderDetailPage() {
               <CardTitle>Order Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div>
                   <p className="text-sm text-gray-500">Status</p>
                   <p className="font-medium">{getStatusBadge(order.status)}</p>

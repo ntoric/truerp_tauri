@@ -53,7 +53,7 @@ export function ReportPanel({
       <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <CardTitle className="flex items-center gap-2 text-base">
-            {Icon && <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#111111] text-white"><Icon className="h-4 w-4" /></span>}
+            {Icon && <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white"><Icon className="h-4 w-4" /></span>}
             {title}
           </CardTitle>
           {description && <CardDescription>{description}</CardDescription>}

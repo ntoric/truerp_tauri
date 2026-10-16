@@ -447,7 +447,7 @@ export default function PartiesPage() {
                 <DialogTitle>Create New Party</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-1">
                     <Label htmlFor="name">Name *</Label>
                     <Input
@@ -470,7 +470,7 @@ export default function PartiesPage() {
                     <FieldError message={fieldErrors.phone} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-1">
                     <Label htmlFor="email">Email</Label>
                     <Input
@@ -512,7 +512,7 @@ export default function PartiesPage() {
                   </Select>
                   <FieldError message={fieldErrors.party_type} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-1">
                     <Label htmlFor="opening_balance">Opening Balance</Label>
                     <Input
@@ -552,7 +552,7 @@ export default function PartiesPage() {
                   <Label htmlFor="address">Address</Label>
                   <Input id="address" value={formData.address} onChange={(e) => updateFormField('address', e.target.value)} />
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:grid-cols-3">
                   <div>
                     <Label htmlFor="city">City</Label>
                     <Input id="city" value={formData.city} onChange={(e) => updateFormField('city', e.target.value)} />
@@ -573,7 +573,7 @@ export default function PartiesPage() {
                     <FieldError message={fieldErrors.pincode} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-1">
                     <Label htmlFor="tan">TAN</Label>
                     <Input
@@ -618,7 +618,7 @@ export default function PartiesPage() {
                 <DialogTitle>Edit Party</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div>
                     <Label htmlFor="edit_name">Name *</Label>
                     <Input id="edit_name" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
@@ -628,7 +628,7 @@ export default function PartiesPage() {
                     <Input id="edit_phone" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div>
                     <Label htmlFor="edit_email">Email</Label>
                     <Input id="edit_email" type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
@@ -648,7 +648,7 @@ export default function PartiesPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div>
                     <Label htmlFor="edit_opening_balance">Opening Balance</Label>
                     <Input id="edit_opening_balance" type="number" value={formData.opening_balance} onChange={e => setFormData({ ...formData, opening_balance: parseFloat(e.target.value) || 0 })} />
@@ -666,7 +666,7 @@ export default function PartiesPage() {
                   <Label htmlFor="edit_address">Address</Label>
                   <Input id="edit_address" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:grid-cols-3">
                   <div>
                     <Label htmlFor="edit_city">City</Label>
                     <Input id="edit_city" value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })} />
@@ -680,7 +680,7 @@ export default function PartiesPage() {
                     <Input id="edit_pincode" value={formData.pincode} onChange={e => setFormData({ ...formData, pincode: e.target.value })} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div>
                     <Label htmlFor="edit_tan">TAN</Label>
                     <Input id="edit_tan" value={formData.tan} onChange={e => setFormData({ ...formData, tan: e.target.value })} />

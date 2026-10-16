@@ -36,7 +36,7 @@
     --ring: 350 74% 45%;
     --radius: 0.375rem;
     /* Compact app chrome — comfortable on ~21" / 1080p displays */
-    --app-header-h: 3rem;
+    --app-header-h: 3.5rem;
     /* Bottom menubar — activated on <html> via DashboardLayout */
     --app-bottom-nav-h: 0px;
     --app-bottom-nav-offset: 0px;
@@ -49,7 +49,7 @@
 
   @media (min-width: 768px) {
     html.has-bottom-menubar {
-      --app-bottom-nav-h: 2.75rem;
+      --app-bottom-nav-h: 3.25rem;
       --app-bottom-nav-offset: calc(var(--app-bottom-nav-h) + env(safe-area-inset-bottom, 0px));
     }
   }
@@ -120,6 +120,13 @@ select:focus-visible,
 [role="combobox"]:focus,
 [role="combobox"]:focus-visible {
   border-color: hsl(var(--primary) / 0.5) !important;
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.12), 0 1px 2px rgba(16, 24, 40, 0.04) !important;
+}
+
+/* Native checkboxes/radios (row selection in raw tables) follow the theme colour */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: hsl(var(--primary));
 }
 
 /* Keyboard users still get a visible focus cue after Tab */
@@ -151,10 +158,61 @@ aside button:focus-visible {
   }
 }
 
+/* Shimmering skeleton placeholders — a soft sheen sweeps each block */
+@keyframes skeleton-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+  }
+}
+
 @layer components {
+  .skeleton {
+    @apply relative overflow-hidden bg-slate-200/70;
+    background-image: linear-gradient(
+      hsl(var(--theme-500) / 0.06),
+      hsl(var(--theme-500) / 0.06)
+    );
+  }
+
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / 0.75),
+      transparent
+    );
+    animation: skeleton-shimmer 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    animation-delay: var(--skeleton-delay, 0ms);
+  }
+
+  /* Dark-surface variant (sidebar / hero cards) */
+  .skeleton-dark {
+    @apply bg-white/10;
+    background-image: none;
+  }
+
+  .skeleton-dark::after {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / 0.15),
+      transparent
+    );
+  }
+
   /* Compact density for typical ERP page titles on ~21" screens */
   .app-page-title {
-    @apply text-sm font-semibold leading-none tracking-tight text-[#20212b] sm:text-base;
+    @apply text-sm font-semibold leading-none tracking-tight text-slate-900 sm:text-base;
   }
 
   /*
@@ -164,7 +222,7 @@ aside button:focus-visible {
     under the app header.
   */
   .app-page-subheader {
-    @apply sticky top-[var(--app-header-h)] z-20 -mx-3 -mt-3 mb-1.5 flex min-h-[3.5rem] flex-wrap items-center justify-between gap-x-2 gap-y-1 overflow-visible border-b border-[#e4e6ef] bg-[#f6f7fb]/95 px-3 py-1.5 backdrop-blur-sm sm:-mx-4 sm:-mt-4 sm:px-4 lg:-mx-5 lg:-mt-5 lg:px-5;
+    @apply sticky top-[var(--app-header-h)] z-20 -mx-3 -mt-3 mb-1.5 flex min-h-[3.5rem] flex-wrap items-center justify-between gap-x-2 gap-y-1 overflow-visible border-b border-slate-200/70 bg-[#f6f7fb]/90 px-3 py-1.5 backdrop-blur-md sm:-mx-4 sm:-mt-4 sm:px-4 lg:-mx-5 lg:-mt-5 lg:px-5;
   }
 
   .app-page-subheader > :first-child {
@@ -217,7 +275,7 @@ aside button:focus-visible {
 
   .table-scroll thead th,
   .table-scroll thead td {
-    background-color: #f6f7fb;
+    background-color: #f8fafc;
     box-shadow: inset 0 -1px 0 hsl(var(--border));
   }
 
@@ -330,6 +388,33 @@ aside button:focus-visible {
 */
 html.has-bottom-menubar .fixed.inset-0.z-50 {
   bottom: var(--app-bottom-nav-offset);
+}
+
+/*
+  Mobile responsiveness safeguards (unlayered so they beat @tailwind utilities).
+
+  1. Never let a stray wide child force horizontal page scrolling — clip at
+     body level. `clip` (unlike `hidden`) does not create a scroll container,
+     so position:sticky headers/subheaders keep working.
+  2. iOS / WKWebView auto-zooms when a focused field is under 16px — bump
+     form controls on phone-sized screens.
+  3. Fixed-size canvases (e.g. signature pad) must not overflow the card.
+*/
+body {
+  overflow-x: clip;
+}
+
+canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }
 
 html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[90vh\],

@@ -7,6 +7,7 @@ import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatCurrency } from '@/lib/utils'
@@ -136,13 +137,7 @@ export default function CreditNoteDetailPage() {
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      draft: 'bg-gray-100 text-gray-700',
-      issued: 'bg-green-100 text-green-700',
-    }
-    return <span className={`px-2 py-1 rounded text-xs ${colors[status] || 'bg-gray-100'}`}>{status}</span>
-  }
+  const getStatusBadge = (status: string) => <StatusBadge status={status} />
 
   if (loading) {
     return (
@@ -198,7 +193,7 @@ export default function CreditNoteDetailPage() {
               <CardTitle>Credit Note Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div>
                   <p className="text-sm text-gray-500">Status</p>
                   <p className="font-medium">{getStatusBadge(creditNote.status)}</p>
@@ -264,7 +259,7 @@ export default function CreditNoteDetailPage() {
               <CardTitle>Linked Sales Return</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-3">
                 <div>
                   <p className="text-sm text-gray-500">Return Number</p>
                   <Link href={`/sales-returns/view?id=${creditNote.sales_return.id}`} className="font-medium text-blue-600 hover:underline">
@@ -289,7 +284,7 @@ export default function CreditNoteDetailPage() {
             <CardTitle>Linked Sales Invoice</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-3">
               <div>
                 <p className="text-sm text-gray-500">Invoice Number</p>
                 <p className="font-medium">{creditNote.invoice?.invoice_number}</p>

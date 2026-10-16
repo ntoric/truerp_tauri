@@ -101,7 +101,7 @@ export default function LoginPage() {
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="password" className="text-xs font-semibold text-[#5b5c6b]">Password</Label>
-            <Link href="/forgot-password" className="rounded-sm text-xs font-medium text-[#c81e3a] underline-offset-4 hover:underline">Forgot password?</Link>
+            <Link href="/forgot-password" className="rounded-sm text-xs font-medium text-blue-600 underline-offset-4 hover:underline">Forgot password?</Link>
           </div>
           <div className="relative">
             <Input
@@ -158,7 +158,7 @@ export default function LoginPage() {
             <div id="totp-error"><FieldError message={fieldErrors.totpCode} /></div>
           </div>
         )}
-        <Button type="submit" className="h-12 w-full gap-2 rounded-lg bg-[#c81e3a] text-sm font-semibold text-white hover:bg-[#aa1931]" disabled={loading}>
+        <Button type="submit" className="h-12 w-full gap-2 rounded-lg bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700" disabled={loading}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
           {loading ? 'Signing in…' : needs2fa ? 'Verify and sign in' : 'Sign in'}
         </Button>

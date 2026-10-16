@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatCurrency } from '@/lib/utils'
 import { Save, Loader2, Plus, Trash2, ArrowLeft } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
@@ -162,7 +163,7 @@ export default function CreateCreditNotePage() {
                 <div className="space-y-2">
                   <Label htmlFor="invoice_id">Sales Invoice *</Label>
                   {loading ? (
-                    <div className="h-10 animate-pulse rounded-md bg-gray-200" />
+                    <Skeleton className="h-10" />
                   ) : (
                     <select 
                       id="invoice_id" 

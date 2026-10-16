@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Palette } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -124,9 +125,7 @@ export default function AppearanceSettingsCard() {
             <Button type="button" variant="outline">
               Secondary
             </Button>
-            <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-              Active item
-            </span>
+            <StatusBadge tone="brand">Active item</StatusBadge>
             <span className="text-sm font-medium text-blue-600">Link colour</span>
           </div>
         </div>

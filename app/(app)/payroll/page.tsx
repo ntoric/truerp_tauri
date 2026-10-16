@@ -6,6 +6,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { StatusBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -148,16 +149,6 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ] as const
 
-const PAYROLL_STATUS_BADGES: Record<string, string> = {
-  paid: 'bg-green-100 text-green-700',
-  partial: 'bg-blue-100 text-blue-700',
-  pending: 'bg-yellow-100 text-yellow-700',
-  cancelled: 'bg-red-100 text-red-700',
-}
-
-function payrollStatusBadge(status: string) {
-  return PAYROLL_STATUS_BADGES[status] || 'bg-gray-100 text-gray-700'
-}
 
 function formatPaymentMode(mode: string) {
   return PAYMENT_MODES.find((item) => item.value === mode)?.label || mode.replace('_', ' ')
@@ -897,9 +888,7 @@ export default function PayrollPage() {
                       <TableCell className="whitespace-nowrap text-sm text-gray-700">
                         {formatDate(p.start_date)} – {formatDate(p.end_date)}
                         {p.is_settlement && (
-                          <span className="ml-1 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                            All dues
-                          </span>
+                          <StatusBadge tone="warning" className="ml-1">All dues</StatusBadge>
                         )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">{formatDate(p.payment_date)}</TableCell>
@@ -930,9 +919,7 @@ export default function PayrollPage() {
                       <TableCell className="whitespace-nowrap">{formatPaymentMode(p.payment_mode)}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm text-gray-700">{formatPaidFrom(p)}</TableCell>
                       <TableCell className="whitespace-nowrap">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${payrollStatusBadge(p.status)}`}>
-                          {p.status.toUpperCase()}
-                        </span>
+                        <StatusBadge status={p.status} />
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -1017,7 +1004,7 @@ export default function PayrollPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2"><Label>Payment Date *</Label><Input type="date" value={formData.payment_date} onChange={(e) => setFormData({...formData, payment_date: e.target.value})} /></div>
                 <div className="space-y-2"><Label>Payment Mode</Label>
                   <Select
@@ -1062,11 +1049,11 @@ export default function PayrollPage() {
               </div>
               {formData.payment_type !== 'all_due' && (
                 <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2"><Label>Start Date *</Label><Input type="date" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /></div>
                 <div className="space-y-2"><Label>End Date *</Label><Input type="date" value={formData.end_date} onChange={(e) => setFormData({...formData, end_date: e.target.value})} /></div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2"><Label>Basic Salary</Label><Input type="number" value={formData.basic_salary} readOnly disabled className="bg-gray-50" /></div>
                 <div className="space-y-2"><Label>Deductions</Label><Input type="number" value={formData.deductions} onChange={(e) => setFormData({...formData, deductions: parseFloat(e.target.value) || 0})} /></div>
                 <div className="space-y-2"><Label>Bonus</Label><Input type="number" value={formData.bonus} onChange={(e) => setFormData({...formData, bonus: parseFloat(e.target.value) || 0})} /></div>
@@ -1163,7 +1150,7 @@ export default function PayrollPage() {
                   )}
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Payment</Label>
                   <Select
@@ -1247,7 +1234,7 @@ export default function PayrollPage() {
                   onChange={(e) => setEditFormData({ ...editFormData, payment_date: e.target.value })}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Deductions</Label>
                   <Input
@@ -1281,7 +1268,7 @@ export default function PayrollPage() {
                   )}
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Payment Mode</Label>
                   <Select
@@ -1374,7 +1361,7 @@ export default function PayrollPage() {
                     {(payingPayroll.paid_amount || 0) > 0 && ` (paid ${formatCurrency(payingPayroll.paid_amount)})`}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Amount *</Label>
                     <Input
@@ -1394,7 +1381,7 @@ export default function PayrollPage() {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Payment Mode</Label>
                     <Select
@@ -1464,9 +1451,7 @@ export default function PayrollPage() {
               <DialogTitle>
                 Payment History - {historyPayroll?.payment_number}
                 {historyPayroll?.status === 'cancelled' && (
-                  <span className={`ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${payrollStatusBadge('cancelled')}`}>
-                    CANCELLED
-                  </span>
+                  <StatusBadge status="cancelled" className="ml-2" />
                 )}
               </DialogTitle>
             </DialogHeader>

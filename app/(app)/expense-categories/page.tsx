@@ -7,6 +7,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -31,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Plus, Pencil, Trash2, Power, MoreVertical, ArrowLeft, Download, Search } from 'lucide-react'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { cn, formatDate } from '@/lib/utils'
@@ -276,9 +277,7 @@ export default function ExpenseCategoriesPage() {
                     <TableCell className="font-medium">{cat.name}</TableCell>
                     <TableCell>{cat.description || '—'}</TableCell>
                     <TableCell>
-                      <span className={`rounded px-2 py-1 text-xs ${cat.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                        {cat.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                      <StatusBadge status={cat.is_active ? 'active' : 'inactive'} />
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-gray-600">
                       {cat.created_at ? formatDate(cat.created_at) : '—'}
@@ -357,8 +356,8 @@ export default function ExpenseCategoriesPage() {
                   placeholder="Description"
                 />
               </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
+              <div className="flex items-center gap-2.5">
+                <Switch
                   id="is_active"
                   checked={formData.is_active}
                   onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked as boolean })}

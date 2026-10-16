@@ -7,6 +7,7 @@ import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ArrowLeft, Download, Edit, Loader2, ExternalLink, FileText, AlertCircle } from 'lucide-react'
@@ -138,27 +139,13 @@ function PurchaseBillViewContent() {
     )
   }
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      paid: 'bg-green-100 text-green-700',
-      unpaid: 'bg-red-100 text-red-700',
-      partial: 'bg-yellow-100 text-yellow-700',
-    }
-    return <span className={`rounded-full px-3 py-1 text-xs font-medium ${variants[status] || variants.unpaid}`}>{status.toUpperCase()}</span>
-  }
+  const getStatusBadge = (status: string) => (
+    <StatusBadge status={status} tone={status === 'unpaid' ? 'danger' : undefined} />
+  )
 
   const getStockStatusBadge = (status?: string) => {
     if (!status) return null
-    const variants: Record<string, string> = {
-      pending: 'bg-amber-100 text-amber-800',
-      received: 'bg-green-100 text-green-700',
-      partial: 'bg-yellow-100 text-yellow-700',
-    }
-    return (
-      <span className={`rounded-full px-3 py-1 text-xs font-medium ${variants[status] || 'bg-gray-100 text-gray-700'}`}>
-        STOCK: {status.toUpperCase()}
-      </span>
-    )
+    return <StatusBadge status={status}>Stock: {status}</StatusBadge>
   }
 
   return (

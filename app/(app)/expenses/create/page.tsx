@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatCurrency } from '@/lib/utils'
 import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
 import {
@@ -182,7 +183,7 @@ export default function CreateExpensePage() {
                 <div className="space-y-2">
                   <Label htmlFor="category">Expense Category *</Label>
                   {loading ? (
-                    <div className="h-8 animate-pulse rounded-md bg-gray-200" />
+                    <Skeleton className="h-8" />
                   ) : (
                     <select id="category" value={form.category} onChange={(e) => handleChange('category', e.target.value)}
                       className={cn(
@@ -219,7 +220,7 @@ export default function CreateExpensePage() {
                 <div className="space-y-2">
                   <Label htmlFor="paid_from">Paid From Account *</Label>
                   {bankAccountsLoading ? (
-                    <div className="h-8 animate-pulse rounded-md bg-gray-200" />
+                    <Skeleton className="h-8" />
                   ) : (
                     <select
                       id="paid_from"

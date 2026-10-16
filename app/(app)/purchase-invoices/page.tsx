@@ -6,6 +6,7 @@ import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   DropdownMenu,
@@ -206,26 +207,11 @@ export default function PurchaseInvoicesPage() {
 
 
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      paid: 'bg-green-100 text-green-700',
-      unpaid: 'bg-orange-100 text-orange-700',
-      partial: 'bg-yellow-100 text-yellow-700',
-      draft: 'bg-slate-100 text-slate-700',
-    }
-    const label = status === 'draft' ? 'Draft' : status
-    return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] || 'bg-gray-100 text-gray-700'}`}>{label}</span>
-  }
+  const getStatusBadge = (status: string) => <StatusBadge status={status} />
 
   const getStockStatusBadge = (status?: string) => {
     if (!status || status === 'none') {
-      return <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">No stock</span>
-    }
-    const variants: Record<string, string> = {
-      pending: 'bg-amber-100 text-amber-800',
-      approved: 'bg-green-100 text-green-700',
-      rejected: 'bg-red-100 text-red-700',
-      partial: 'bg-yellow-100 text-yellow-800',
+      return <StatusBadge tone="neutral">No stock</StatusBadge>
     }
     const labels: Record<string, string> = {
       pending: 'Stock pending',
@@ -234,9 +220,7 @@ export default function PurchaseInvoicesPage() {
       partial: 'Stock partial',
     }
     return (
-      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] || 'bg-gray-100 text-gray-700'}`}>
-        {labels[status] || status}
-      </span>
+      <StatusBadge status={status}>{labels[status] || status}</StatusBadge>
     )
   }
 

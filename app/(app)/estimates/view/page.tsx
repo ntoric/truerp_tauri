@@ -7,6 +7,7 @@ import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ArrowLeft, Edit, Loader2, Printer, Trash2, ArrowRightCircle, FileText } from 'lucide-react'
@@ -146,16 +147,7 @@ function EstimateViewContent() {
     )
   }
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      draft: 'bg-gray-100 text-gray-700',
-      sent: 'bg-blue-100 text-blue-700',
-      accepted: 'bg-green-100 text-green-700',
-      rejected: 'bg-red-100 text-red-700',
-      converted: 'bg-amber-100 text-amber-800',
-    }
-    return <span className={`rounded-full px-3 py-1 text-xs font-medium ${variants[status] || variants.draft}`}>{status.toUpperCase()}</span>
-  }
+  const getStatusBadge = (status: string) => <StatusBadge status={status} />
 
   const isConverted = estimate.status === 'converted'
   const p = estimate.party
@@ -211,7 +203,7 @@ function EstimateViewContent() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-8 mb-8 border-b pb-6">
+            <div className="grid grid-cols-1 gap-8 mb-8 border-b pb-6 sm:grid-cols-2">
               <div>
                 <p className="text-sm font-medium text-gray-500 mb-1">Bill To</p>
                 <p className="font-bold text-gray-900">{p?.name || 'N/A'}</p>
@@ -221,7 +213,8 @@ function EstimateViewContent() {
               </div>
             </div>
 
-            <table className="w-full text-sm mb-8">
+            <div className="mb-8 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-sm">
               <thead>
                 <tr className="border-b-2 border-gray-900">
                   <th className="text-left py-2 font-medium">Description</th>
@@ -245,9 +238,10 @@ function EstimateViewContent() {
                 ))}
               </tbody>
             </table>
+            </div>
 
             <div className="flex justify-end">
-              <div className="w-72 space-y-2">
+              <div className="w-full max-w-72 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Sub Total</span>
                   <span>{formatCurrency(estimate.sub_total)}</span>

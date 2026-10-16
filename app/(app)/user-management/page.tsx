@@ -1088,7 +1088,7 @@ export default function UserManagementPage() {
                             setTwoFa({ ...twoFa, setupView: v as 'qr' | 'key' })
                           }
                         >
-                          <TabsList className="grid w-full grid-cols-2">
+                          <TabsList className="grid h-auto w-full grid-cols-2">
                             <TabsTrigger value="qr" className="gap-2">
                               <QrCode className="h-4 w-4" />
                               QR code

@@ -7,6 +7,7 @@ import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ArrowLeft, Pencil } from 'lucide-react'
@@ -82,18 +83,7 @@ function DeliveryChallanViewContent() {
     )
   }
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      delivered: 'bg-green-100 text-green-700',
-      draft: 'bg-gray-100 text-gray-700',
-      cancelled: 'bg-red-100 text-red-700',
-    }
-    return (
-      <span className={`rounded-full px-3 py-1 text-xs font-medium ${variants[status] || variants.draft}`}>
-        {status.toUpperCase()}
-      </span>
-    )
-  }
+  const getStatusBadge = (status: string) => <StatusBadge status={status} />
 
   return (
     <DashboardLayout>
@@ -132,7 +122,7 @@ function DeliveryChallanViewContent() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-8 mb-8 border-b pb-6">
+            <div className="grid grid-cols-1 gap-8 mb-8 border-b pb-6 sm:grid-cols-2">
               <div>
                 <p className="text-sm font-medium text-gray-500 mb-1">Party</p>
                 <p className="font-bold text-gray-900">{challan.party?.name || 'N/A'}</p>
@@ -167,7 +157,8 @@ function DeliveryChallanViewContent() {
               </div>
             </div>
 
-            <table className="w-full text-sm mb-8">
+            <div className="mb-8 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-sm">
               <thead>
                 <tr className="border-b-2 border-gray-900">
                   <th className="text-left py-2 font-medium">Description</th>
@@ -194,9 +185,10 @@ function DeliveryChallanViewContent() {
                 ))}
               </tbody>
             </table>
+            </div>
 
             <div className="flex justify-end">
-              <div className="w-72 space-y-2">
+              <div className="w-full max-w-72 space-y-2">
                 <div className="border-t pt-2 mt-2">
                   <div className="flex justify-between text-lg font-bold">
                     <span>Sub Total</span>

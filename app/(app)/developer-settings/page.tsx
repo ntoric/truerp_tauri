@@ -20,7 +20,6 @@ import {
   mergePageFeatures,
   type PageFeaturesMap,
 } from '@/lib/pageFeatures'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Mail, MessageSquare, Send, Loader2, CheckCircle, XCircle,
@@ -1152,7 +1151,7 @@ export default function DeveloperSettingsPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-8">
+          <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-8">
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
               General
@@ -1328,7 +1327,7 @@ export default function DeveloperSettingsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Email Provider</Label>
                     <Select
@@ -1350,7 +1349,7 @@ export default function DeveloperSettingsPage() {
 
                 {settings.email_provider === 'smtp' && (
                   <>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                       <div className="space-y-2">
                         <Label>SMTP Host</Label>
                         <Input
@@ -1369,7 +1368,7 @@ export default function DeveloperSettingsPage() {
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                       <div className="space-y-2">
                         <Label>SMTP Username</Label>
                         <Input
@@ -1399,7 +1398,7 @@ export default function DeveloperSettingsPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-2">
                     <Label>From Email</Label>
                     <Input
@@ -1663,8 +1662,8 @@ export default function DeveloperSettingsPage() {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
+                  <div className="flex items-center gap-2.5">
+                    <Switch
                       id="enable_ai_hsn_search"
                       checked={!!aiSettings.enable_ai_hsn_search}
                       onCheckedChange={(checked) =>
@@ -1678,8 +1677,8 @@ export default function DeveloperSettingsPage() {
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
+                  <div className="flex items-center gap-2.5">
+                    <Switch
                       id="enable_ai_bill_parsing"
                       checked={!!aiSettings.enable_ai_bill_parsing}
                       onCheckedChange={(checked) =>
@@ -1827,8 +1826,8 @@ export default function DeveloperSettingsPage() {
                       Interpreted in Asia/Kolkata — default 01:00.
                     </p>
                   </div>
-                  <div className="flex items-start gap-2 self-center">
-                    <Checkbox
+                  <div className="flex items-start gap-3 self-center">
+                    <Switch
                       id="vacuum-full"
                       checked={dbMaint.vacuum_full}
                       onCheckedChange={(checked) =>
@@ -2567,13 +2566,11 @@ function MigrationTab() {
             </p>
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+          <label className="flex items-center gap-2.5 text-sm">
+            <Switch
               checked={snapshotHtml}
-              onChange={(e) => setSnapshotHtml(e.target.checked)}
+              onCheckedChange={setSnapshotHtml}
               disabled={running}
-              className="h-4 w-4 rounded border-gray-300"
             />
             <span>
               Snapshot purchase source pages as HTML during import

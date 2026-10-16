@@ -912,7 +912,7 @@ export default function PaymentOutsPage() {
                   setPage(1)
                 }}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="Party" />
                 </SelectTrigger>
                 <SelectContent>
@@ -931,7 +931,7 @@ export default function PaymentOutsPage() {
                   setPage(1)
                 }}
               >
-                <SelectTrigger className="w-[170px]">
+                <SelectTrigger className="w-full sm:w-[170px]">
                   <SelectValue placeholder="Payment mode" />
                 </SelectTrigger>
                 <SelectContent>

@@ -246,7 +246,7 @@ export default function GSTPage() {
                     <div><p className="text-sm text-gray-500">Total Tax Liability</p><p className="text-xl font-bold">{formatCurrency(gstr3b?.total_tax_liability || 0)}</p></div>
                     <div><p className="text-sm text-gray-500">Tax Payable</p><p className="text-xl font-bold">{formatCurrency(gstr3b?.tax_payable || 0)}</p></div>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-3">
                     <div><p className="text-sm text-gray-500">CGST</p><p className="font-bold">{formatCurrency(gstr3b?.cgst_liability || 0)}</p></div>
                     <div><p className="text-sm text-gray-500">SGST</p><p className="font-bold">{formatCurrency(gstr3b?.sgst_liability || 0)}</p></div>
                     <div><p className="text-sm text-gray-500">IGST</p><p className="font-bold">{formatCurrency(gstr3b?.igst_liability || 0)}</p></div>

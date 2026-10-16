@@ -7,9 +7,11 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -638,9 +640,7 @@ export default function StaffPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <span className={`px-2 py-1 rounded-full text-xs ${s.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {s.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                      <StatusBadge status={s.is_active ? 'active' : 'inactive'} />
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-gray-600">
                       {s.created_at ? formatDate(s.created_at) : '—'}
@@ -698,7 +698,7 @@ export default function StaffPage() {
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle>{editingStaff ? 'Edit Staff' : 'Add Staff'}</DialogTitle></DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2"><Label>Name *</Label><Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} /></div>
                 <div className="space-y-2"><Label>Phone</Label><Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} /></div>
                 <div className="space-y-2"><Label>Email</Label><Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} /></div>
@@ -714,7 +714,7 @@ export default function StaffPage() {
                 </div>
               </div>
               <div className="space-y-2"><Label>Address</Label><Input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} /></div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2"><Label>Bank Name</Label><Input value={formData.bank_name} onChange={(e) => setFormData({...formData, bank_name: e.target.value})} /></div>
                 <div className="space-y-2"><Label>Account Number</Label><Input value={formData.account_number} onChange={(e) => setFormData({...formData, account_number: e.target.value})} /></div>
                 <div className="space-y-2"><Label>IFSC Code</Label><Input value={formData.ifsc_code} onChange={(e) => setFormData({...formData, ifsc_code: e.target.value})} /></div>
@@ -779,8 +779,8 @@ export default function StaffPage() {
                 <Label>Reason</Label>
                 <Input value={extraReason} onChange={(e) => setExtraReason(e.target.value)} placeholder="e.g. Extra draw, incentive, reimbursement" />
               </div>
-              <div className="flex items-start gap-2">
-                <Checkbox
+              <div className="flex items-start gap-3">
+                <Switch
                   id="extra-pay-now"
                   checked={extraPayNow}
                   onCheckedChange={(checked) => setExtraPayNow(checked === true)}

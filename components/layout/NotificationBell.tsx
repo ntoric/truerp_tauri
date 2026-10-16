@@ -85,12 +85,12 @@ export default function NotificationBell() {
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100"
+          className="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 data-[state=open]:bg-slate-100 data-[state=open]:text-slate-800"
           aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
         >
-          <Bell className="h-5 w-5" />
+          <Bell className="h-[18px] w-[18px]" />
           {unreadCount > 0 && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
+            <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white shadow-sm ring-2 ring-white">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}

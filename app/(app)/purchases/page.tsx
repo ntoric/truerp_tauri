@@ -7,6 +7,7 @@ import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent } from '@/components/ui/card'
+import { StatusBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -91,10 +92,7 @@ export default function PurchasesPage() {
   const getVendorName = (item: { party?: Party; vendor?: Party }) =>
     item.party?.name || item.vendor?.name || 'N/A'
 
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', submitted: 'bg-blue-100 text-blue-700', received: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700', unpaid: 'bg-orange-100 text-orange-700', paid: 'bg-green-100 text-green-700' }
-    return <span className={`px-2 py-1 rounded text-xs ${colors[status] || 'bg-gray-100'}`}>{status}</span>
-  }
+  const getStatusBadge = (status: string) => <StatusBadge status={status} />
 
   const handleDeleteOrder = async (id: string) => {
     if (!(await confirm({

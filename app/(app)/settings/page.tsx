@@ -582,7 +582,7 @@ export default function SettingsPage() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList
-            className={`grid w-full grid-cols-4 ${
+            className={`grid h-auto w-full grid-cols-4 ${
               remindersEnabled && caShareEnabled
                 ? 'lg:grid-cols-9'
                 : remindersEnabled || caShareEnabled

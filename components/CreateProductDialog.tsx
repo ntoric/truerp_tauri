@@ -6,7 +6,6 @@ import { isSuperAdmin } from '@/lib/roles'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -455,7 +454,7 @@ export default function CreateProductDialog({
             </div>
           )}
           <Tabs value={createTab} onValueChange={setCreateTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
               <TabsTrigger value="basic">Basic Details</TabsTrigger>
               <TabsTrigger value="image">Image</TabsTrigger>
               <TabsTrigger value="pricing">Pricing</TabsTrigger>
@@ -664,7 +663,7 @@ export default function CreateProductDialog({
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Sale Price</Label>
-                  <div className={cn('grid gap-4', newItem.gst_enabled ? 'grid-cols-2' : 'grid-cols-1')}>
+                  <div className={cn('grid gap-4', newItem.gst_enabled ? 'grid-cols-1 min-[420px]:grid-cols-2' : 'grid-cols-1')}>
                     <div className="space-y-2">
                       <Input
                         type="number"
@@ -694,7 +693,7 @@ export default function CreateProductDialog({
 
                 <div className="space-y-2">
                   <Label>Purchase Price</Label>
-                  <div className={cn('grid gap-4', newItem.gst_enabled ? 'grid-cols-2' : 'grid-cols-1')}>
+                  <div className={cn('grid gap-4', newItem.gst_enabled ? 'grid-cols-1 min-[420px]:grid-cols-2' : 'grid-cols-1')}>
                     <div className="space-y-2">
                       <Input
                         type="number"
@@ -723,7 +722,7 @@ export default function CreateProductDialog({
                 </div>
               </div>
 
-              <div className={cn('grid gap-4', newItem.gst_enabled ? 'grid-cols-2' : 'grid-cols-1')}>
+              <div className={cn('grid gap-4', newItem.gst_enabled ? 'grid-cols-1 min-[420px]:grid-cols-2' : 'grid-cols-1')}>
                 <div className="space-y-2">
                   <Label htmlFor="create_mrp">MRP</Label>
                   <Input
@@ -806,8 +805,8 @@ export default function CreateProductDialog({
                 />
               </div>
 
-              <div className="flex items-center space-x-2">
-                <Checkbox
+              <div className="flex items-center gap-2.5">
+                <Switch
                   id="create_low_stock_alert"
                   checked={newItem.low_stock_alert}
                   onCheckedChange={(checked) => updateNewItem({ low_stock_alert: checked as boolean })}
@@ -815,8 +814,8 @@ export default function CreateProductDialog({
                 <Label htmlFor="create_low_stock_alert">Low Stock Alert</Label>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <Checkbox
+              <div className="flex items-center gap-2.5">
+                <Switch
                   id="create_enable_batching"
                   checked={newItem.enable_batching}
                   onCheckedChange={(checked) => updateNewItem({ enable_batching: checked as boolean })}

@@ -9,6 +9,7 @@ import PageHeader from '@/components/layout/PageHeader'
 import PageActionBar from '@/components/layout/PageActionBar'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -758,25 +759,46 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     notifyError('Product not found with this item code/SKU')
   }
 
-  const startDrawing = (e: React.MouseEvent) => {
+  // Map a pointer position to bitmap coordinates — the canvas is CSS-scaled
+  // down on narrow screens, so raw offsets would draw in the wrong place.
+  const signaturePoint = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    if (!rect.width || !rect.height) return null
+    return {
+      x: ((clientX - rect.left) / rect.width) * canvas.width,
+      y: ((clientY - rect.top) / rect.height) * canvas.height,
+    }
+  }
+
+  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    const { clientX, clientY } =
+      'touches' in e.nativeEvent ? e.nativeEvent.touches[0] : e.nativeEvent
+    const point = signaturePoint(clientX, clientY)
+    if (!point) return
     setIsDrawing(true)
     const canvas = canvasRef.current
     if (canvas) {
       const ctx = canvas.getContext('2d')
       if (ctx) {
         ctx.beginPath()
-        ctx.moveTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY)
+        ctx.moveTo(point.x, point.y)
       }
     }
   }
 
-  const draw = (e: React.MouseEvent) => {
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing) return
+    const { clientX, clientY } =
+      'touches' in e.nativeEvent ? e.nativeEvent.touches[0] : e.nativeEvent
+    const point = signaturePoint(clientX, clientY)
+    if (!point) return
     const canvas = canvasRef.current
     if (canvas) {
       const ctx = canvas.getContext('2d')
       if (ctx) {
-        ctx.lineTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY)
+        ctx.lineTo(point.x, point.y)
         ctx.stroke()
       }
     }
@@ -1456,8 +1478,8 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               {isEstimate && !editId && (
                 <div className="space-y-2 md:col-span-2 xl:col-span-4">
-                  <label className="flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
-                    <Checkbox
+                  <label className="flex items-center gap-2.5 text-sm font-medium cursor-pointer select-none">
+                    <Switch
                       checked={markAsSale}
                       onCheckedChange={(checked) => setMarkAsSale(checked === true)}
                     />
@@ -2036,8 +2058,8 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
               <CardHeader>
                 <CardTitle>Additional Charges & Discount</CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 space-y-2">
+              <CardContent className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+                <div className="space-y-2 min-[420px]:col-span-2">
                   <Label>Additional Charges</Label>
                   <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} />
                 </div>
@@ -2067,7 +2089,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                 {paymentSplits.map((split, index) => {
                   const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
                   return (
-                    <div key={`${split.mode}-${index}`} className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                    <div key={`${split.mode}-${index}`} className="grid grid-cols-1 gap-3 items-end min-[420px]:grid-cols-[1fr_1fr_auto]">
                       <div className="space-y-2">
                         <Label>{index === 0 ? 'Payment Method' : `Method ${index + 1}`}</Label>
                         <select
@@ -2122,7 +2144,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                     Add payment method
                   </Button>
                 )}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Balance</Label>
                     <Input value={formatCurrency(balance)} readOnly className="bg-gray-50" />
@@ -2156,11 +2178,14 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   ref={canvasRef}
                   width={400}
                   height={150}
-                  className="border rounded cursor-crosshair"
+                  className="max-w-full cursor-crosshair touch-none rounded border"
                   onMouseDown={startDrawing}
                   onMouseMove={draw}
                   onMouseUp={stopDrawing}
                   onMouseLeave={stopDrawing}
+                  onTouchStart={startDrawing}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDrawing}
                 />
                 <div className="mt-2 flex gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={clearSignature}>Clear</Button>
@@ -2586,7 +2611,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                     <div>
                       <Label htmlFor="new_party_name">Name *</Label>
                       <Input 
@@ -2609,7 +2634,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                     <div>
                       <Label htmlFor="new_party_email">Email</Label>
                       <Input 
@@ -2652,7 +2677,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       onChange={e => setPartyFormData({ ...partyFormData, address: e.target.value })} 
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:grid-cols-3">
                     <div>
                       <Label htmlFor="new_party_city">City</Label>
                       <Input 
@@ -2678,7 +2703,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                     <div>
                       <Label htmlFor="new_party_opening_balance">Opening Balance</Label>
                       <Input 

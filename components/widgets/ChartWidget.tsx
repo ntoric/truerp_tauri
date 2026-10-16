@@ -22,7 +22,7 @@ export default function ChartWidget({
     <Card className={`rounded-xl border-[#e4e6ef] bg-white shadow-sm ${className}`}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <div className="flex items-center gap-2">
-          {Icon && <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#111111] text-white"><Icon className="h-4 w-4" /></span>}
+          {Icon && <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white"><Icon className="h-4 w-4" /></span>}
           <CardTitle className="text-base font-semibold text-[#20212b]">{title}</CardTitle>
         </div>
         {action && <div className="flex items-center">{action}</div>}

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import GstInvoicePreviewSample, { type GstPreviewBusiness } from '@/components/GstInvoicePreviewSample'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -73,7 +73,7 @@ function ThemeToggleRow({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <Checkbox id={id} checked={checked} onCheckedChange={(v) => onCheckedChange(v === true)} />
+      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
       <Label htmlFor={id} className="flex flex-1 cursor-pointer items-center gap-1 text-sm font-normal leading-snug">
         {label}
         {hint ? <Info className="h-3.5 w-3.5 text-gray-400" /> : null}

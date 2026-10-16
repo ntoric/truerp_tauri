@@ -7,6 +7,7 @@ import SummaryStat from '@/components/widgets/SummaryStat'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -945,9 +946,7 @@ export default function CashBankPage() {
                             <div className="flex items-center gap-2">
                               <p className="font-medium text-gray-900">{account.account_name}</p>
                               {account.is_primary && (
-                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                                  Primary
-                                </span>
+                                <StatusBadge tone="warning">Primary</StatusBadge>
                               )}
                             </div>
                             <p className="text-sm text-gray-500">{account.bank_name} - {account.account_type}</p>
@@ -1017,7 +1016,7 @@ export default function CashBankPage() {
                     />
                   </div>
                   <Select value={filterAccount} onValueChange={setFilterAccount}>
-                    <SelectTrigger className="w-[190px]">
+                    <SelectTrigger className="w-full sm:w-[190px]">
                       <SelectValue placeholder="Account" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1031,7 +1030,7 @@ export default function CashBankPage() {
                     </SelectContent>
                   </Select>
                   <Select value={filterType} onValueChange={setFilterType}>
-                    <SelectTrigger className="w-[150px]">
+                    <SelectTrigger className="w-full sm:w-[150px]">
                       <SelectValue placeholder="Type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1083,7 +1082,7 @@ export default function CashBankPage() {
                           <td className="py-3 text-gray-600">{trans.reference || '-'}</td>
                           <td className="py-3">
                             {trans.is_linked ? (
-                              <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">Yes</span>
+                              <StatusBadge tone="success">Yes</StatusBadge>
                             ) : (
                               <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">No</span>
                             )}

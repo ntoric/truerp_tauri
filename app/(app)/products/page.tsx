@@ -928,7 +928,7 @@ export default function ProductsPage() {
                   </div>
                 )}
                 <Tabs value={createTab} onValueChange={setCreateTab} className="w-full">
-                  <TabsList className="grid w-full grid-cols-4">
+                  <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
                     <TabsTrigger value="basic">Basic Details</TabsTrigger>
                     <TabsTrigger value="image">Image</TabsTrigger>
                     <TabsTrigger value="pricing">Pricing</TabsTrigger>
@@ -1269,8 +1269,8 @@ export default function ProductsPage() {
                       />
                     </div>
                     
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
+                    <div className="flex items-center gap-2.5">
+                      <Switch
                         id="low_stock_alert"
                         checked={newItem.low_stock_alert}
                         onCheckedChange={(checked) => updateNewItem({ low_stock_alert: checked as boolean })}
@@ -1278,8 +1278,8 @@ export default function ProductsPage() {
                       <Label htmlFor="low_stock_alert">Low Stock Alert</Label>
                     </div>
                     
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
+                    <div className="flex items-center gap-2.5">
+                      <Switch
                         id="enable_batching"
                         checked={newItem.enable_batching}
                         onCheckedChange={(checked) => updateNewItem({ enable_batching: checked as boolean })}
@@ -1346,7 +1346,7 @@ export default function ProductsPage() {
                 />
               </div>
               <Select value={selectedCategory} onValueChange={(value) => { setSelectedCategory(value); setPage(1) }}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue placeholder="All Categories" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1357,7 +1357,7 @@ export default function ProductsPage() {
                 </SelectContent>
               </Select>
               <Select value={selectedUnit} onValueChange={(value) => { setSelectedUnit(value); setPage(1) }}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="All Units" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1658,7 +1658,7 @@ export default function ProductsPage() {
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+              <div className="grid grid-cols-1 gap-4 pt-4 border-t min-[420px]:grid-cols-2">
                 <div>
                   <p className="text-xs text-gray-500">Unit</p>
                   <p className="font-medium">{previewProduct.unit}</p>

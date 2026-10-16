@@ -146,7 +146,7 @@ export default function ForgotPasswordPage() {
       benefits={['Verify with a 6-digit code', 'Choose a new password', 'Get back to your business']}
     >
       {step !== 'done' && (
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#c81e3a]">Step {stepNumber} of 3</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-blue-600">Step {stepNumber} of 3</p>
       )}
       <h2 id="login-heading" className="mt-2 text-[28px] font-semibold leading-tight tracking-tight">{stepTitle}</h2>
       <p className="mb-8 mt-2 text-sm leading-6 text-[#5b5c6b]">{stepDescription}</p>
@@ -192,7 +192,7 @@ export default function ForgotPasswordPage() {
           </Button>
           <p className="text-sm text-muted-foreground">
             Remember your password?{' '}
-            <Link href="/login" className="text-[#c81e3a] underline-offset-4 hover:underline">
+            <Link href="/login" className="text-blue-600 underline-offset-4 hover:underline">
               Login
             </Link>
           </p>
@@ -294,7 +294,7 @@ export default function ForgotPasswordPage() {
             Reset password
           </Button>
           <p className="text-sm text-muted-foreground">
-            <Link href="/login" className="text-[#c81e3a] underline-offset-4 hover:underline">
+            <Link href="/login" className="text-blue-600 underline-offset-4 hover:underline">
               Back to login
             </Link>
           </p>

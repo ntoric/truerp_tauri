@@ -188,16 +188,14 @@ function HeaderIconAction({
 
 function StatWidgetSkeleton() {
   return (
-    <Card className="rounded-xl border-[#e4e6ef] bg-white shadow-sm">
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between">
-          <div className="flex-1 space-y-3">
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-8 w-36" />
-            <Skeleton className="h-3.5 w-24" />
-          </div>
-          <Skeleton className="h-14 w-14 rounded-xl" />
+    <Card className="rounded-2xl border-slate-200/70 bg-white shadow-sm">
+      <CardContent className="p-5">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-10 w-10 rounded-xl" />
+          <Skeleton className="h-3.5 w-28" />
         </div>
+        <Skeleton className="mt-4 h-8 w-36" />
+        <Skeleton className="mt-2 h-3 w-24" />
       </CardContent>
     </Card>
   )
@@ -1433,7 +1431,7 @@ export default function InventoryPage() {
                   <DialogTitle>Create Stock Entry</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4 py-2">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Item Name</Label>
                       <SearchableSelect
@@ -1519,8 +1517,8 @@ export default function InventoryPage() {
                     </div>
                   </div>
                   {entryNeedsBatching && (
-                    <div className="grid grid-cols-2 gap-4 rounded-lg border border-dashed p-4">
-                      <div className="col-span-2 space-y-2">
+                    <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 rounded-lg border border-dashed p-4">
+                      <div className="space-y-2 min-[420px]:col-span-2">
                         <Label>Batch No *</Label>
                         <Input
                           value={newEntry.batch_no}
@@ -1669,7 +1667,7 @@ export default function InventoryPage() {
               stock; edit to override. Stock reports and P&L will use this value instead
               of the computed opening.
             </p>
-            <div className="grid grid-cols-2 gap-4 py-2">
+            <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 py-2">
               <div className="space-y-2">
                 <Label>Opening as of Date</Label>
                 <Input
@@ -1803,7 +1801,7 @@ export default function InventoryPage() {
                         )}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                       <div>
                         <Label>Manufacturing Date</Label>
                         <Input

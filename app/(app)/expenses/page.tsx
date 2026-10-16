@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   DropdownMenu,
@@ -487,9 +488,7 @@ export default function ExpensesPage() {
 
                   <div className="flex flex-wrap items-center gap-3">
                     {previewData.with_gst && (
-                      <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
-                        GST {previewData.tax_rate || 0}%
-                      </span>
+                      <StatusBadge tone="violet">GST {previewData.tax_rate || 0}%</StatusBadge>
                     )}
                     <span className="text-sm text-gray-500">
                       Paid from: {previewData.bank_account?.account_name || formatPaymentMode(previewData.payment_mode)}

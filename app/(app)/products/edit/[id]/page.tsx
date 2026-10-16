@@ -14,7 +14,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SearchableSelect } from '@/components/ui/searchable-select'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Save, Search } from 'lucide-react'
@@ -347,7 +346,7 @@ export default function EditProductPage() {
           <CardContent>
             <form id="edit-product-form" onSubmit={handleSubmit} className="space-y-4">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
                   <TabsTrigger value="basic">Basic</TabsTrigger>
                   <TabsTrigger value="image">Image</TabsTrigger>
                   <TabsTrigger value="pricing">Pricing</TabsTrigger>
@@ -715,8 +714,8 @@ export default function EditProductPage() {
                     <FieldError message={fieldErrors.min_stock} />
                   </div>
 
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
+                  <div className="flex items-center gap-2.5">
+                    <Switch
                       id="is_active"
                       checked={formData.is_active}
                       onCheckedChange={(checked) => handleChange('is_active', checked)}
@@ -724,8 +723,8 @@ export default function EditProductPage() {
                     <Label htmlFor="is_active">Active</Label>
                   </div>
 
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
+                  <div className="flex items-center gap-2.5">
+                    <Switch
                       id="low_stock_alert"
                       checked={formData.low_stock_alert}
                       onCheckedChange={(checked) => handleChange('low_stock_alert', checked)}
@@ -733,8 +732,8 @@ export default function EditProductPage() {
                     <Label htmlFor="low_stock_alert">Low Stock Alert</Label>
                   </div>
 
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
+                  <div className="flex items-center gap-2.5">
+                    <Switch
                       id="enable_batching"
                       checked={formData.enable_batching}
                       onCheckedChange={(checked) => handleChange('enable_batching', checked)}

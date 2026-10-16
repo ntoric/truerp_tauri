@@ -7,6 +7,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
 import PageHeader from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
@@ -266,21 +267,9 @@ export default function InvoicesPage() {
     resetPageAndSelection()
   }
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      paid: 'bg-green-100 text-green-700',
-      sent: 'bg-blue-100 text-blue-700',
-      draft: 'bg-gray-100 text-gray-700',
-      overdue: 'bg-red-100 text-red-700',
-      partial: 'bg-amber-100 text-amber-800',
-      cancelled: 'bg-yellow-100 text-yellow-700',
-    }
-    return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] || variants.draft}`}>{status}</span>
-  }
+  const getStatusBadge = (status: string) => <StatusBadge status={status} />
 
-  const getPosBadge = () => (
-    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">POS</span>
-  )
+  const getPosBadge = () => <StatusBadge tone="violet">POS</StatusBadge>
 
   const getDueIn = (dueDate?: string) => {
     if (!dueDate) return '-'
@@ -700,12 +689,12 @@ export default function InvoicesPage() {
                             </button>
                             {inv.is_pos && getPosBadge()}
                             {loyaltySettings?.is_enabled && ((inv.loyalty_points_earned ?? 0) > 0 || (inv.loyalty_points_redeemed ?? 0) > 0) && (
-                              <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" title={`Earned ${inv.loyalty_points_earned ?? 0} · Redeemed ${inv.loyalty_points_redeemed ?? 0}`}>
+                              <StatusBadge tone="warning" title={`Earned ${inv.loyalty_points_earned ?? 0} · Redeemed ${inv.loyalty_points_redeemed ?? 0}`}>
                                 <Gift className="h-3 w-3" />
                                 {(inv.loyalty_points_earned ?? 0) > 0 ? `+${inv.loyalty_points_earned}` : ''}
                                 {(inv.loyalty_points_earned ?? 0) > 0 && (inv.loyalty_points_redeemed ?? 0) > 0 ? ' / ' : ''}
                                 {(inv.loyalty_points_redeemed ?? 0) > 0 ? `−${inv.loyalty_points_redeemed}` : ''}
-                              </span>
+                              </StatusBadge>
                             )}
                           </div>
                         </td>
@@ -848,7 +837,7 @@ export default function InvoicesPage() {
                   <div className="flex items-center gap-3">
                     {getStatusBadge(previewData.status)}
                     {previewData.is_inter_state && (
-                      <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">Inter-State</span>
+                      <StatusBadge tone="violet">Inter-State</StatusBadge>
                     )}
                     {(previewData.payment_splits?.length || previewData.payment_mode) && (
                       <span className="text-sm text-gray-500">

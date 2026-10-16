@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -96,14 +97,7 @@ export default function PurchaseReturnsPage() {
     resetPage()
   }, [search, filter, dateFrom, dateTo])
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      draft: 'bg-gray-100 text-gray-700',
-      processed: 'bg-green-100 text-green-700',
-      cancelled: 'bg-red-100 text-red-700',
-    }
-    return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] || variants.draft}`}>{status}</span>
-  }
+  const getStatusBadge = (status: string) => <StatusBadge status={status} />
 
   const handleProcessReturn = async (id: string) => {
     try {

@@ -1,8 +1,9 @@
 'use client'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { LucideIcon } from 'lucide-react'
+import { ArrowUpRight, Inbox, LucideIcon } from 'lucide-react'
 import Link from 'next/link'
+import { StatusBadge, type StatusBadgeTone } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
 interface ListWidgetItem {
   id: string
@@ -29,14 +30,15 @@ interface ListWidgetProps {
     label: string
     href: string
   }
+  className?: string
 }
 
-const statusVariants = {
-  success: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200',
-  warning: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200',
-  danger: 'bg-[#fff1f2] text-[#c81e3a] ring-1 ring-inset ring-[#fecdd3]',
-  info: 'bg-[#111111] text-white',
-  default: 'bg-neutral-100 text-neutral-700 ring-1 ring-inset ring-neutral-200',
+const statusTones: Record<NonNullable<ListWidgetItem['status']>['variant'], StatusBadgeTone> = {
+  success: 'success',
+  warning: 'warning',
+  danger: 'danger',
+  info: 'info',
+  default: 'neutral',
 }
 
 export default function ListWidget({
@@ -46,76 +48,90 @@ export default function ListWidget({
   viewAllLink,
   emptyMessage = 'No items found',
   emptyAction,
+  className,
 }: ListWidgetProps) {
   return (
-    <Card className="rounded-xl border-[#e4e6ef] bg-white shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <div className="flex items-center gap-2">
-          {Icon && <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#111111] text-white"><Icon className="h-4 w-4" /></span>}
-          <CardTitle className="text-base font-semibold text-[#20212b]">{title}</CardTitle>
+    <div
+      className={cn(
+        'overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-16px_rgba(16,24,40,0.18)]',
+        className
+      )}
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {Icon && (
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-inset ring-blue-100">
+              <Icon className="h-[18px] w-[18px]" />
+            </span>
+          )}
+          <h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{title}</h3>
         </div>
         {viewAllLink && (
           <Link
             href={viewAllLink}
-            className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+            className="group inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50"
           >
             View all
+            <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-px group-hover:translate-x-px" />
           </Link>
         )}
-      </CardHeader>
-      <CardContent className="pt-0">
-        {items.length === 0 ? (
-          <div className="py-8 text-center">
-            <p className="text-sm text-[#5b5c6b]">{emptyMessage}</p>
-            {emptyAction && (
-              <Link
-                href={emptyAction.href}
-                className="mt-2 inline-block text-sm font-medium text-blue-600 hover:underline"
-              >
-                {emptyAction.label}
-              </Link>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {items.map((item) => (
-              <div
+      </div>
+
+      {items.length === 0 ? (
+        <div className="flex flex-col items-center px-5 py-12 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 ring-1 ring-inset ring-slate-200">
+            <Inbox className="h-5 w-5" />
+          </span>
+          <p className="mt-3 text-sm text-slate-500">{emptyMessage}</p>
+          {emptyAction && (
+            <Link
+              href={emptyAction.href}
+              className="mt-3 inline-flex items-center rounded-full bg-blue-50 px-3.5 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+            >
+              {emptyAction.label}
+            </Link>
+          )}
+        </div>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {items.map((item) => {
+            return (
+              <li
                 key={item.id}
-                className="flex items-center justify-between rounded-lg border border-[#eef0f5] bg-[#f6f7fb] p-3 transition-colors hover:border-blue-200 hover:bg-white"
+                className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-slate-50/80"
               >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#20212b] truncate">{item.title}</p>
-                  {item.subtitle && (
-                    <p className="text-xs text-[#5b5c6b] truncate">{item.subtitle}</p>
-                  )}
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,hsl(var(--theme-50))_0%,hsl(var(--theme-100))_100%)] text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
+                    {(item.subtitle || item.title).trim().charAt(0).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{item.title}</p>
+                    {item.subtitle && <p className="truncate text-xs text-slate-500">{item.subtitle}</p>}
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 ml-4">
+                <div className="flex shrink-0 items-center gap-3">
                   {item.value && (
-                    <span className="text-sm font-semibold text-[#20212b]">{item.value}</span>
+                    <span className="text-sm font-semibold tabular-nums text-slate-900">{item.value}</span>
                   )}
                   {item.status && (
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${
-                        statusVariants[item.status.variant]
-                      }`}
-                    >
+                    <StatusBadge tone={statusTones[item.status.variant]}>
                       {item.status.text}
-                    </span>
+                    </StatusBadge>
                   )}
                   {item.action && (
                     <Link
                       href={item.action.href}
-                      className="text-xs font-medium text-blue-600 hover:underline"
+                      className="text-xs font-semibold text-blue-700 hover:underline"
                     >
                       {item.action.label}
                     </Link>
                   )}
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
   )
 }

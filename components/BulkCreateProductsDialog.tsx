@@ -5,7 +5,7 @@ import { apiFetch } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -385,7 +385,7 @@ export default function BulkCreateProductsDialog({
           onValueChange={(value) => setTab(value as 'quick' | 'import')}
           className="flex-1 min-h-0 flex flex-col"
         >
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid h-auto w-full grid-cols-2">
             <TabsTrigger value="quick">Quick Entry</TabsTrigger>
             <TabsTrigger value="import">File Import</TabsTrigger>
           </TabsList>
@@ -525,7 +525,7 @@ export default function BulkCreateProductsDialog({
                       </td>
                       <td className="p-1.5">
                         <div className="flex items-center justify-center">
-                          <Checkbox
+                          <Switch
                             checked={row.enable_batching}
                             onCheckedChange={(checked) =>
                               updateRow(row.key, { enable_batching: checked === true })

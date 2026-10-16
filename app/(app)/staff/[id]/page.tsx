@@ -8,9 +8,10 @@ import PageSkeleton from '@/components/layout/PageSkeleton'
 import SummaryStat from '@/components/widgets/SummaryStat'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -454,13 +455,7 @@ export default function StaffDetailPage() {
                 {[staff.designation, staff.department].filter(Boolean).join(' · ') || 'Staff details'}
               </p>
             </div>
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                staff.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-              }`}
-            >
-              {staff.is_active ? 'Active' : 'Inactive'}
-            </span>
+            <StatusBadge status={staff.is_active ? 'active' : 'inactive'} />
           </div>
         </div>
 
@@ -917,7 +912,7 @@ export default function StaffDetailPage() {
           <DialogContent className="max-w-lg">
             <DialogHeader><DialogTitle>Add Extra Amount — {staff?.name}</DialogTitle></DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Direction *</Label>
                   <Select
@@ -948,7 +943,7 @@ export default function StaffDetailPage() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Date *</Label>
                   <Input
@@ -966,8 +961,8 @@ export default function StaffDetailPage() {
                   />
                 </div>
               </div>
-              <div className="flex items-start gap-2">
-                <Checkbox
+              <div className="flex items-start gap-3">
+                <Switch
                   id="redeem-now"
                   checked={extraForm.redeem_now}
                   onCheckedChange={(checked) =>
@@ -984,7 +979,7 @@ export default function StaffDetailPage() {
                 </div>
               </div>
               {extraForm.redeem_now && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Payment Mode</Label>
                     <Select
@@ -1027,7 +1022,7 @@ export default function StaffDetailPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="col-span-2 space-y-2">
+                  <div className="space-y-2 min-[420px]:col-span-2">
                     <Label>Reference</Label>
                     <Input
                       value={extraForm.reference}
@@ -1069,7 +1064,7 @@ export default function StaffDetailPage() {
                     : 'The amount stays due and will still be deducted from the next salary.'}
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Payment Date</Label>
                   <Input
@@ -1121,7 +1116,7 @@ export default function StaffDetailPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Reference</Label>
                   <Input

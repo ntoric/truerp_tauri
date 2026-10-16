@@ -5,6 +5,7 @@ import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
 import { Button } from '@/components/ui/button'
+import { StatusBadge, type StatusBadgeTone } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
@@ -242,19 +243,12 @@ export default function WhatsAppMarketingPage() {
   }
 
   const getStatusBadge = (status: string) => {
-    const styles = {
-      draft: 'bg-gray-100 text-gray-700',
-      scheduled: 'bg-blue-100 text-blue-700',
-      sent: 'bg-green-100 text-green-700',
-      delivered: 'bg-blue-100 text-blue-700',
-      read: 'bg-purple-100 text-purple-700',
-      failed: 'bg-red-100 text-red-700'
+    const tones: Record<string, StatusBadgeTone> = {
+      sent: 'success',
+      delivered: 'info',
+      read: 'violet',
     }
-    return (
-      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status as keyof typeof styles] || styles.draft}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
-    )
+    return <StatusBadge status={status} tone={tones[status]} />
   }
 
   const filteredParties = parties.filter(p => {
@@ -528,7 +522,7 @@ export default function WhatsAppMarketingPage() {
                   </div>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div>
                   <Label>Status</Label>
                   <div className="flex items-center gap-2 mt-1">

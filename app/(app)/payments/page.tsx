@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
+import { StatusBadge, type StatusBadgeTone } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -296,20 +297,18 @@ export default function PaymentsPage() {
   }
 
   const getModeIcon = (mode: string) => {
-    const colors: Record<string, string> = {
-      cash: 'bg-green-100 text-green-700',
-      upi: 'bg-blue-100 text-blue-700',
-      bank_transfer: 'bg-purple-100 text-purple-700',
-      cheque: 'bg-orange-100 text-orange-700',
-      card: 'bg-pink-100 text-pink-700',
-      initial_investment: 'bg-amber-100 text-amber-800',
+    const tones: Record<string, StatusBadgeTone> = {
+      cash: 'success',
+      upi: 'brand',
+      bank_transfer: 'violet',
+      cheque: 'warning',
+      card: 'pink',
+      initial_investment: 'warning',
     }
-    return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${colors[mode] || 'bg-gray-100 text-gray-700'}`}>{formatPaymentMethod(mode)}</span>
+    return <StatusBadge tone={tones[mode] || 'neutral'}>{formatPaymentMethod(mode)}</StatusBadge>
   }
 
-  const getPosBadge = () => (
-    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">POS</span>
-  )
+  const getPosBadge = () => <StatusBadge tone="violet">POS</StatusBadge>
 
   const isPosPayment = (payment: Payment) => payment.invoice?.is_pos === true
 
@@ -546,7 +545,7 @@ export default function PaymentsPage() {
                   resetPageAndSelection()
                 }}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="Party" />
                 </SelectTrigger>
                 <SelectContent>
@@ -565,7 +564,7 @@ export default function PaymentsPage() {
                   resetPageAndSelection()
                 }}
               >
-                <SelectTrigger className="w-[170px]">
+                <SelectTrigger className="w-full sm:w-[170px]">
                   <SelectValue placeholder="Payment mode" />
                 </SelectTrigger>
                 <SelectContent>

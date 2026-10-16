@@ -6,12 +6,15 @@ import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
 import { Button } from '@/components/ui/button'
+import { StatusBadge, type StatusBadgeTone } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate } from '@/lib/utils'
 import { Plus, Send, Calendar, Users, Mail, Loader2, Clock, CheckCircle, XCircle, AlertCircle, Eye, MousePointerClick, Pencil, RefreshCw, Repeat } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -24,7 +27,7 @@ import dynamic from 'next/dynamic'
 // client-side only via next/dynamic with ssr disabled.
 const RichTextEditor = dynamic(
   () => import('@/components/ui/rich-text-editor'),
-  { ssr: false, loading: () => <div className="h-40 animate-pulse rounded-md border bg-gray-50" /> }
+  { ssr: false, loading: () => <Skeleton className="h-40 rounded-xl" /> }
 )
 
 interface EmailCampaign {
@@ -333,18 +336,11 @@ export default function EmailMarketingPage() {
   }
 
   const getStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      draft: 'bg-gray-100 text-gray-700',
-      scheduled: 'bg-blue-100 text-blue-700',
-      sent: 'bg-green-100 text-green-700',
-      failed: 'bg-red-100 text-red-700',
-      completed: 'bg-purple-100 text-purple-700'
+    const tones: Record<string, StatusBadgeTone> = {
+      sent: 'success',
+      completed: 'violet',
     }
-    return (
-      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status] || styles.draft}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
-    )
+    return <StatusBadge status={status} tone={tones[status]} />
   }
 
   const formatRecurrence = (campaign: EmailCampaign) => {
@@ -418,10 +414,10 @@ export default function EmailMarketingPage() {
                             {getStatusIcon(campaign.status)}
                             {getStatusBadge(campaign.status)}
                             {campaign.is_recurring && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600" title={formatRecurrence(campaign) || ''}>
+                              <StatusBadge tone="brand" title={formatRecurrence(campaign) || ''}>
                                 <Repeat className="h-3 w-3" />
                                 Recurring
-                              </span>
+                              </StatusBadge>
                             )}
                           </div>
                         </td>
@@ -528,7 +524,7 @@ export default function EmailMarketingPage() {
                 <Label>Email Body</Label>
                 <p className="text-sm bg-gray-50 p-3 rounded-md whitespace-pre-wrap">{selectedCampaign.body}</p>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div>
                   <Label>Status</Label>
                   <div className="flex items-center gap-2 mt-1">
@@ -728,12 +724,10 @@ export default function EmailMarketingPage() {
               </p>
             </div>
             <div className="space-y-2 rounded-md border p-3">
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input
-                  type="checkbox"
+              <label className="flex items-center gap-2.5 text-sm font-medium">
+                <Switch
                   checked={editForm.is_recurring}
-                  onChange={(e) => setEditForm({ ...editForm, is_recurring: e.target.checked })}
-                  className="rounded"
+                  onCheckedChange={(checked) => setEditForm({ ...editForm, is_recurring: checked })}
                 />
                 <Repeat className="h-4 w-4" />
                 Make this a recurring campaign
@@ -743,7 +737,7 @@ export default function EmailMarketingPage() {
                   <p className="text-xs text-gray-500">
                     The campaign will auto-send on the chosen cadence starting from the scheduled date.
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
                     <div className="space-y-1">
                       <Label htmlFor="edit-recurrence-frequency">Frequency *</Label>
                       <Select

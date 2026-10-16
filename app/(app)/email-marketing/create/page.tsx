@@ -8,9 +8,11 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, Loader2, Repeat, ArrowLeft } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 
@@ -18,7 +20,7 @@ import { notifyError, notifySuccess } from '@/lib/notify'
 // client-side only via next/dynamic with ssr disabled.
 const RichTextEditor = dynamic(
   () => import('@/components/ui/rich-text-editor'),
-  { ssr: false, loading: () => <div className="h-40 animate-pulse rounded-md border bg-gray-50" /> }
+  { ssr: false, loading: () => <Skeleton className="h-40 rounded-xl" /> }
 )
 
 interface Party {
@@ -223,12 +225,10 @@ export default function CreateEmailCampaignPage() {
                 </p>
               </div>
               <div className="space-y-2 rounded-md border p-3">
-                <label className="flex items-center gap-2 text-sm font-medium">
-                  <input
-                    type="checkbox"
+                <label className="flex items-center gap-2.5 text-sm font-medium">
+                  <Switch
                     checked={form.is_recurring}
-                    onChange={(e) => setForm({ ...form, is_recurring: e.target.checked })}
-                    className="rounded"
+                    onCheckedChange={(checked) => setForm({ ...form, is_recurring: checked })}
                   />
                   <Repeat className="h-4 w-4" />
                   Make this a recurring campaign
@@ -238,7 +238,7 @@ export default function CreateEmailCampaignPage() {
                     <p className="text-xs text-gray-500">
                       Recurring campaigns require a schedule date above (the first send time) and will auto-send on the chosen cadence.
                     </p>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
                       <div className="space-y-1">
                         <Label htmlFor="recurrence-frequency">Frequency *</Label>
                         <Select

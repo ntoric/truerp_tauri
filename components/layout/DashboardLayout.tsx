@@ -26,23 +26,36 @@ function isShellLessPath(pathname: string) {
 function AuthBootSkeleton() {
   return (
     <div className="flex min-h-screen bg-[#f6f7fb]">
-      <div className="hidden w-[4.5rem] shrink-0 border-r bg-white md:block" />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-12 items-center justify-between border-b bg-white px-4">
-          <Skeleton className="h-7 w-40" />
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-7 w-16" />
-            <Skeleton className="h-8 w-8 rounded-full" />
-          </div>
-        </div>
-        <div className="space-y-3 p-4">
-          <Skeleton className="h-6 w-44" />
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 w-full" />
+      {/* Floating dock placeholder */}
+      <div className="hidden shrink-0 p-2 pr-0 md:block">
+        <div className="flex h-full w-14 flex-col items-center gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,hsl(var(--theme-900)/0.95),hsl(var(--theme-950)/0.98))] px-2 py-4 shadow-xl shadow-black/20">
+          <Skeleton dark className="h-8 w-8 rounded-lg" />
+          <div className="mt-2 flex flex-col items-center gap-2.5">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <Skeleton key={i} dark delayMs={i * 70} className="h-9 w-9 rounded-xl" />
             ))}
           </div>
-          <Skeleton className="h-64 w-full" />
+        </div>
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Floating header placeholder */}
+        <div className="px-2 pt-2 sm:px-3">
+          <div className="flex h-12 items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 shadow-[0_1px_2px_rgba(16,24,40,0.04)] backdrop-blur-md">
+            <Skeleton className="h-7 w-36 rounded-lg" />
+            <div className="flex items-center gap-2">
+              <Skeleton delayMs={80} className="h-7 w-20 rounded-full" />
+              <Skeleton delayMs={160} className="h-8 w-8 rounded-full" />
+              <Skeleton delayMs={240} className="h-8 w-8 rounded-full" />
+            </div>
+          </div>
+        </div>
+        <div className="space-y-4 p-3 sm:p-4 lg:p-5">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} delayMs={i * 80} className="h-24 w-full rounded-2xl" />
+            ))}
+          </div>
+          <Skeleton className="h-64 w-full rounded-2xl" />
         </div>
       </div>
     </div>
@@ -149,7 +162,7 @@ export default function DashboardLayout({
               // Explicit clearance matching .app-bottom-menubar heights — don't
               // rely only on --app-bottom-nav-offset (can be 0 before the class lands).
               reserveBottomNav &&
-                'pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] md:pb-[calc(2.75rem+env(safe-area-inset-bottom,0px))]'
+                'pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] md:pb-[calc(3.25rem+env(safe-area-inset-bottom,0px))]'
             )}
           >
             <Header />

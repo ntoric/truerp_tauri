@@ -60,7 +60,7 @@ export default function PurchaseBillPDFPage() {
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-[100dvh] items-center justify-center">
         <div className="text-center">
           <p className="text-red-600">{error}</p>
         </div>
@@ -70,7 +70,7 @@ export default function PurchaseBillPDFPage() {
 
   if (!pdfUrl) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3">
+      <div className="flex h-[100dvh] flex-col items-center justify-center gap-3">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
         <p className="text-sm text-gray-600">{status}</p>
       </div>
@@ -78,7 +78,7 @@ export default function PurchaseBillPDFPage() {
   }
 
   return (
-    <div className="relative h-screen w-screen">
+    <div className="relative h-[100dvh] w-full">
       <div className="absolute right-4 top-4 z-10">
         <Button variant="outline" size="sm" onClick={() => void handleDownload()} disabled={downloading}>
           {downloading ? (

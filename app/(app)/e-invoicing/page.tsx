@@ -6,6 +6,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -290,7 +291,7 @@ export default function EInvoicingPage() {
                         <TableRow key={i}>
                           <TableCell className="font-mono text-sm">{item.irn}</TableCell>
                           <TableCell>{item.invoice_number}</TableCell>
-                          <TableCell><span className={`px-2 py-1 rounded-full text-xs ${item.status === 'Generated' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.status}</span></TableCell>
+                          <TableCell><StatusBadge tone={item.status === 'Generated' ? 'success' : 'danger'}>{item.status}</StatusBadge></TableCell>
                           <TableCell>{new Date(item.generated_at).toLocaleString()}</TableCell>
                         </TableRow>
                       ))}
@@ -317,7 +318,7 @@ export default function EInvoicingPage() {
                         <TableRow key={i}>
                           <TableCell className="font-mono text-sm">{item.ewb_number}</TableCell>
                           <TableCell>{item.invoice_number}</TableCell>
-                          <TableCell><span className={`px-2 py-1 rounded-full text-xs ${item.status === 'Generated' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.status}</span></TableCell>
+                          <TableCell><StatusBadge tone={item.status === 'Generated' ? 'success' : 'danger'}>{item.status}</StatusBadge></TableCell>
                           <TableCell>{new Date(item.valid_until).toLocaleDateString()}</TableCell>
                           <TableCell>
                             {item.status === 'Generated' && (

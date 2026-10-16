@@ -8,6 +8,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -418,7 +419,7 @@ export default function WarehousesPage() {
                 <DialogTitle>Add New Warehouse</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="name">Warehouse Name *</Label>
                     <Input
@@ -449,7 +450,7 @@ export default function WarehousesPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="city">City</Label>
                     <Input
@@ -489,7 +490,7 @@ export default function WarehousesPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="contact_phone">Contact Phone</Label>
                     <Input
@@ -655,16 +656,10 @@ export default function WarehousesPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${warehouse.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                          {warehouse.is_active ? 'Active' : 'Inactive'}
-                        </span>
+                        <StatusBadge status={warehouse.is_active ? 'active' : 'inactive'} />
                       </TableCell>
                       <TableCell>
-                        {warehouse.is_default && (
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            Default
-                          </span>
-                        )}
+                        {warehouse.is_default && <StatusBadge tone="brand">Default</StatusBadge>}
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -712,7 +707,7 @@ export default function WarehousesPage() {
               <DialogTitle>Edit Warehouse</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="edit_name">Warehouse Name *</Label>
                   <Input
@@ -743,7 +738,7 @@ export default function WarehousesPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="edit_city">City</Label>
                   <Input
@@ -783,7 +778,7 @@ export default function WarehousesPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="edit_contact_phone">Contact Phone</Label>
                   <Input

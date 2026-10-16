@@ -405,7 +405,7 @@ export default function WeighingScaleSettingsCard() {
                 Also accept numeric EAN-style labels (prefix 20–29) if your machine prints those instead of a
                 letter prefix.
               </p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="barcode_prefix_start">EAN prefix from</Label>
                   <Input
