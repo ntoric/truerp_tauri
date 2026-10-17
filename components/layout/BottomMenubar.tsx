@@ -361,7 +361,7 @@ export default function BottomMenubar() {
       <nav className="app-bottom-menubar pointer-events-none" aria-label="Primary">
         {/* Strip height = --app-bottom-nav-h; the dock card floats inside with a 0.5rem side/bottom inset. */}
         <div className="h-14 px-2 pb-2 md:h-[3.25rem]">
-          <div className="pointer-events-auto flex h-full items-stretch justify-between gap-0.5 rounded-2xl border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.55)_100%)] px-1.5 py-1 shadow-[0_10px_30px_-12px_rgba(16,24,40,0.22),inset_0_1px_0_0_rgba(255,255,255,0.9)] ring-1 ring-black/[0.05] backdrop-blur-xl backdrop-saturate-[1.8]">
+          <div className="pointer-events-auto flex h-full items-stretch justify-between gap-0.5 rounded-2xl border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.55)_100%)] px-1.5 py-1 shadow-[0_10px_30px_-12px_rgba(16,24,40,0.22),inset_0_1px_0_0_rgba(255,255,255,0.9)] ring-1 ring-black/[0.05] backdrop-blur-xl backdrop-saturate-[1.8] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(37,44,66,0.88)_0%,rgba(25,31,48,0.82)_100%)] dark:shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.08)] dark:ring-white/[0.06]">
             {/* Mobile: Back/Refresh left — primary destinations + More right */}
             <div className="flex w-full items-stretch justify-between gap-0.5 md:hidden">
               {navChromeActions}

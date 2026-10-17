@@ -91,7 +91,7 @@ export default function PageSkeleton({
         </div>
         {/* Hero + receivables */}
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-[linear-gradient(135deg,hsl(var(--theme-200)/0.45),hsl(var(--theme-50)))] p-6 lg:col-span-2">
+          <div className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-[linear-gradient(135deg,hsl(var(--theme-200)/0.45),hsl(var(--theme-50)))] p-6 lg:col-span-2 dark:border-white/10 dark:bg-[linear-gradient(135deg,hsl(var(--theme-500)/0.14),hsl(var(--theme-500)/0.05))]">
             <div className="space-y-3">
               <Skeleton className="h-4 w-44" />
               <Skeleton delayMs={60} className="h-3.5 w-28" />

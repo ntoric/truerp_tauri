@@ -192,7 +192,7 @@ export default function ThermalInvoicePreviewSample({ printSize, business }: Pro
 
   return (
     <div
-      className="mx-auto bg-white text-black shadow-md"
+      className="light-scope mx-auto bg-white text-black shadow-md"
       style={{
         width: widthPx,
         maxWidth: '100%',

@@ -101,7 +101,7 @@ export default function ListWidget({
                 className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-slate-50/80"
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,hsl(var(--theme-50))_0%,hsl(var(--theme-100))_100%)] text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,hsl(var(--theme-50))_0%,hsl(var(--theme-100))_100%)] text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-100 dark:bg-[linear-gradient(135deg,hsl(var(--theme-500)/0.2)_0%,hsl(var(--theme-500)/0.3)_100%)] dark:ring-white/10">
                     {(item.subtitle || item.title).trim().charAt(0).toUpperCase()}
                   </span>
                   <div className="min-w-0">

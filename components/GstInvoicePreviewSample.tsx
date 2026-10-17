@@ -87,7 +87,7 @@ export default function GstInvoicePreviewSample({ settings, customization, busin
         : { borderColor: '#e5e7eb' }
 
   return (
-    <div className="mx-auto max-w-[720px] rounded-lg border border-gray-200 bg-white p-6 text-[11px] leading-snug text-gray-900 shadow-sm">
+    <div className="light-scope mx-auto max-w-[720px] rounded-lg border border-gray-200 bg-white p-6 text-[11px] leading-snug text-gray-900 shadow-sm">
       <div className={`mb-4 ${headerClass}`} style={headerStyle}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex gap-3">

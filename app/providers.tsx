@@ -3,6 +3,7 @@
 import { type ReactNode, useEffect } from 'react'
 import { AuthProvider } from '@/hooks/useAuth'
 import { ColorThemeProvider } from '@/hooks/useColorTheme'
+import { ThemeModeProvider } from '@/hooks/useThemeMode'
 import { StoreProvider } from '@/hooks/useStore'
 import { PageFeaturesProvider } from '@/hooks/usePageFeatures'
 import { OfflineSyncProvider } from '@/hooks/useOfflineSync'
@@ -40,7 +41,8 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <AuthProvider>
-      <ColorThemeProvider>
+      <ThemeModeProvider>
+        <ColorThemeProvider>
         <StoreProvider>
           <PageFeaturesProvider>
             <OfflineSyncProvider>
@@ -51,6 +53,7 @@ export function Providers({ children }: { children: ReactNode }) {
           </PageFeaturesProvider>
         </StoreProvider>
       </ColorThemeProvider>
+      </ThemeModeProvider>
     </AuthProvider>
   )
 }

@@ -1,6 +1,5 @@
 import type { Icon } from '@phosphor-icons/react'
 import {
-  Gauge,
   UsersThree,
   Tag,
   Package,
@@ -97,7 +96,7 @@ export function filterNavForPageFeatures(
 }
 
 export const navItems: NavItem[] = [
-  { name: 'Dashboard', href: '/dashboard', icon: Gauge, accent: '#4f46e5' },
+  { name: 'Dashboard', href: '/dashboard', icon: SquaresFour, accent: '#4f46e5' },
   { name: 'Parties', href: '/parties', icon: UsersThree, accent: '#7c3aed' },
   { name: 'Product Categories', href: '/categories', icon: Tag, accent: '#b45309' },
   { name: 'Products', href: '/products', icon: Package, accent: '#059669' },
@@ -208,7 +207,7 @@ export const bottomNavPrimary: {
   accent: string
   match: (p: string) => boolean
 }[] = [
-  { name: 'Home', href: '/dashboard', icon: Gauge, accent: '#4f46e5', match: (p) => p === '/dashboard' || p.startsWith('/dashboard/') },
+  { name: 'Home', href: '/dashboard', icon: SquaresFour, accent: '#4f46e5', match: (p) => p === '/dashboard' || p.startsWith('/dashboard/') },
   { name: 'Parties', href: '/parties', icon: UsersThree, accent: '#7c3aed', match: (p) => p.startsWith('/parties') },
   { name: 'Products', href: '/products', icon: Package, accent: '#059669', match: (p) => p.startsWith('/products') || p.startsWith('/categories') || p.startsWith('/inventory') },
   { name: 'Sales', href: '/invoices', icon: Invoice, accent: '#2563eb', match: (p) => p.startsWith('/invoices') || p.startsWith('/sales-returns') || p.startsWith('/credit-notes') || p.startsWith('/delivery-challans') || p.startsWith('/payments') },

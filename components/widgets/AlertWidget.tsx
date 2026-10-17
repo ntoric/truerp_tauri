@@ -17,13 +17,13 @@ interface AlertWidgetProps {
 
 const variantClasses = {
   warning: {
-    container: 'border-amber-200/70 bg-[linear-gradient(100deg,#fffbeb_0%,#ffffff_70%)]',
+    container: 'border-amber-200/70 bg-[linear-gradient(100deg,#fffbeb_0%,#ffffff_70%)] dark:bg-[linear-gradient(100deg,rgba(245,158,11,0.14)_0%,rgba(245,158,11,0.03)_70%)]',
     tile: 'bg-amber-100 text-amber-700 ring-amber-200',
     text: 'text-amber-950',
     action: 'bg-amber-600 text-white hover:bg-amber-700',
   },
   danger: {
-    container: 'border-blue-200/70 bg-[linear-gradient(100deg,hsl(var(--theme-50))_0%,#ffffff_70%)]',
+    container: 'border-blue-200/70 bg-[linear-gradient(100deg,hsl(var(--theme-50))_0%,#ffffff_70%)] dark:bg-[linear-gradient(100deg,hsl(var(--theme-500)/0.14)_0%,hsl(var(--theme-500)/0.03)_70%)]',
     tile: 'bg-blue-100 text-blue-700 ring-blue-200',
     text: 'text-blue-950',
     action: 'bg-blue-600 text-white hover:bg-blue-700',
@@ -35,7 +35,7 @@ const variantClasses = {
     action: 'bg-blue-600 text-white hover:bg-blue-700',
   },
   success: {
-    container: 'border-emerald-200/70 bg-[linear-gradient(100deg,#ecfdf5_0%,#ffffff_70%)]',
+    container: 'border-emerald-200/70 bg-[linear-gradient(100deg,#ecfdf5_0%,#ffffff_70%)] dark:bg-[linear-gradient(100deg,rgba(16,185,129,0.14)_0%,rgba(16,185,129,0.03)_70%)]',
     tile: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
     text: 'text-emerald-950',
     action: 'bg-emerald-600 text-white hover:bg-emerald-700',

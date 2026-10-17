@@ -177,7 +177,7 @@ export default function ThermalPrintModal({
                 </div>
               </div>
               <div
-                className="bg-white border-2 border-gray-300 p-4 mx-auto overflow-auto text-black"
+                className="light-scope bg-white border-2 border-gray-300 p-4 mx-auto overflow-auto text-black"
                 style={{
                   width: previewWidth,
                   fontFamily: 'Courier New, monospace',

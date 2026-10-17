@@ -4,7 +4,8 @@ import Link from 'next/link'
 import BrandLogo from '@/components/BrandLogo'
 import { useAuth } from '@/hooks/useAuth'
 import { useStore } from '@/hooks/useStore'
-import { LogOut, Settings, ShoppingCart, Store, User } from 'lucide-react'
+import { useThemeMode } from '@/hooks/useThemeMode'
+import { LogOut, Moon, Settings, ShoppingCart, Store, Sun, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import NotificationBell from './NotificationBell'
 import {
@@ -26,6 +27,7 @@ import {
 export default function Header() {
   const { user, logout } = useAuth()
   const { stores, activeStore, canSwitchStores, setActiveStore, loading } = useStore()
+  const { resolvedMode, setMode } = useThemeMode()
 
   const switchableStores = stores.filter((s) => s.is_active)
   const initials =
@@ -38,8 +40,8 @@ export default function Header() {
 
   return (
     // Outer strip keeps --app-header-h for sticky offsets; the inner card floats 0.5rem below the top.
-    <header className="sticky top-0 z-30 h-[var(--app-header-h)] bg-[#f6f7fb]/85 px-2 pt-2 backdrop-blur-md">
-      <div className="flex h-full items-center justify-between rounded-2xl border border-white/80 bg-white/85 px-2.5 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_10px_28px_-14px_rgba(16,24,40,0.18)] ring-1 ring-black/[0.04] backdrop-blur-xl sm:px-3">
+    <header className="sticky top-0 z-30 h-[var(--app-header-h)] bg-[#f6f7fb]/85 px-2 pt-2 backdrop-blur-md dark:bg-background/85">
+      <div className="flex h-full items-center justify-between rounded-2xl border border-white/80 bg-white/85 px-2.5 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_10px_28px_-14px_rgba(16,24,40,0.18)] ring-1 ring-black/[0.04] backdrop-blur-xl dark:border-white/10 dark:bg-card/80 dark:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_10px_28px_-14px_rgba(0,0,0,0.6)] dark:ring-white/[0.06] sm:px-3">
       <div className="flex min-w-0 items-center gap-2">
         <Link href="/dashboard" className="shrink-0 md:hidden" aria-label="TruERP dashboard"><BrandLogo showWordmark={false} iconClassName="h-7 w-7" /></Link>
         {canSwitchStores && switchableStores.length > 0 ? (
@@ -85,6 +87,15 @@ export default function Header() {
           </Link>
         </Button>
         <NotificationBell />
+        <button
+          type="button"
+          onClick={() => setMode(resolvedMode === 'dark' ? 'light' : 'dark')}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+          aria-label={resolvedMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={resolvedMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {resolvedMode === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
         <span aria-hidden="true" className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block" />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -93,7 +104,7 @@ export default function Header() {
               className="flex items-center gap-2 rounded-full p-0.5 outline-none transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 md:pr-3"
               aria-label="Account menu"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[linear-gradient(135deg,hsl(var(--theme-400))_0%,hsl(var(--theme-700))_100%)] text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] ring-2 ring-white">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[linear-gradient(135deg,hsl(var(--theme-400))_0%,hsl(var(--theme-700))_100%)] text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] ring-2 ring-white dark:ring-white/20">
                 {initials ?? <User className="h-4 w-4" />}
               </div>
               <div className="hidden text-left md:block">

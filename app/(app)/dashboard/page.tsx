@@ -302,9 +302,9 @@ export default function DashboardPage() {
               ].map(({ label, value, icon: Icon }) => (
                 <div
                   key={label}
-                  className="rounded-2xl bg-[linear-gradient(135deg,hsl(var(--theme-50))_0%,rgba(255,255,255,0)_100%)] p-3 ring-1 ring-inset ring-blue-100/70"
+                  className="rounded-2xl bg-[linear-gradient(135deg,hsl(var(--theme-50))_0%,rgba(255,255,255,0)_100%)] p-3 ring-1 ring-inset ring-blue-100/70 dark:bg-[linear-gradient(135deg,hsl(var(--theme-500)/0.18)_0%,rgba(255,255,255,0)_100%)] dark:ring-white/10"
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm ring-1 ring-inset ring-blue-100">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm ring-1 ring-inset ring-blue-100 dark:bg-[hsl(var(--theme-500)/0.22)] dark:text-[hsl(var(--theme-300))] dark:shadow-none dark:ring-white/10">
                     <Icon className="h-4 w-4" />
                   </span>
                   <p className="mt-2 truncate text-xl font-semibold tracking-tight tabular-nums text-slate-900">{value}</p>

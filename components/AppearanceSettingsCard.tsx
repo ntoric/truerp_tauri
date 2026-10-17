@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, Palette } from 'lucide-react'
+import { Check, Monitor, Moon, Palette, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,10 +9,19 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { COLOR_THEMES, normalizeHex } from '@/lib/colorThemes'
 import { useColorTheme } from '@/hooks/useColorTheme'
+import { useThemeMode } from '@/hooks/useThemeMode'
 import { cn } from '@/lib/utils'
+import type { ThemeMode } from '@/lib/themeMode'
+
+const THEME_MODE_OPTIONS: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
+  { id: 'light', label: 'Light', icon: Sun },
+  { id: 'dark', label: 'Dark', icon: Moon },
+  { id: 'system', label: 'System', icon: Monitor },
+]
 
 export default function AppearanceSettingsCard() {
   const { themeId, customHex, setTheme } = useColorTheme()
+  const { mode, setMode } = useThemeMode()
   const [hexDraft, setHexDraft] = useState(customHex)
 
   useEffect(() => {
@@ -37,6 +46,33 @@ export default function AppearanceSettingsCard() {
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="space-y-3">
+          <Label>Mode</Label>
+          <div className="flex flex-wrap gap-2">
+            {THEME_MODE_OPTIONS.map((option) => {
+              const selected = mode === option.id
+              const Icon = option.icon
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setMode(option.id)}
+                  aria-pressed={selected}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg border-2 px-4 py-2.5 text-sm font-medium transition-colors',
+                    selected
+                      ? 'border-blue-600 bg-blue-50/70 text-blue-700 dark:bg-[hsl(var(--theme-500)/0.15)]'
+                      : 'border-transparent bg-muted/50 hover:border-border'
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
         <div className="space-y-3">
           <Label>Colour theme</Label>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

@@ -305,15 +305,16 @@ export type DashboardAnalyticsState = ReturnType<typeof useDashboardAnalytics>
 const tooltipProps = {
   contentStyle: {
     borderRadius: 12,
-    border: '1px solid #e2e8f0',
+    border: '1px solid var(--chart-tooltip-border)',
+    background: 'var(--chart-tooltip-bg)',
     boxShadow: '0 12px 28px -12px rgba(15,23,42,0.25)',
     fontSize: 12,
     padding: '8px 12px',
   },
-  labelStyle: { color: '#0f172a', fontWeight: 600, marginBottom: 4 },
+  labelStyle: { color: 'var(--chart-axis)', fontWeight: 600, marginBottom: 4 },
 } as const
 
-const axisTick = { fill: '#64748b', fontSize: 11 }
+const axisTick = { fill: 'var(--chart-axis)', fontSize: 11 }
 
 export const CARD_CLASS =
   'rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-16px_rgba(16,24,40,0.18)]'
@@ -563,7 +564,7 @@ export function SalesTrendPanel({ a, className }: { a: DashboardAnalyticsState; 
                   <stop offset="100%" stopColor={a.palette[500]} stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid vertical={false} stroke="#eef0f5" />
+              <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
               <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} minTickGap={12} />
               <YAxis yAxisId="sales" tick={axisTick} axisLine={false} tickLine={false} width={56} tickFormatter={fmtCompact} />
               <YAxis yAxisId="count" orientation="right" tick={axisTick} axisLine={false} tickLine={false} width={28} allowDecimals={false} />
@@ -690,7 +691,7 @@ export function CashFlowPanel({ a, className }: { a: DashboardAnalyticsState; cl
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={a.cashSeries} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barGap={2}>
-              <CartesianGrid vertical={false} stroke="#eef0f5" />
+              <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
               <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} minTickGap={12} />
               <YAxis tick={axisTick} axisLine={false} tickLine={false} width={56} tickFormatter={fmtCompact} />
               <Tooltip {...tooltipProps} cursor={{ fill: 'rgba(148,163,184,0.12)' }} formatter={(v: number) => formatCurrency(v)} />
@@ -834,7 +835,7 @@ export function TopCustomersPanel({ a, className }: { a: DashboardAnalyticsState
         <ol className="space-y-3">
           {a.topCustomers.map((c, i) => (
             <li key={c.party_id} className="flex items-center gap-3">
-              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,hsl(var(--theme-50))_0%,hsl(var(--theme-100))_100%)] text-[11px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
+              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,hsl(var(--theme-50))_0%,hsl(var(--theme-100))_100%)] text-[11px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-100 dark:bg-[linear-gradient(135deg,hsl(var(--theme-500)/0.2)_0%,hsl(var(--theme-500)/0.3)_100%)] dark:ring-white/10">
                 {c.name.trim().charAt(0).toUpperCase()}
                 {i === 0 && <Crown className="absolute -right-1 -top-1.5 h-3.5 w-3.5 fill-amber-400 text-amber-500" />}
               </span>
