@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, HelpCircle, Menu, Package, Plus, RefreshCw, ScanLine, Settings, Trash2, X } from 'lucide-react'
+import { Headset } from '@phosphor-icons/react'
 import { Kbd } from '@/components/keyboard-shortcuts/Kbd'
 import { useAuth } from '@/hooks/useAuth'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
@@ -36,7 +37,7 @@ function flattenNavLinks(
   return links
 }
 
-const ACCOUNT_HREFS = new Set(['/settings'])
+const ACCOUNT_HREFS = new Set(['/settings', '/support'])
 
 const BAR_BTN =
   'flex w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-200 ease-out md:w-auto md:px-3'
@@ -186,6 +187,7 @@ export default function BottomMenubar() {
 
   const settingsEnabled = isPageEnabled('/settings')
   const settingsActive = pathname === '/settings' || pathname.startsWith('/settings/')
+  const supportActive = pathname === '/support' || pathname.startsWith('/support/')
 
   const moreIsActive =
     moreOpen ||
@@ -259,6 +261,15 @@ export default function BottomMenubar() {
           </Link>
         </MenubarItemTooltip>
       )}
+      <MenubarItemTooltip label="Support">
+        <Link
+          href="/support"
+          onClick={() => setMoreOpen(false)}
+          className={cn(BAR_BTN, barBtnState(supportActive))}
+        >
+          <Headset size={16} weight={supportActive ? 'fill' : 'duotone'} className="h-5 w-5 md:h-4 md:w-4" />
+        </Link>
+      </MenubarItemTooltip>
       <MenubarItemTooltip label="Shortcuts" kbd={<Kbd keys={['Alt']} size="sm" tone="inverse" />}>
         <button
           type="button"
@@ -320,6 +331,17 @@ export default function BottomMenubar() {
                     Settings
                   </Link>
                 )}
+                <Link
+                  href="/support"
+                  onClick={() => setMoreOpen(false)}
+                  className={cn(
+                    'flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 text-xs font-medium',
+                    supportActive ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
+                  )}
+                >
+                  <Headset weight={supportActive ? 'fill' : 'duotone'} className={cn('h-4 w-4', supportActive ? 'text-blue-600' : 'text-slate-500')} />
+                  Support
+                </Link>
                 <button
                   type="button"
                   onClick={openShortcuts}

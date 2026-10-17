@@ -49,6 +49,8 @@ export const TOGGLEABLE_PAGES: ToggleablePage[] = [
   { key: '/user-management', label: 'User Management', group: 'Security' },
   { key: '/audit', label: 'Audit Trails', group: 'Security' },
   { key: '/notifications', label: 'Notifications', group: 'Other' },
+  { key: '/support', label: 'Support', group: 'Other' },
+  { key: '/support-requests', label: 'Support Requests', group: 'Security' },
   { key: '/customer-portal', label: 'Customer Portal', group: 'Other' },
   { key: '/settings/reminders', label: 'Settings > Reminders', group: 'Settings' },
   { key: '/settings/ca-share', label: 'Settings > CA Share', group: 'Settings' },

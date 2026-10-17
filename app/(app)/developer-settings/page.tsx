@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { useStore } from '@/hooks/useStore'
@@ -25,7 +26,7 @@ import {
   Mail, MessageSquare, Send, Loader2, CheckCircle, XCircle,
   Smartphone, Save, LayoutGrid, Sparkles, Clock,
   DatabaseBackup, Upload, FileArchive, FileUp, FileDown, AlertTriangle, Store,
-  Database, Download, Trash2, CloudUpload,
+  Database, Download, Trash2, CloudUpload, Palette,
 } from 'lucide-react'
 import { getServerTime, type ServerTimeInfo } from '@/lib/dailyReport'
 import { downloadBlob } from '@/lib/accountingExport'
@@ -1133,14 +1134,22 @@ export default function DeveloperSettingsPage() {
           <div>
             <h1 className="app-page-title">Developer Settings</h1>
           </div>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            {activeTab === 'pages'
-              ? 'Save Page Features'
-              : activeTab === 'ai'
-                ? 'Save AI Settings'
-                : 'Save Settings'}
-          </Button>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/developer-settings/design-kit">
+                <Palette className="mr-2 h-4 w-4" />
+                Design Kit
+              </Link>
+            </Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              {activeTab === 'pages'
+                ? 'Save Page Features'
+                : activeTab === 'ai'
+                  ? 'Save AI Settings'
+                  : 'Save Settings'}
+            </Button>
+          </div>
         </div>
 
         {testResult && (

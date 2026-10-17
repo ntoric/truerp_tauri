@@ -131,7 +131,7 @@ export default function DesktopUpdatesCard() {
     <Card>
       <CardHeader className="flex flex-row items-center gap-2">
         <Download className="h-5 w-5 text-blue-600" />
-        <CardTitle>Desktop Updates</CardTitle>
+        <CardTitle>System Updates</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">

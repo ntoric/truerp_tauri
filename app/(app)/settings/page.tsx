@@ -17,10 +17,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import ImageCropModal from '@/components/ImageCropModal'
 import LogoAspectRatioPicker from '@/components/LogoAspectRatioPicker'
 import { logoPreviewBoxClass, normalizeLogoAspectRatio, type LogoAspectRatio } from '@/lib/logoAspect'
-import { 
-  Building2, Save, Loader2, User, Settings as SettingsIcon, 
-  FileText, Printer, Bell, HelpCircle, Share2, LogOut, Scale, Trash2, Palette 
+import {
+  Building2, Save, Loader2, User, Settings as SettingsIcon,
+  FileText, Printer, Bell, HelpCircle, Share2, LogOut, Scale, Trash2, Palette, RefreshCw
 } from 'lucide-react'
+import { hasDesktopUpdater } from '@/lib/desktopBridge'
 import WeighingScaleSettingsCard from '@/components/WeighingScaleSettingsCard'
 import PrintSettingsCard from '@/components/PrintSettingsCard'
 import DesktopUpdatesCard from '@/components/DesktopUpdatesCard'
@@ -102,6 +103,7 @@ export default function SettingsPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
   const remindersEnabled = isPageEnabled('/settings/reminders')
   const caShareEnabled = isPageEnabled('/settings/ca-share')
+  const [updatesEnabled, setUpdatesEnabled] = useState(false)
   const [activeTab, setActiveTab] = useState('business')
   
   // Business state
@@ -169,12 +171,18 @@ export default function SettingsPage() {
   }, [searchParams, router])
 
   useEffect(() => {
+    setUpdatesEnabled(hasDesktopUpdater())
+  }, [])
+
+  useEffect(() => {
     if (activeTab === 'reminders' && !remindersEnabled) {
       setActiveTab('business')
     } else if (activeTab === 'ca' && !caShareEnabled) {
       setActiveTab('business')
+    } else if (activeTab === 'updates' && !updatesEnabled) {
+      setActiveTab('business')
     }
-  }, [activeTab, remindersEnabled, caShareEnabled])
+  }, [activeTab, remindersEnabled, caShareEnabled, updatesEnabled])
 
   const fetchAllData = async () => {
     try {
@@ -583,11 +591,16 @@ export default function SettingsPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList
             className={`grid h-auto w-full grid-cols-4 ${
-              remindersEnabled && caShareEnabled
-                ? 'lg:grid-cols-9'
-                : remindersEnabled || caShareEnabled
-                  ? 'lg:grid-cols-8'
-                  : 'lg:grid-cols-7'
+              [
+                'lg:grid-cols-7',
+                'lg:grid-cols-8',
+                'lg:grid-cols-9',
+                'lg:grid-cols-10',
+              ][
+                (remindersEnabled ? 1 : 0) +
+                  (caShareEnabled ? 1 : 0) +
+                  (updatesEnabled ? 1 : 0)
+              ]
             }`}
           >
             <TabsTrigger value="business" className="flex items-center gap-2">
@@ -624,6 +637,12 @@ export default function SettingsPage() {
               <TabsTrigger value="ca" className="flex items-center gap-2">
                 <Share2 className="h-4 w-4" />
                 <span className="hidden lg:inline">CA Share</span>
+              </TabsTrigger>
+            )}
+            {updatesEnabled && (
+              <TabsTrigger value="updates" className="flex items-center gap-2">
+                <RefreshCw className="h-4 w-4" />
+                <span className="hidden lg:inline">Updates</span>
               </TabsTrigger>
             )}
             <TabsTrigger value="help" className="flex items-center gap-2">
@@ -1186,9 +1205,13 @@ export default function SettingsPage() {
           </TabsContent>
           )}
 
+          {/* System Updates Tab */}
+          <TabsContent value="updates" className="space-y-6">
+            <DesktopUpdatesCard />
+          </TabsContent>
+
           {/* Help & Support Tab */}
           <TabsContent value="help" className="space-y-6">
-            <DesktopUpdatesCard />
             <Card>
               <CardHeader className="flex flex-row items-center gap-2">
                 <HelpCircle className="h-5 w-5 text-blue-600" />
