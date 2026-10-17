@@ -7,6 +7,7 @@ import Header from './Header'
 import BottomMenubar, { shouldReserveBottomMenubarSpace } from './BottomMenubar'
 import NavigationProgress from './NavigationProgress'
 import ComingSoonPage from '@/components/ComingSoonPage'
+import AnnouncementToaster from '@/components/AnnouncementToaster'
 import { useAuth } from '@/hooks/useAuth'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
 import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
@@ -169,6 +170,7 @@ export default function DashboardLayout({
             <main className="app-main p-3 sm:p-4 lg:p-5">{content}</main>
           </div>
           <BottomMenubar />
+          <AnnouncementToaster />
         </div>
       </KeyboardShortcutsProvider>
     </DashboardShellContext.Provider>
