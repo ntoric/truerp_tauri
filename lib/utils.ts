@@ -14,7 +14,7 @@ export function asArray<T = unknown>(payload: unknown): T[] {
   return []
 }
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8088/api/v1"
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7077/api/v1"
 
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
