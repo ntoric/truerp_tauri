@@ -12,8 +12,10 @@ name: Frontend Docker
 #                        proxy). Already used by the desktop release workflow —
 #                        an absolute URL like https://api.example.com/api/v1
 #                        makes the browser call the API directly.
-#   TRUERP_API_PROXY     Server-side proxy target for /api, /uploads, /health
-#                        (default https://truerp-backend.ntoric.com)
+#
+# TRUERP_API_PROXY is NOT baked — it is a runtime env var read by
+# middleware.ts. Set it in the compose file / container environment
+# (default https://truerp-backend.ntoric.com).
 
 on:
   push:
@@ -72,6 +74,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL || '/api/v1' }}
-            TRUERP_API_PROXY=${{ secrets.TRUERP_API_PROXY || 'https://truerp-backend.ntoric.com' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

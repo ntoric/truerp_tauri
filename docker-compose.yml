@@ -4,13 +4,14 @@
 #   docker compose up --build -d
 #
 # API wiring (same-origin proxy, default):
-#   Browser  ->  web:3000  ->  Next.js rewrite  ->  TRUERP_API_PROXY
+#   Browser  ->  web:3000  ->  middleware proxy  ->  TRUERP_API_PROXY
 #   /api/v1/*, /uploads/*, /health are proxied to the backend, so only
 #   port 3000 needs to be exposed publicly.
 #
-# Both NEXT_PUBLIC_API_URL and TRUERP_API_PROXY are baked into the image at
-# build time — rebuild after changing them:
-#   docker compose up --build -d
+# NEXT_PUBLIC_API_URL is baked into the image at build time — rebuild after
+# changing it. TRUERP_API_PROXY is read by middleware.ts at container start —
+# change it and recreate, no rebuild:
+#   docker compose up -d
 
 services:
   web:
@@ -22,11 +23,12 @@ services:
         # Alternatively point the browser straight at the API (CORS is open):
         #   NEXT_PUBLIC_API_URL=https://api.example.com/api/v1
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
-        # Server-side proxy target — must be reachable from this container.
-        #   Public API URL:            https://truerp-backend.ntoric.com
-        #   Backend on this host:      http://host.docker.internal:8088
-        #   Shared docker network:     http://truerp-api:8088
-        TRUERP_API_PROXY: ${TRUERP_API_PROXY:-https://truerp-backend.ntoric.com}
+    environment:
+      # Server-side proxy target — must be reachable from this container.
+      #   Public API URL:            https://truerp-backend.ntoric.com
+      #   Backend on this host:      http://host.docker.internal:8088
+      #   Shared docker network:     http://truerp-api:8088
+      TRUERP_API_PROXY: ${TRUERP_API_PROXY:-https://truerp-backend.ntoric.com}
     image: ntoric/truerp-web:latest
     container_name: truerp-web
     ports:

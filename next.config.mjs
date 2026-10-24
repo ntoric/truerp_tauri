@@ -15,17 +15,9 @@ const nextConfig = {
   experimental: {
     missingSuspenseWithCSRBailout: false,
   },
-  async rewrites() {
-    // Optional same-origin proxy to the cloud/Docker API.
-    // Enable with: TRUERP_API_PROXY=http://localhost:8088 and NEXT_PUBLIC_API_URL=/api/v1
-    const proxy = process.env.TRUERP_API_PROXY?.replace(/\/$/, '')
-    if (!proxy) return []
-    return [
-      { source: '/api/:path*', destination: `${proxy}/api/:path*` },
-      { source: '/uploads/:path*', destination: `${proxy}/uploads/:path*` },
-      { source: '/health', destination: `${proxy}/health` },
-    ]
-  },
+  // Same-origin API proxying lives in middleware.ts — it reads
+  // TRUERP_API_PROXY at runtime, unlike rewrites() which is baked into
+  // routes-manifest.json during `next build`.
 }
 
 export default nextConfig

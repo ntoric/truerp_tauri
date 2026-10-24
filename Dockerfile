@@ -1,16 +1,15 @@
 # TruERP web UI — Next.js standalone server.
 #
 # Build & run directly:
-#   docker build -t truerp-web \
-#     --build-arg NEXT_PUBLIC_API_URL=/api/v1 \
-#     --build-arg TRUERP_API_PROXY=https://your-api-host .
-#   docker run -p 3000:3000 truerp-web
+#   docker build -t truerp-web --build-arg NEXT_PUBLIC_API_URL=/api/v1 .
+#   docker run -p 3000:3000 -e TRUERP_API_PROXY=https://your-api-host truerp-web
 #
 # Or via the dedicated compose file:
 #   docker compose up --build -d
 #
-# NOTE: NEXT_PUBLIC_API_URL and TRUERP_API_PROXY are baked into the build —
-# changing the API target requires a rebuild.
+# NOTE: NEXT_PUBLIC_API_URL is baked into the build (client bundle) — changing
+# it requires a rebuild. TRUERP_API_PROXY is read by middleware.ts at runtime —
+# set it as a container env var, no rebuild needed.
 
 FROM node:20-alpine AS deps
 WORKDIR /app
@@ -22,12 +21,11 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# NEXT_PUBLIC_API_URL goes into the client bundle; TRUERP_API_PROXY is read by
-# next.config.mjs rewrites -> routes manifest. Both are build-time only.
+# NEXT_PUBLIC_API_URL goes into the client bundle — build-time only.
+# TRUERP_API_PROXY is intentionally NOT baked: middleware.ts reads it at
+# runtime in the standalone server.
 ARG NEXT_PUBLIC_API_URL=/api/v1
-ARG TRUERP_API_PROXY=http://host.docker.internal:8088
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
-    TRUERP_API_PROXY=$TRUERP_API_PROXY
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 FROM node:20-alpine AS runner
