@@ -293,6 +293,7 @@ export default function InventoryPage() {
   const [customFromDate, setCustomFromDate] = useState('')
   const [customToDate, setCustomToDate] = useState('')
   const [entryApprovalFilter, setEntryApprovalFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
+  const [entryTypeFilter, setEntryTypeFilter] = useState<string>('all')
   const [productSearchQuery, setProductSearchQuery] = useState('')
   const [debouncedProductSearch, setDebouncedProductSearch] = useState('')
   const [approvingEntryId, setApprovingEntryId] = useState<string | null>(null)
@@ -362,7 +363,7 @@ export default function InventoryPage() {
   // Each tab fetches its own page of data when opened and when its
   // filters/page change while it is active.
   useEffect(() => { if (!authLoading && user && activeTab === 'balance') fetchBalance() }, [authLoading, user, activeTab, debouncedProductSearch, balancePage])
-  useEffect(() => { if (!authLoading && user && activeTab === 'entries') fetchEntries() }, [authLoading, user, activeTab, debouncedProductSearch, entryApprovalFilter, dateRange, entriesPage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'entries') fetchEntries() }, [authLoading, user, activeTab, debouncedProductSearch, entryApprovalFilter, entryTypeFilter, dateRange, entriesPage])
   useEffect(() => { if (!authLoading && user && activeTab === 'stocks') fetchStocks() }, [authLoading, user, activeTab, debouncedProductSearch, stocksPage])
   useEffect(() => { if (!authLoading && user && activeTab === 'transfers') fetchTransfers() }, [authLoading, user, activeTab, dateRange, transfersPage])
   useEffect(() => { if (!authLoading && user && activeTab === 'low-stock') fetchLowStock() }, [authLoading, user, activeTab, lowStockPage])
@@ -381,7 +382,7 @@ export default function InventoryPage() {
   useEffect(() => {
     setEntriesPage(1)
     setTransfersPage(1)
-  }, [datePeriod, customFromDate, customToDate, entryApprovalFilter])
+  }, [datePeriod, customFromDate, customToDate, entryApprovalFilter, entryTypeFilter])
 
   // In the override dialog, the opening defaults to the computed overall
   // closing stock of the previous day once a date is chosen.
@@ -516,6 +517,7 @@ export default function InventoryPage() {
       if (dateRange.from) params.append('from_date', toYmd(dateRange.from))
       if (dateRange.to) params.append('to_date', toYmd(dateRange.to))
       if (entryApprovalFilter !== 'all') params.append('approval_status', entryApprovalFilter)
+      if (entryTypeFilter !== 'all') params.append('entry_type', entryTypeFilter)
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
       params.append('page', String(entriesPage))
       params.append('per_page', String(pageSize))
@@ -1210,6 +1212,7 @@ export default function InventoryPage() {
       if (dateRange.from) params.append('from_date', toYmd(dateRange.from))
       if (dateRange.to) params.append('to_date', toYmd(dateRange.to))
       if (entryApprovalFilter !== 'all') params.append('approval_status', entryApprovalFilter)
+      if (entryTypeFilter !== 'all') params.append('entry_type', entryTypeFilter)
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
       params.append('page', '1')
       params.append('per_page', '0')
@@ -2177,6 +2180,25 @@ export default function InventoryPage() {
                 <>
                   {productSearchInput}
                   <Select
+                    value={entryTypeFilter}
+                    onValueChange={setEntryTypeFilter}
+                  >
+                    <SelectTrigger className="w-[150px]">
+                      <SelectValue placeholder="Entry type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All types</SelectItem>
+                      <SelectItem value="purchase">Purchase</SelectItem>
+                      <SelectItem value="sale">Sale</SelectItem>
+                      <SelectItem value="adjustment">Adjustment</SelectItem>
+                      <SelectItem value="transfer">Transfer</SelectItem>
+                      <SelectItem value="opening">Opening</SelectItem>
+                      <SelectItem value="return">Return</SelectItem>
+                      <SelectItem value="reservation">Reservation</SelectItem>
+                      <SelectItem value="release">Release</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
                     value={entryApprovalFilter}
                     onValueChange={(v) => setEntryApprovalFilter(v as typeof entryApprovalFilter)}
                   >
@@ -2226,7 +2248,7 @@ export default function InventoryPage() {
                   ) : entries.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={11} className="py-8 text-center text-gray-500">
-                        {isDateFilterActive || isProductSearchActive || entryApprovalFilter !== 'all'
+                        {isDateFilterActive || isProductSearchActive || entryApprovalFilter !== 'all' || entryTypeFilter !== 'all'
                           ? 'No stock entries found for the selected filters'
                           : 'No stock entries found'}
                       </TableCell>

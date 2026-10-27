@@ -128,6 +128,22 @@ function statementRows(r: ProfitLossReport): StatementRow[] {
       details: `${l.count} postings`,
     })),
     {
+      key: 'indirect-expenses',
+      label: 'Indirect Expenses',
+      kind: 'item',
+      amount: r.indirect_expenses.total_amount,
+      negative: true,
+      details: `${r.indirect_expenses.count} postings`,
+    },
+    ...(r.indirect_expense_lines ?? []).map((l) => ({
+      key: `ie-${l.name}`,
+      label: l.name,
+      kind: 'detail' as const,
+      amount: l.amount,
+      negative: true,
+      details: `${l.count} postings`,
+    })),
+    {
       key: 'expenses',
       label: 'Expenses',
       kind: 'item',
@@ -419,15 +435,17 @@ export default function ProfitLossReportPage() {
                     tone="warning"
                     icon={Wallet}
                     label="Total expenses"
-                    value={formatCurrency(report.expenses.total_amount)}
-                    hint={`${report.expenses.count} expenses`}
+                    value={formatCurrency(
+                      report.expenses.total_amount + report.indirect_expenses.total_amount
+                    )}
+                    hint={`${report.expenses.count} expenses + ${report.indirect_expenses.count} postings`}
                   />
                   <SummaryStat
                     tone={(report.net_profit ?? 0) >= 0 ? 'success' : 'danger'}
                     icon={CircleDollarSign}
                     label="Net profit"
                     value={formatCurrency(report.net_profit)}
-                    hint="Gross profit + other income − expenses"
+                    hint="Gross profit + other income − indirect expenses − expenses"
                   />
                 </div>
 
@@ -500,10 +518,12 @@ export default function ProfitLossReportPage() {
                 <p className="mt-4 text-xs text-gray-500">
                   Gross profit = net sales − net purchases + closing stock −
                   opening stock. Net
-                  profit = gross profit + other income − expenses. Opening and
+                  profit = gross profit + other income − indirect expenses −
+                  expenses. Opening and
                   closing stock are valued at weighted average cost replayed from the stock ledger.
-                  Other income comes from non-sales ledger postings (e.g. manual
-                  journal entries); cancelled documents are excluded from counts.
+                  Other income and indirect expenses come from non-module ledger
+                  postings (e.g. manual journal entries, cash reductions);
+                  cancelled documents are excluded from counts.
                 </p>
               </>
             ) : (

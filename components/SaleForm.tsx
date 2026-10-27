@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { cn, formatCurrency } from '@/lib/utils'
-import { limitDecimalInput, parseItemNumber, parseMoney, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
+import { limitDecimalInput, formatQty, parseItemNumber, parseMoney, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
 import { Plus, Trash2, Loader2, Save, Search, X, Edit2, Package, FileText, Gift, Scale, Printer, Copy, ChevronRight } from 'lucide-react'
 import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
 import { ProductCombobox } from '@/components/ui/ProductCombobox'
@@ -106,6 +106,15 @@ interface InvoiceItem {
   batch_no: string
   exp_date: string
   enable_batching?: boolean
+}
+
+interface StockShortage {
+  product_id: string
+  product_name: string
+  batch_no?: string
+  available_qty: number
+  requested_qty: number
+  resulting_qty: number
 }
 
 const ITEM_NUMBER_FIELDS: (keyof InvoiceItem)[] = [
@@ -1269,6 +1278,30 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     }
   }
 
+  const checkStockShortages = async (): Promise<StockShortage[]> => {
+    try {
+      const res = await apiFetch('/invoices/check-stock', {
+        method: 'POST',
+        body: JSON.stringify({
+          invoice_id: editId || undefined,
+          items: items
+            .filter((item) => item.product_id)
+            .map((item) => ({
+              product_id: item.product_id,
+              quantity: Number(parseItemNumber(item.quantity, 1)),
+              batch_no: item.batch_no || '',
+            })),
+        }),
+      })
+      if (!res.ok) return []
+      const data = await res.json().catch(() => null)
+      return Array.isArray(data?.warnings) ? data.warnings : []
+    } catch {
+      // The check is advisory — never block a save because it could not run.
+      return []
+    }
+  }
+
   const saveInvoice = async (shouldPrint = false) => {
     if (isEstimateOnly) {
       await saveEstimate(shouldPrint)
@@ -1291,6 +1324,30 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     }
     setSaving(true)
     try {
+      const shortages = await checkStockShortages()
+      if (shortages.length > 0) {
+        const proceed = await confirm({
+          title: 'Stock will go negative',
+          description: (
+            <div className="space-y-2">
+              <p>Saving will push stock below zero for:</p>
+              <ul className="list-disc space-y-1 pl-5">
+                {shortages.map((s) => (
+                  <li key={`${s.product_id}-${s.batch_no || ''}`}>
+                    <span className="font-medium text-foreground">{s.product_name || 'Item'}</span>
+                    {s.batch_no ? ` (batch ${s.batch_no})` : ''}
+                    {`: need ${formatQty(s.requested_qty)}, have ${formatQty(s.available_qty)} → ${formatQty(s.resulting_qty)}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ),
+          confirmLabel: 'Save anyway',
+          cancelLabel: 'Go back',
+          variant: 'destructive',
+        })
+        if (!proceed) return
+      }
       const url = editId ? `/invoices/${editId}` : '/invoices'
       const method = editId ? 'PUT' : 'POST'
       const res = await apiFetch(url, {

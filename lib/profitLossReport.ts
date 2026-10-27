@@ -123,6 +123,12 @@ export function buildProfitLossShareText(report: ProfitLossReport): string {
     lines.push(`  ${line.name}: ${formatCurrency(line.amount)}`)
   }
   lines.push(
+    `Indirect Expenses: ${report.indirect_expenses.count} txn · ${formatCurrency(report.indirect_expenses.total_amount)}`
+  )
+  for (const line of report.indirect_expense_lines ?? []) {
+    lines.push(`  ${line.name}: ${formatCurrency(line.amount)}`)
+  }
+  lines.push(
     `Expenses: ${report.expenses.count} txn · ${formatCurrency(report.expenses.total_amount)}`,
     `Net Profit: ${formatCurrency(report.net_profit)}`,
     '',

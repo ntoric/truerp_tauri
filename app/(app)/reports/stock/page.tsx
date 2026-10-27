@@ -15,13 +15,25 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { formatCurrency, cn } from '@/lib/utils'
-import { fetchStockReport, type StockReport } from '@/lib/stockReport'
+import {
+  downloadStockReportExcel,
+  downloadStockReportPdf,
+  fetchStockReport,
+  type StockReport,
+} from '@/lib/stockReport'
 import type { PeriodicReportPeriod } from '@/lib/dailyReport'
-import { notifyError } from '@/lib/notify'
+import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   CalendarRange,
+  Download,
   RefreshCw,
   Package,
   ArrowDownToLine,
@@ -143,6 +155,8 @@ export default function StockReportPage() {
     }
   }
 
+  const exportParams = presetToParams(preset, customStart, customEnd)
+
   const linesPagination = usePagination(report?.lines ?? [])
   const lines = linesPagination.paginatedItems
 
@@ -239,19 +253,55 @@ export default function StockReportPage() {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-2">
-              <CalendarRange className="h-5 w-5 text-blue-600" />
-              <div>
-                <CardTitle className="text-lg">
-                  {report?.business_name || 'Business'}
-                  {report?.label ? ` · ${report.label}` : ''}
-                </CardTitle>
-                {report && (
-                  <p className="text-xs text-muted-foreground">
-                    {report.start_date} → {report.end_date}
-                  </p>
-                )}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CalendarRange className="h-5 w-5 text-blue-600" />
+                <div>
+                  <CardTitle className="text-lg">
+                    {report?.business_name || 'Business'}
+                    {report?.label ? ` · ${report.label}` : ''}
+                  </CardTitle>
+                  {report && (
+                    <p className="text-xs text-muted-foreground">
+                      {report.start_date} → {report.end_date}
+                    </p>
+                  )}
+                </div>
               </div>
+              {report && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" size="sm">
+                      <Download className="mr-2 h-4 w-4" />
+                      Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() =>
+                        void downloadStockReportExcel(exportParams)
+                          .then(() => notifySuccess('Excel exported'))
+                          .catch((err) =>
+                            notifyError(err instanceof Error ? err.message : 'Excel export failed')
+                          )
+                      }
+                    >
+                      Download Excel
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        void downloadStockReportPdf(exportParams)
+                          .then(() => notifySuccess('PDF exported'))
+                          .catch((err) =>
+                            notifyError(err instanceof Error ? err.message : 'PDF export failed')
+                          )
+                      }
+                    >
+                      Download PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </CardHeader>
           <CardContent>
