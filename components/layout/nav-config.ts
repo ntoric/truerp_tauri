@@ -164,6 +164,7 @@ export const navItems: NavItem[] = [
     children: [
       { name: 'Staff', href: '/staff', icon: Users },
       { name: 'Attendance', href: '/attendance', icon: CalendarCheck },
+      { name: 'Attendance Reminder', href: '/attendance-reminder', icon: BellRinging },
       { name: 'Payroll', href: '/payroll', icon: Money },
     ],
   },

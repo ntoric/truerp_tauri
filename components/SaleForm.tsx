@@ -1014,7 +1014,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   }
 
   const updateSplit = (index: number, patch: Partial<{ mode: string; amount: number }>) => {
-    setAmountPaidEdited(true)
+    if (patch.amount !== undefined) setAmountPaidEdited(true)
     setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 

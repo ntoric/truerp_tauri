@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Clock,
   IndianRupee,
+  CalendarCheck,
   CalendarRange,
   Plus,
   ShoppingCart,
@@ -103,15 +104,26 @@ function greetingFor(date: Date) {
   return 'Good evening'
 }
 
+function todayLocalISO() {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
+const attendanceAlertDismissKey = (userId: string) => `attendance-alert-dismissed:${userId}`
+
 const HERO_CHIP =
   'inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium ring-1 ring-inset ring-white/20 backdrop-blur-sm'
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth()
-  const { isPageEnabled } = usePageFeatures()
+  const { isPageEnabled, loading: featuresLoading } = usePageFeatures()
   const [period, setPeriod] = useState<DashboardPeriod>('today')
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [pendingAttendance, setPendingAttendance] = useState(0)
+  const [attendanceAlertDismissed, setAttendanceAlertDismissed] = useState(false)
 
   const analyticsEnabled = isPageEnabled('/reports')
   const analytics = useDashboardAnalytics(granularityForPeriod(period), analyticsEnabled && !!user)
@@ -140,6 +152,50 @@ export default function DashboardPage() {
     }
     fetchDashboardData()
   }, [authLoading, user, fetchDashboardData])
+
+  const attendanceEnabled = !featuresLoading && isPageEnabled('/attendance')
+
+  // Pending-attendance alert: count today's active staff with no attendance
+  // record. Dismissals are remembered for the day.
+  useEffect(() => {
+    if (!user || !attendanceEnabled) return
+    const today = todayLocalISO()
+    try {
+      setAttendanceAlertDismissed(
+        localStorage.getItem(attendanceAlertDismissKey(user.id)) === today
+      )
+    } catch {
+      // Storage unavailable — treat as not dismissed.
+    }
+    const load = async () => {
+      try {
+        const res = await apiFetch(`/attendance/stats?date=${today}`)
+        if (res.ok) {
+          const s = await res.json()
+          const marked =
+            (s.present || 0) +
+            (s.absent || 0) +
+            (s.half_day || 0) +
+            (s.paid_leave || 0) +
+            (s.weekly_off || 0)
+          setPendingAttendance(Math.max(0, (s.total_staff || 0) - marked))
+        }
+      } catch {
+        // Alert is informational — stay quiet on failures.
+      }
+    }
+    void load()
+  }, [user, attendanceEnabled])
+
+  const dismissAttendanceAlert = useCallback(() => {
+    setAttendanceAlertDismissed(true)
+    if (!user) return
+    try {
+      localStorage.setItem(attendanceAlertDismissKey(user.id), todayLocalISO())
+    } catch {
+      // ignore
+    }
+  }, [user])
 
   const periodLabel = PERIOD_LABELS[period]
 
@@ -221,6 +277,15 @@ export default function DashboardPage() {
         />
 
         {/* Alerts */}
+        {pendingAttendance > 0 && attendanceEnabled && !attendanceAlertDismissed && (
+          <AlertWidget
+            icon={CalendarCheck}
+            message={`Attendance is still pending for ${pendingAttendance} staff ${pendingAttendance === 1 ? 'member' : 'members'} today`}
+            variant="warning"
+            action={{ label: 'Mark Attendance', href: '/attendance' }}
+            onDismiss={dismissAttendanceAlert}
+          />
+        )}
         {(stats?.low_stock_products || 0) > 0 && (
           <AlertWidget
             icon={AlertTriangle}

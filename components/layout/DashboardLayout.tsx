@@ -8,6 +8,7 @@ import BottomMenubar, { shouldReserveBottomMenubarSpace } from './BottomMenubar'
 import NavigationProgress from './NavigationProgress'
 import ComingSoonPage from '@/components/ComingSoonPage'
 import AnnouncementToaster from '@/components/AnnouncementToaster'
+import AttendanceReminderDialog from '@/components/AttendanceReminderDialog'
 import { useAuth } from '@/hooks/useAuth'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
 import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
@@ -171,6 +172,7 @@ export default function DashboardLayout({
           </div>
           <BottomMenubar />
           <AnnouncementToaster />
+          <AttendanceReminderDialog />
         </div>
       </KeyboardShortcutsProvider>
     </DashboardShellContext.Provider>

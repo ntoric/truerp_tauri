@@ -38,6 +38,7 @@ export const TOGGLEABLE_PAGES: ToggleablePage[] = [
   { key: '/e-invoicing', label: 'E-Invoicing', group: 'GST' },
   { key: '/staff', label: 'Staff', group: 'HR & Payroll' },
   { key: '/attendance', label: 'Attendance', group: 'HR & Payroll' },
+  { key: '/attendance-reminder', label: 'Attendance Reminder', group: 'HR & Payroll' },
   { key: '/payroll', label: 'Payroll', group: 'HR & Payroll' },
   { key: '/pos', label: 'POS Terminal', group: 'POS' },
   { key: '/pos/sessions', label: 'POS Session History', group: 'POS' },

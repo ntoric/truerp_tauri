@@ -47,6 +47,7 @@ import {
   sumPaymentSplits,
 } from '@/lib/paymentSplits'
 import { AdditionalChargeItemsInput } from '@/components/AdditionalChargeItemsInput'
+import AttendanceReminderDialog from '@/components/AttendanceReminderDialog'
 import {
   type AdditionalChargeItem,
   hydrateAdditionalCharges,
@@ -1121,7 +1122,7 @@ export default function POSPage() {
   }
 
   const updatePaymentSplit = (index: number, patch: Partial<{ mode: string; amount: string }>) => {
-    setReceivedEdited(true)
+    if (patch.amount !== undefined) setReceivedEdited(true)
     setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
@@ -2589,6 +2590,7 @@ export default function POSPage() {
         </div>
       )}
 
+      <AttendanceReminderDialog />
     </div>
     </KeyboardShortcutsProvider>
   )
