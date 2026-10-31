@@ -28,6 +28,7 @@ import {
   downloadPeriodReportJson,
   downloadPeriodReportPdf,
   paymentMethodsForReport,
+  paymentCashBankTotals,
   PERIODIC_REPORT_OPTIONS,
   getDailyReportEmailSettings,
   updateDailyReportEmailSettings,
@@ -173,6 +174,7 @@ function methodAppearance(method: string): { icon: LucideIcon; className: string
 
 function PaymentsByMethodTable({ report }: { report: DailyReport }) {
   const methods = paymentMethodsForReport(report)
+  const { cash, bank } = paymentCashBankTotals(methods)
   if (methods.length === 0) return null
 
   return (
@@ -222,6 +224,38 @@ function PaymentsByMethodTable({ report }: { report: DailyReport }) {
                 </tr>
               )
             })}
+            <tr className="border-t border-blue-200 bg-emerald-50/60">
+              <td className="px-4 py-3">
+                <span className="inline-flex items-center gap-2 font-semibold text-emerald-900">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-800">
+                    <Banknote className="h-3.5 w-3.5" />
+                  </span>
+                  Total Cash
+                </span>
+              </td>
+              <td className="px-4 py-3 text-right">
+                <p className="font-semibold text-emerald-800">
+                  {formatCurrency(cash.in.total_amount)}
+                </p>
+                <p className="text-xs text-emerald-700">{cash.in.count} txn</p>
+              </td>
+            </tr>
+            <tr className="border-t border-blue-100 bg-indigo-50/60">
+              <td className="px-4 py-3">
+                <span className="inline-flex items-center gap-2 font-semibold text-indigo-900">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 text-indigo-800">
+                    <Landmark className="h-3.5 w-3.5" />
+                  </span>
+                  Total in Bank
+                </span>
+              </td>
+              <td className="px-4 py-3 text-right">
+                <p className="font-semibold text-indigo-800">
+                  {formatCurrency(bank.in.total_amount)}
+                </p>
+                <p className="text-xs text-indigo-700">{bank.in.count} txn</p>
+              </td>
+            </tr>
             <tr className="border-t border-blue-200 bg-blue-50">
               <td className="px-4 py-3 font-semibold text-blue-900">Total</td>
               <td className="px-4 py-3 text-right">

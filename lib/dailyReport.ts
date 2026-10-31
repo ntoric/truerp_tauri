@@ -1,6 +1,7 @@
 import { formatCurrency } from '@/lib/utils'
 import { downloadBlob, downloadJson } from '@/lib/accountingExport'
 import { apiFetch } from '@/hooks/useAuth'
+import { INITIAL_INVESTMENT_METHOD } from '@/lib/paymentSplits'
 
 export interface DailyReportMetric {
   total_amount: number
@@ -182,7 +183,34 @@ function methodHasActivity(row: PaymentMethodTotal) {
 }
 
 export function paymentMethodsForReport(report: DailyReport): PaymentMethodTotal[] {
-  return report.payments_by_method ?? []
+  return (report.payments_by_method ?? []).filter(
+    (row) => row.method !== INITIAL_INVESTMENT_METHOD
+  )
+}
+
+const BANK_METHODS = new Set(['upi', 'card', 'bank_transfer', 'cheque'])
+
+export interface CashBankSummary {
+  in: DailyReportMetric
+  out: DailyReportMetric
+}
+
+export function paymentCashBankTotals(methods: PaymentMethodTotal[]): {
+  cash: CashBankSummary
+  bank: CashBankSummary
+} {
+  const blank = (): DailyReportMetric => ({ total_amount: 0, count: 0 })
+  const cash: CashBankSummary = { in: blank(), out: blank() }
+  const bank: CashBankSummary = { in: blank(), out: blank() }
+  for (const row of methods) {
+    const target = row.method === 'cash' ? cash : BANK_METHODS.has(row.method) ? bank : null
+    if (!target) continue
+    target.in.total_amount += row.in.total_amount
+    target.in.count += row.in.count
+    target.out.total_amount += row.out.total_amount
+    target.out.count += row.out.count
+  }
+  return { cash, bank }
 }
 
 function appendPaymentMethodSection(lines: string[], report: DailyReport) {
@@ -194,6 +222,13 @@ function appendPaymentMethodSection(lines: string[], report: DailyReport) {
       `${row.label}: received ${row.in.count} txn · ${formatCurrency(row.in.total_amount)} · paid ${row.out.count} txn · ${formatCurrency(row.out.total_amount)}`
     )
   }
+  const { cash, bank } = paymentCashBankTotals(methods)
+  lines.push(
+    `Total Cash: received ${cash.in.count} txn · ${formatCurrency(cash.in.total_amount)} · paid ${cash.out.count} txn · ${formatCurrency(cash.out.total_amount)}`
+  )
+  lines.push(
+    `Total in Bank: received ${bank.in.count} txn · ${formatCurrency(bank.in.total_amount)} · paid ${bank.out.count} txn · ${formatCurrency(bank.out.total_amount)}`
+  )
 }
 
 function appendExpenseLinesSection(lines: string[], report: DailyReport) {
