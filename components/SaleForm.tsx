@@ -1560,7 +1560,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
 
   return (
     <DashboardLayout>
-      <div className="max-w-7xl space-y-4 pb-2">
+      <div className="w-full min-w-0 space-y-4 pb-2">
         <PageHeader
           title={isEstimate ? (editId ? 'Edit Estimate' : 'Create Estimate') : 'Create Sales Invoice'}
           actions={
@@ -2378,7 +2378,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
               </CardContent>
               {!isEstimateOnly && (
                 <>
-                  <CardHeader className="flex-row items-center justify-between space-y-0 pt-0">
+                  <CardHeader className="flex-row items-center justify-between space-y-0 border-t">
                     <CardTitle>Payment Details</CardTitle>
                     {PAYMENT_METHODS.length > paymentSplits.length && (
                       <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
