@@ -14,6 +14,7 @@ interface AdditionalChargeItemsInputProps {
   onChange: (items: AdditionalChargeItem[]) => void
   addLabel?: string
   labelPlaceholder?: string
+  hideAddButton?: boolean
 }
 
 // Repeatable labelled charge rows used in the "Additional Charges &
@@ -23,6 +24,7 @@ export function AdditionalChargeItemsInput({
   onChange,
   addLabel = 'Add Charge',
   labelPlaceholder = 'Label (e.g. Freight)',
+  hideAddButton = false,
 }: AdditionalChargeItemsInputProps) {
   const update = (index: number, patch: Partial<AdditionalChargeItem>) => {
     onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)))
@@ -62,16 +64,18 @@ export function AdditionalChargeItemsInput({
         </div>
       ))}
       <div className="flex items-center justify-between">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => onChange([...items, { label: '', amount: 0 }])}
-        >
-          <Plus className="mr-1 h-4 w-4" /> {addLabel}
-        </Button>
+        {!hideAddButton && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onChange([...items, { label: '', amount: 0 }])}
+          >
+            <Plus className="mr-1 h-4 w-4" /> {addLabel}
+          </Button>
+        )}
         {items.length > 0 && (
-          <span className="text-sm text-gray-600">
+          <span className="ml-auto text-sm text-gray-600">
             Total: <span className="font-medium">{formatCurrency(total)}</span>
           </span>
         )}

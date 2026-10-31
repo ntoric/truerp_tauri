@@ -1308,6 +1308,7 @@ export default function CreatePurchaseInvoicePage() {
     ? totalAmount
     : sumPaymentSplits(paymentSplits)
   const balance = totalAmount - effectiveAmountPaid
+  const isFullyPaid = effectiveAmountPaid >= totalAmount
 
   const splitAmountValue = (index: number) => {
     if (paymentSplits.length === 1 && !amountPaidEdited) return totalAmount
@@ -1356,6 +1357,15 @@ export default function CreatePurchaseInvoicePage() {
       const last = Math.max(0, parseMoney(totalAmount - sumPaymentSplits(others)))
       return [...others, { ...prev[prev.length - 1], amount: last }]
     })
+  }
+
+  const handleFullyPaidToggle = (checked: boolean) => {
+    if (checked) {
+      markFullyPaid()
+      return
+    }
+    setAmountPaidEdited(true)
+    setPaymentSplits((prev) => prev.map((row) => ({ ...row, amount: 0 })))
   }
 
   // Human-readable destination for a split: explicit account, method-mapped
@@ -2357,13 +2367,80 @@ export default function CreatePurchaseInvoicePage() {
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <Card className="space-y-4 xl:col-span-2">
               <CardHeader>
-                <CardTitle>Additional Charges & Discount</CardTitle>
+                <CardTitle>Signature</CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="min-w-0 space-y-2 sm:col-span-2">
-                  <Label>Additional Charges</Label>
-                  <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} />
+              <CardContent>
+                {signature ? (
+                  <img src={signature} alt="Signature" className="max-h-[150px] max-w-full rounded border bg-white object-contain" />
+                ) : (
+                  <canvas
+                    ref={canvasRef}
+                    width={400}
+                    height={150}
+                    className="max-w-full cursor-crosshair touch-none rounded border"
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                  />
+                )}
+                <div className="mt-2 flex gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={clearSignature}>Clear</Button>
+                  {businessSignature && signature !== businessSignature && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setSignature(businessSignature)}>Use Business Signature</Button>
+                  )}
                 </div>
+              </CardContent>
+
+              <CardHeader>
+                <CardTitle>Notes & Terms</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    placeholder="Additional notes..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Terms & Conditions</Label>
+                  <textarea
+                    value={terms}
+                    onChange={(e) => setTerms(e.target.value)}
+                    className="min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    placeholder="Terms and conditions..."
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex-row items-center justify-between space-y-0">
+                <CardTitle>Charges & Discount</CardTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => setChargeItems([...chargeItems, { label: '', amount: 0 }])}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Charge
+                </Button>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 gap-4">
+                {chargeItems.length > 0 && (
+                  <div className="min-w-0 space-y-2">
+                    <Label>Additional Charges</Label>
+                    <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} hideAddButton />
+                  </div>
+                )}
                 <div className="min-w-0 space-y-2">
                   <Label>Invoice Discount</Label>
                   <Input
@@ -2375,28 +2452,72 @@ export default function CreatePurchaseInvoicePage() {
                     className="w-full min-w-0"
                   />
                 </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Auto Round Off</Label>
-                  <select
-                    value={autoRoundOff ? 'true' : 'false'}
-                    onChange={(e) => setAutoRoundOff(e.target.value === 'true')}
-                    className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
-                  >
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="auto-round-off">Auto Round Off</Label>
+                  <Switch
+                    id="auto-round-off"
+                    checked={autoRoundOff}
+                    onCheckedChange={setAutoRoundOff}
+                  />
                 </div>
               </CardContent>
-
-              <CardHeader>
+              <CardContent className="space-y-3 p-6">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Subtotal</span>
+                  <span className="font-medium">{formatCurrency(subTotal)}</span>
+                </div>
+                {discountTotal > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Item Discount</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(discountTotal)}</span>
+                  </div>
+                )}
+                {invoiceDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Invoice Discount</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(invoiceDiscount)}</span>
+                  </div>
+                )}
+                {chargeItems.filter((c) => Number(c.amount) > 0).map((charge, index) => (
+                  <div key={index} className="flex justify-between text-sm">
+                    <span className="text-gray-600">{charge.label.trim() || 'Additional Charge'}</span>
+                    <span className="font-medium">{formatCurrency(charge.amount)}</span>
+                  </div>
+                ))}
+                {!taxExempt && taxTotal > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Tax Total</span>
+                    <span className="font-medium">{formatCurrency(taxTotal)}</span>
+                  </div>
+                )}
+                {autoRoundOff && roundOff !== 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Round Off</span>
+                    <span className="font-medium">{formatCurrency(roundOff)}</span>
+                  </div>
+                )}
+                <div className="border-t pt-3">
+                  <div className="flex justify-between text-lg font-bold">
+                    <span>Total Amount</span>
+                    <span>{formatCurrency(totalAmount)}</span>
+                  </div>
+                </div>
+              </CardContent>
+              <CardHeader className="flex-row items-center justify-between space-y-0 pt-0">
                 <CardTitle>Payment Details</CardTitle>
+                {PAYMENT_METHODS.length > paymentSplits.length && (
+                  <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
+                    <Plus className="h-4 w-4" />
+                    Split Payment
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 {paymentSplits.map((split, index) => {
                   const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
                   const initialInvestment = isInitialInvestmentMethod(split.mode)
                   return (
-                    <div key={index} className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
+                    <div key={index} className="space-y-3">
                       <div className="min-w-0 space-y-2">
                         <Label>{index === 0 ? 'Payment Method' : `Method ${index + 1}`}</Label>
                         <select
@@ -2441,31 +2562,31 @@ export default function CreatePurchaseInvoicePage() {
                           </select>
                         )}
                       </div>
-                      <div className="min-w-0 space-y-2">
-                        <Label>{index === 0 ? 'Amount Paid' : 'Amount'}</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={splitAmountValue(index)}
-                          onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
-                          className="w-full min-w-0"
-                        />
+                      <div className="flex items-end gap-3">
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <Label>{index === 0 ? 'Amount Paid' : 'Amount'}</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={splitAmountValue(index)}
+                            onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
+                            className="w-full min-w-0"
+                          />
+                        </div>
+                        {paymentSplits.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => removePaymentSplit(index)}
+                            aria-label="Remove payment method"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
-                      {paymentSplits.length > 1 ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => removePaymentSplit(index)}
-                          aria-label="Remove payment method"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      ) : (
-                        <div className="h-8 w-8" />
-                      )}
                     </div>
                   )
                 })}
@@ -2476,123 +2597,21 @@ export default function CreatePurchaseInvoicePage() {
                       : `${formatCurrency(effectiveAmountPaid)} will be deducted from ${splitAccountLabel(paymentSplits[0] || { mode: 'cash', bank_account_id: null })}.`
                     : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${splitAccountLabel(split)}`).join(' · ')}
                 </p>
-                {PAYMENT_METHODS.length > paymentSplits.length && (
-                  <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
-                    <Plus className="h-4 w-4" />
-                    Add payment method
-                  </Button>
-                )}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="min-w-0 space-y-2">
-                    <Label>Balance</Label>
-                    <Input value={formatCurrency(balance)} readOnly className="w-full min-w-0 bg-gray-50" />
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="fully-paid-toggle">Mark as Fully Paid</Label>
+                    <Switch
+                      id="fully-paid-toggle"
+                      checked={isFullyPaid}
+                      onCheckedChange={handleFullyPaidToggle}
+                    />
                   </div>
-                  <div className="min-w-0 space-y-2">
-                    <Label>Mark as Fully Paid</Label>
-                    <Button
-                      type="button"
-                      variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
-                      className="h-8 w-full"
-                      onClick={markFullyPaid}
-                    >
-                      {effectiveAmountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-
-              <CardHeader>
-                <CardTitle>Signature</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {signature && (
-                  <div className="mb-3">
-                    <img src={signature} alt="Signature" className="max-h-[150px] max-w-full rounded border bg-white object-contain" />
-                  </div>
-                )}
-                <canvas
-                  ref={canvasRef}
-                  width={400}
-                  height={150}
-                  className="max-w-full cursor-crosshair touch-none rounded border"
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDrawing}
-                />
-                <div className="mt-2 flex gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={clearSignature}>Clear</Button>
-                  {businessSignature && signature !== businessSignature && (
-                    <Button type="button" variant="outline" size="sm" onClick={() => setSignature(businessSignature)}>Use Business Signature</Button>
+                  {!isFullyPaid && (
+                    <div className="space-y-2">
+                      <Label>Balance</Label>
+                      <Input value={formatCurrency(balance)} readOnly className="w-full min-w-0 bg-gray-50" />
+                    </div>
                   )}
-                </div>
-              </CardContent>
-
-              <CardHeader>
-                <CardTitle>Notes & Terms</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Notes</Label>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    className="min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    placeholder="Additional notes..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Terms & Conditions</Label>
-                  <textarea
-                    value={terms}
-                    onChange={(e) => setTerms(e.target.value)}
-                    className="min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    placeholder="Terms and conditions..."
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="space-y-3 p-6">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Taxable Amount</span>
-                  <span className="font-medium">{formatCurrency(subTotal - discountTotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Item Discount</span>
-                  <span className="font-medium text-red-600">-{formatCurrency(discountTotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Invoice Discount</span>
-                  <span className="font-medium text-red-600">-{formatCurrency(invoiceDiscount)}</span>
-                </div>
-                {chargeItems.filter((c) => Number(c.amount) > 0).map((charge, index) => (
-                  <div key={index} className="flex justify-between text-sm">
-                    <span className="text-gray-600">{charge.label.trim() || 'Additional Charge'}</span>
-                    <span className="font-medium">{formatCurrency(charge.amount)}</span>
-                  </div>
-                ))}
-                {!taxExempt && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Tax Total</span>
-                    <span className="font-medium">{formatCurrency(taxTotal)}</span>
-                  </div>
-                )}
-                {autoRoundOff && roundOff !== 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Round Off</span>
-                    <span className="font-medium">{formatCurrency(roundOff)}</span>
-                  </div>
-                )}
-                <div className="border-t pt-3">
-                  <div className="flex justify-between text-lg font-bold">
-                    <span>Total Amount</span>
-                    <span>{formatCurrency(totalAmount)}</span>
-                  </div>
                 </div>
               </CardContent>
             </Card>

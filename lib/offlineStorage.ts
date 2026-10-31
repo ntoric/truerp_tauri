@@ -13,6 +13,7 @@ export const POS_META_KEYS = {
   PRINT_SETTINGS: 'print_settings',
   BUSINESS: 'business',
   LOYALTY: 'loyalty_settings',
+  SALE_DISCOUNT: 'sale_discount_settings',
   PAYMENT_MAPPINGS: 'payment_mappings',
   BANK_ACCOUNTS: 'bank_accounts',
 } as const

@@ -10,7 +10,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/compon
 import { formatCurrency, asArray } from '@/lib/utils'
 import { offlineStorage, POS_META_KEYS, type POSSaleRecord } from '@/lib/offlineStorage'
 import Link from 'next/link'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, ChevronDown, Percent, Wifi, WifiOff, Eye, User } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, ChevronDown, Percent, Wifi, WifiOff, Eye, User, Tag } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
@@ -54,6 +54,13 @@ import {
   sanitizeAdditionalChargeItems,
   sumAdditionalChargeItems,
 } from '@/lib/additionalCharges'
+import {
+  type SaleDiscountSettings,
+  autoDiscountEligible,
+  computeAutoDiscount,
+  describeAutoDiscount,
+  normalizeSaleDiscountSettings,
+} from '@/lib/saleDiscount'
 
 interface Product {
   id: string
@@ -116,6 +123,8 @@ interface POSTab {
   draftId?: string
   discountType: 'amount' | 'percent'
   discountValue: string
+  autoDiscountApplied?: boolean
+  autoDiscountValue?: string
   additionalChargeItems: AdditionalChargeItem[]
 }
 
@@ -360,7 +369,7 @@ export default function POSPage() {
   const [parties, setParties] = useState<Party[]>([])
   const [walkInCustomer, setWalkInCustomer] = useState<Party | null>(null)
   const [tabs, setTabs] = useState<POSTab[]>([
-    { id: 'tab-1', title: 'New Order', cart: [], selectedParty: null, notes: '', isDraft: false, discountType: 'amount', discountValue: '', additionalChargeItems: [] }
+    { id: 'tab-1', title: 'New Order', cart: [], selectedParty: null, notes: '', isDraft: false, discountType: 'amount', discountValue: '', autoDiscountApplied: false, autoDiscountValue: '', additionalChargeItems: [] }
   ])
   const [activeTabId, setActiveTabId] = useState('tab-1')
   const [searchTerm, setSearchTerm] = useState('')
@@ -380,12 +389,13 @@ export default function POSPage() {
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
   const [isEditingCustomer, setIsEditingCustomer] = useState(false)
   const [customerPanelOpen, setCustomerPanelOpen] = useState(false)
-  const [totalsExpanded, setTotalsExpanded] = useState(false)
+  const [totalsExpanded, setTotalsExpanded] = useState(true)
   const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: string }[]>([
     { mode: 'upi', amount: '' },
   ])
   const [receivedEdited, setReceivedEdited] = useState(false)
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
+  const [saleDiscount, setSaleDiscount] = useState<SaleDiscountSettings | null>(null)
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0)
   const [editingQty, setEditingQty] = useState<{ productId: string; value: string } | null>(null)
   const qtyEditCancelledRef = useRef(false)
@@ -421,6 +431,7 @@ export default function POSPage() {
         loadSession(),
         loadDrafts(),
         loadLoyaltySettings(),
+        loadSaleDiscountSettings(),
         loadBusinessSettings(),
       ])
       await hydratePOSSnapshot()
@@ -457,6 +468,22 @@ export default function POSPage() {
     }
     const cached = await offlineStorage.getMeta<LoyaltySettings>(POS_META_KEYS.LOYALTY)
     if (cached) setLoyaltySettings(cached)
+  }
+
+  const loadSaleDiscountSettings = async () => {
+    try {
+      const res = await apiFetch('/sale-discount-settings', { timeoutMs: 5000 })
+      if (res.ok) {
+        const settings = normalizeSaleDiscountSettings(await res.json())
+        setSaleDiscount(settings)
+        await offlineStorage.setMeta(POS_META_KEYS.SALE_DISCOUNT, settings)
+        return
+      }
+    } catch {
+      /* offline — use cache */
+    }
+    const cached = await offlineStorage.getMeta<SaleDiscountSettings>(POS_META_KEYS.SALE_DISCOUNT)
+    if (cached) setSaleDiscount(normalizeSaleDiscountSettings(cached))
   }
 
   const loadBusinessSettings = async () => {
@@ -691,7 +718,7 @@ export default function POSPage() {
     const finishClose = async () => {
       await offlineStorage.closePOSSession(session.id)
       setSession(null)
-      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', additionalChargeItems: [] })
+      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', autoDiscountApplied: false, autoDiscountValue: '', additionalChargeItems: [] })
       setIsEditingCustomer(false)
       resetPayment()
       window.location.href = '/dashboard'
@@ -994,8 +1021,16 @@ export default function POSPage() {
     return Math.min(cartTotal, raw)
   }
 
-  const getSaleDiscount = () =>
-    computeSaleDiscount(getCartTotal(), activeTab.discountType || 'amount', activeTab.discountValue || '')
+  const autoDiscountMode = saleDiscount?.mode === 'auto'
+
+  const getSaleDiscount = () => {
+    if (autoDiscountMode) {
+      if (!activeTab.autoDiscountApplied) return 0
+      const cap = computeAutoDiscount(saleDiscount, getCartTotal() + getAdditionalCharges())
+      return Math.min(parseMoney(activeTab.autoDiscountValue || '0'), cap)
+    }
+    return computeSaleDiscount(getCartTotal(), activeTab.discountType || 'amount', activeTab.discountValue || '')
+  }
 
   const getAdditionalCharges = () => Math.max(0, sumAdditionalChargeItems(activeTab.additionalChargeItems || []))
 
@@ -1052,6 +1087,61 @@ export default function POSPage() {
     })()
     prevLoyaltyDiscountRef.current = nextLoyalty
     updateTab(activeTabId, { discountType: nextType, discountValue: nextValue })
+    syncReceivedToPayable(
+      Math.max(0, Math.round(cartTotal - prevSale + addCharges - prevLoyalty)),
+      Math.max(0, Math.round(cartTotal - nextSale + addCharges - nextLoyalty)),
+      nextSale - prevSale + (nextLoyalty - prevLoyalty)
+    )
+  }
+
+  const toggleAutoDiscount = (applied: boolean) => {
+    const cartTotal = getCartTotal()
+    const addCharges = getAdditionalCharges()
+    const prevSale = getSaleDiscount()
+    const nextSale = applied ? computeAutoDiscount(saleDiscount, cartTotal + addCharges) : 0
+    const prevLoyalty = getLoyaltyDiscount(prevSale)
+    const nextLoyalty = (() => {
+      if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+      const { discount } = computeLoyaltyDiscount(
+        loyaltySettings,
+        activeTab.selectedParty.loyalty_points ?? 0,
+        Math.max(0, cartTotal - nextSale + addCharges),
+        loyaltyPointsToRedeem
+      )
+      return discount
+    })()
+    prevLoyaltyDiscountRef.current = nextLoyalty
+    updateTab(activeTabId, applied
+      ? { autoDiscountApplied: true, autoDiscountValue: String(nextSale) }
+      : { autoDiscountApplied: false })
+    syncReceivedToPayable(
+      Math.max(0, Math.round(cartTotal - prevSale + addCharges - prevLoyalty)),
+      Math.max(0, Math.round(cartTotal - nextSale + addCharges - nextLoyalty)),
+      nextSale - prevSale + (nextLoyalty - prevLoyalty)
+    )
+  }
+
+  const updateAutoDiscountValue = (raw: string) => {
+    const next = limitDecimalInput(raw)
+    const cartTotal = getCartTotal()
+    const addCharges = getAdditionalCharges()
+    const cap = computeAutoDiscount(saleDiscount, cartTotal + addCharges)
+    const clamped = parseMoney(next || '0') > cap ? String(cap) : next
+    const prevSale = getSaleDiscount()
+    const nextSale = Math.min(parseMoney(clamped || '0'), cap)
+    const prevLoyalty = getLoyaltyDiscount(prevSale)
+    const nextLoyalty = (() => {
+      if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+      const { discount } = computeLoyaltyDiscount(
+        loyaltySettings,
+        activeTab.selectedParty.loyalty_points ?? 0,
+        Math.max(0, cartTotal - nextSale + addCharges),
+        loyaltyPointsToRedeem
+      )
+      return discount
+    })()
+    prevLoyaltyDiscountRef.current = nextLoyalty
+    updateTab(activeTabId, { autoDiscountValue: clamped })
     syncReceivedToPayable(
       Math.max(0, Math.round(cartTotal - prevSale + addCharges - prevLoyalty)),
       Math.max(0, Math.round(cartTotal - nextSale + addCharges - nextLoyalty)),
@@ -1190,6 +1280,7 @@ export default function POSPage() {
       isDraft: false,
       discountType: 'amount',
       discountValue: '',
+      autoDiscountApplied: false, autoDiscountValue: '',
       additionalChargeItems: [],
     }
     setTabs([...tabs, newTab])
@@ -1227,6 +1318,8 @@ export default function POSPage() {
         items: activeTab.cart,
         discountType: activeTab.discountType || 'amount',
         discountValue: activeTab.discountValue || '',
+        autoDiscountApplied: activeTab.autoDiscountApplied === true,
+        autoDiscountValue: activeTab.autoDiscountValue || '',
         additionalChargeItems: sanitizeAdditionalChargeItems(activeTab.additionalChargeItems || []),
       }),
       party_id: activeTab.selectedParty?.id,
@@ -1262,7 +1355,7 @@ export default function POSPage() {
 
   const loadDraft = async (draft: POSDraft) => {
     try {
-      const parsed = JSON.parse(draft.cart_data) as CartItem[] | { items?: CartItem[]; discountType?: string; discountValue?: string; additionalCharges?: string; additionalChargeItems?: AdditionalChargeItem[] }
+      const parsed = JSON.parse(draft.cart_data) as CartItem[] | { items?: CartItem[]; discountType?: string; discountValue?: string; autoDiscountApplied?: boolean; autoDiscountValue?: string; additionalCharges?: string; additionalChargeItems?: AdditionalChargeItem[] }
       const rawItems = Array.isArray(parsed) ? parsed : (parsed.items || [])
       const cartData = rawItems.map((item) => ({
         ...item,
@@ -1285,6 +1378,8 @@ export default function POSPage() {
         draftId: draft.id,
         discountType,
         discountValue,
+        autoDiscountApplied: !Array.isArray(parsed) && parsed.autoDiscountApplied === true,
+        autoDiscountValue: !Array.isArray(parsed) && typeof parsed.autoDiscountValue === 'string' ? parsed.autoDiscountValue : '',
         additionalChargeItems,
       }
       
@@ -1477,7 +1572,7 @@ export default function POSPage() {
         await offlineStorage.decrementLocalStock(item.product.id, item.quantity, item.batch_no, allowNegativeStock)
       }
 
-      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', additionalChargeItems: [] })
+      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', autoDiscountApplied: false, autoDiscountValue: '', additionalChargeItems: [] })
       setIsEditingCustomer(false)
       setEditingQty(null)
       setPaymentSplits([{ mode: 'upi', amount: '' }])
@@ -2292,10 +2387,12 @@ export default function POSPage() {
                     <span className="text-gray-600">Subtotal</span>
                     <span className="font-medium">{formatCurrency(getCartTotal() - getTaxTotal())}</span>
                   </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-600">Tax</span>
-                    <span className="font-medium">{formatCurrency(getTaxTotal())}</span>
-                  </div>
+                  {getTaxTotal() > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600">Tax</span>
+                      <span className="font-medium">{formatCurrency(getTaxTotal())}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm font-bold pt-1 border-t">
                     <span>Total</span>
                     <span className="text-blue-600">{formatCurrency(getCartTotal())}</span>
@@ -2303,42 +2400,83 @@ export default function POSPage() {
                   <div className="flex items-center gap-2">
                     <div className="flex min-w-0 flex-1 items-center gap-1">
                       <span className="text-xs text-gray-600 shrink-0">Discount</span>
-                      <div className="ml-auto flex items-center gap-1">
-                        <div className="flex overflow-hidden rounded border border-gray-300">
-                          <button
-                            type="button"
-                            onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'amount')}
-                            className={`h-7 px-1.5 text-[10px] font-medium ${
-                              (activeTab.discountType || 'amount') === 'amount' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
-                            }`}
-                            aria-label="Discount as amount"
-                          >
-                            ₹
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'percent')}
-                            className={`h-7 px-1.5 text-[10px] font-medium ${
-                              activeTab.discountType === 'percent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
-                            }`}
-                            aria-label="Discount as percent"
-                          >
-                            <Percent className="h-3 w-3" />
-                          </button>
+                      {autoDiscountMode ? (
+                        <div className="ml-auto flex items-center gap-1">
+                          {autoDiscountEligible(saleDiscount, getCartTotal() + getAdditionalCharges()) ? (
+                            activeTab.autoDiscountApplied ? (
+                              <>
+                                <Input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={activeTab.autoDiscountValue || ''}
+                                  onChange={(e) => updateAutoDiscountValue(e.target.value)}
+                                  className="h-7 w-16 px-1 text-right text-xs"
+                                  aria-label="Applied discount amount"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAutoDiscount(false)}
+                                  className="flex h-7 w-7 items-center justify-center rounded border border-gray-300 bg-white text-gray-500 hover:border-red-300 hover:text-red-600"
+                                  aria-label="Remove discount"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => toggleAutoDiscount(true)}
+                                className="flex h-7 items-center gap-1 rounded border border-dashed border-green-500 bg-green-50 px-1.5 text-[10px] font-medium text-green-700 hover:border-green-600 hover:bg-green-100"
+                                aria-label="Apply discount"
+                              >
+                                <Tag className="h-3 w-3" />
+                                Apply −{formatCurrency(computeAutoDiscount(saleDiscount, getCartTotal() + getAdditionalCharges()))}
+                              </button>
+                            )
+                          ) : (
+                            <span className="text-[10px] text-gray-400" title={describeAutoDiscount(saleDiscount)}>
+                              No discount
+                            </span>
+                          )}
                         </div>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder={(activeTab.discountType || 'amount') === 'percent' ? '%' : '0.00'}
-                          value={activeTab.discountValue || ''}
-                          onChange={(e) => applyPosDiscountChange(limitDecimalInput(e.target.value))}
-                          className="h-7 w-14 px-1 text-right text-xs"
-                          aria-label="Sale discount"
-                        />
-                      </div>
+                      ) : (
+                        <div className="ml-auto flex items-center gap-1">
+                          <div className="flex overflow-hidden rounded border border-gray-300">
+                            <button
+                              type="button"
+                              onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'amount')}
+                              className={`h-7 px-1.5 text-[10px] font-medium ${
+                                (activeTab.discountType || 'amount') === 'amount' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
+                              }`}
+                              aria-label="Discount as amount"
+                            >
+                              ₹
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'percent')}
+                              className={`h-7 px-1.5 text-[10px] font-medium ${
+                                activeTab.discountType === 'percent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
+                              }`}
+                              aria-label="Discount as percent"
+                            >
+                              <Percent className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder={(activeTab.discountType || 'amount') === 'percent' ? '%' : '0.00'}
+                            value={activeTab.discountValue || ''}
+                            onChange={(e) => applyPosDiscountChange(limitDecimalInput(e.target.value))}
+                            className="h-7 w-14 px-1 text-right text-xs"
+                            aria-label="Sale discount"
+                          />
+                        </div>
+                      )}
                     </div>
-                    <div className="flex min-w-0 flex-1 items-center gap-1">
-                      <span className="text-xs text-gray-600 shrink-0">Addl Charges</span>
+                    <div className="flex min-w-0 flex-1 items-center gap-1 border-l border-gray-200 pl-2">
+                      <span className="text-xs text-gray-600 shrink-0">Charges</span>
                       <Popover modal={false}>
                         <PopoverTrigger asChild>
                           <button
@@ -2363,7 +2501,7 @@ export default function POSPage() {
                     <div className="flex justify-between text-xs">
                       {getSaleDiscount() > 0 ? (
                         <span className="text-green-700">
-                          {activeTab.discountType === 'percent' ? `${parseMoney(activeTab.discountValue)}% off` : 'Discount'}
+                          {!autoDiscountMode && activeTab.discountType === 'percent' ? `${parseMoney(activeTab.discountValue)}% off` : 'Discount'}
                         </span>
                       ) : (
                         <span />
@@ -2424,10 +2562,11 @@ export default function POSPage() {
             <div className="p-2 border-t space-y-2">
               {paymentSplits.map((split, index) => {
                 const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
+                const isLastSplit = index === paymentSplits.length - 1
                 return (
                   <div key={`${split.mode}-${index}`} className="flex gap-1 items-center">
                     <select
-                      className="h-8 min-w-0 flex-1 text-xs rounded border border-gray-300 bg-white px-2"
+                      className="h-8 min-w-0 flex-1 text-xs rounded border border-gray-300 bg-white px-1.5"
                       value={split.mode}
                       onChange={(e) => updatePaymentSplit(index, { mode: e.target.value })}
                     >
@@ -2444,9 +2583,9 @@ export default function POSPage() {
                       placeholder="Received"
                       value={splitAmountValue(index)}
                       onChange={(e) => updatePaymentSplit(index, { amount: e.target.value })}
-                      className="h-8 w-[5.5rem] text-xs"
+                      className="h-8 w-20 min-w-0 text-xs"
                     />
-                    {paymentSplits.length > 1 ? (
+                    {paymentSplits.length > 1 && (
                       <Button
                         type="button"
                         variant="outline"
@@ -2457,15 +2596,30 @@ export default function POSPage() {
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
-                    ) : (
-                      <Button
-                        variant={getBalance() <= 0.01 ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={setFullyPaid}
-                        className="h-8 px-2 text-xs"
-                      >
-                        Full
-                      </Button>
+                    )}
+                    {isLastSplit && (
+                      <>
+                        <Button
+                          variant={getBalance() <= 0.01 ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={setFullyPaid}
+                          className="h-8 px-2 text-xs"
+                        >
+                          Full
+                        </Button>
+                        {PAYMENT_METHODS.length > paymentSplits.length && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2 text-xs"
+                            onClick={addPaymentSplit}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Split
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
                 )
@@ -2475,26 +2629,6 @@ export default function POSPage() {
                   ? `Credited to: ${getDepositHint(paymentSplits[0]?.mode || 'upi', bankAccounts)}`
                   : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${getDepositHint(split.mode, bankAccounts)}`).join(' · ')}
               </p>
-              <div className="flex items-center justify-between gap-2">
-                {PAYMENT_METHODS.length > paymentSplits.length ? (
-                  <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={addPaymentSplit}>
-                    <Plus className="h-3 w-3 mr-1" />
-                    Split
-                  </Button>
-                ) : (
-                  <span />
-                )}
-                {paymentSplits.length > 1 && (
-                  <Button
-                    variant={getBalance() <= 0.01 ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={setFullyPaid}
-                    className="h-7 px-2 text-[11px]"
-                  >
-                    Full
-                  </Button>
-                )}
-              </div>
               <div className="flex justify-between text-xs">
                 <span className="text-gray-600">Balance</span>
                 <span className={`font-medium ${getBalance() > 0.01 ? 'text-orange-600' : getBalance() < -0.01 ? 'text-red-600' : 'text-green-600'}`}>

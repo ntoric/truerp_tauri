@@ -26,8 +26,13 @@ import {
   Mail, MessageSquare, Send, Loader2, CheckCircle, XCircle,
   Smartphone, Save, LayoutGrid, Sparkles, Clock,
   DatabaseBackup, Upload, FileArchive, FileUp, FileDown, AlertTriangle, Store,
-  Database, Download, Trash2, CloudUpload, Palette,
+  Database, Download, Trash2, CloudUpload, Palette, Percent,
 } from 'lucide-react'
+import {
+  type SaleDiscountSettings,
+  DEFAULT_SALE_DISCOUNT_SETTINGS,
+  normalizeSaleDiscountSettings,
+} from '@/lib/saleDiscount'
 import { getServerTime, type ServerTimeInfo } from '@/lib/dailyReport'
 import { downloadBlob } from '@/lib/accountingExport'
 
@@ -656,6 +661,9 @@ export default function DeveloperSettingsPage() {
     async_daily_profit: false,
   })
   const [pageFeatures, setPageFeatures] = useState<PageFeaturesMap>(defaultPageFeatures)
+  const [saleDiscount, setSaleDiscount] = useState<SaleDiscountSettings>({
+    ...DEFAULT_SALE_DISCOUNT_SETTINGS,
+  })
   const [aiSettings, setAiSettings] = useState<AiBusinessSettings>({
     enable_ai_hsn_search: false,
     enable_ai_bill_parsing: false,
@@ -742,12 +750,13 @@ export default function DeveloperSettingsPage() {
 
   const fetchSettings = async () => {
     try {
-      const [settingsRes, pagesRes, businessRes, maintRes, backupRes] = await Promise.all([
+      const [settingsRes, pagesRes, businessRes, maintRes, backupRes, discountRes] = await Promise.all([
         apiFetch('/developer-settings'),
         apiFetch('/page-features'),
         apiFetch('/business'),
         apiFetch('/developer-settings/db-maintenance'),
         apiFetch('/developer-settings/db-backup'),
+        apiFetch('/sale-discount-settings'),
       ])
       if (settingsRes.ok) {
         const data = await settingsRes.json()
@@ -770,6 +779,9 @@ export default function DeveloperSettingsPage() {
         const data: DBBackupInfo = await backupRes.json()
         setDbBackupInfo(data)
         if (data.settings) setDbBackup(data.settings)
+      }
+      if (discountRes.ok) {
+        setSaleDiscount(normalizeSaleDiscountSettings(await discountRes.json()))
       }
     } catch (err) {
       console.error(err)
@@ -852,15 +864,23 @@ export default function DeveloperSettingsPage() {
         }
         if (ok) notifySuccess('Maintenance settings saved successfully')
       } else {
-        const res = await apiFetch('/developer-settings', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(settings),
-        })
-        if (res.ok) {
+        const [res, discountRes] = await Promise.all([
+          apiFetch('/developer-settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings),
+          }),
+          apiFetch('/sale-discount-settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(saleDiscount),
+          }),
+        ])
+        if (res.ok && discountRes.ok) {
           notifySuccess('Settings saved successfully')
         } else {
-          const data = await res.json().catch(() => ({}))
+          const failed = !res.ok ? res : discountRes
+          const data = await failed.json().catch(() => ({}))
           notifyError(data.error || 'Failed to save settings')
         }
       }
@@ -1323,6 +1343,105 @@ export default function DeveloperSettingsPage() {
                     }
                   />
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Percent className="h-5 w-5" />
+                  Sale Discount
+                </CardTitle>
+                <CardDescription>
+                  Choose how invoice-level discounts work for the active store.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Discount mode</Label>
+                  <Select
+                    value={saleDiscount.mode}
+                    onValueChange={(value) =>
+                      setSaleDiscount({
+                        ...saleDiscount,
+                        mode: value === 'auto' ? 'auto' : 'manual',
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manual">Manual entry</SelectItem>
+                      <SelectItem value="auto">Auto threshold</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500">
+                    Manual: the cashier types any discount amount on invoices and in POS.
+                    Auto: the discount is computed automatically from the rule below; when a
+                    sale qualifies, invoice creation and POS show an Apply button — the
+                    discount only counts once it is applied.
+                  </p>
+                </div>
+
+                {saleDiscount.mode === 'auto' && (
+                  <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label>Discount type</Label>
+                      <Select
+                        value={saleDiscount.discount_type}
+                        onValueChange={(value) =>
+                          setSaleDiscount({
+                            ...saleDiscount,
+                            discount_type: value === 'amount' ? 'amount' : 'percent',
+                          })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="percent">Percent</SelectItem>
+                          <SelectItem value="amount">Flat amount</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>
+                        {saleDiscount.discount_type === 'percent'
+                          ? 'Discount percent (X)'
+                          : 'Discount amount (X)'}
+                      </Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={saleDiscount.discount_value}
+                        onChange={(e) =>
+                          setSaleDiscount({
+                            ...saleDiscount,
+                            discount_value: Math.max(0, Number(e.target.value) || 0),
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Minimum sale amount (Y)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={saleDiscount.min_sale_amount}
+                        onChange={(e) =>
+                          setSaleDiscount({
+                            ...saleDiscount,
+                            min_sale_amount: Math.max(0, Number(e.target.value) || 0),
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

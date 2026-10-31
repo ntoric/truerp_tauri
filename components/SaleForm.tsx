@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { cn, formatCurrency } from '@/lib/utils'
 import { limitDecimalInput, formatQty, parseItemNumber, parseMoney, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
-import { Plus, Trash2, Loader2, Save, Search, X, Edit2, Package, FileText, Gift, Scale, Printer, Copy, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Loader2, Save, Search, X, Edit2, Package, FileText, Gift, Scale, Printer, Copy, ChevronRight, Tag } from 'lucide-react'
 import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
 import { ProductCombobox } from '@/components/ui/ProductCombobox'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -58,6 +58,13 @@ import {
   sanitizeAdditionalChargeItems,
   sumAdditionalChargeItems,
 } from '@/lib/additionalCharges'
+import {
+  type SaleDiscountSettings,
+  autoDiscountEligible,
+  computeAutoDiscount,
+  describeAutoDiscount,
+  fetchSaleDiscountSettings,
+} from '@/lib/saleDiscount'
 
 interface Party {
   id: string
@@ -165,6 +172,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const [notes, setNotes] = useState('')
   const [terms, setTerms] = useState('')
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
+  const [saleDiscount, setSaleDiscount] = useState<SaleDiscountSettings | null>(null)
+  const [autoDiscountApplied, setAutoDiscountApplied] = useState(false)
+  const [autoDiscountValue, setAutoDiscountValue] = useState('')
   const [chargeItems, setChargeItems] = useState<AdditionalChargeItem[]>([])
   const [autoRoundOff, setAutoRoundOff] = useState(true)
   const [amountPaidEdited, setAmountPaidEdited] = useState(false)
@@ -319,7 +329,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
 
   const fetchData = async () => {
     try {
-      const [partiesRes, productsRes, numRes, loyaltyRes, templatesRes, fieldsRes, invoiceSettingsRes] = await Promise.all([
+      const [partiesRes, productsRes, numRes, loyaltyRes, templatesRes, fieldsRes, invoiceSettingsRes, saleDiscountCfg] = await Promise.all([
         apiFetch('/parties'),
         apiFetch('/products'),
         editId ? Promise.resolve(null) : apiFetch(isEstimateOnly ? '/quotations/next-number' : '/invoices/next-number'),
@@ -327,6 +337,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         apiFetch('/invoice-templates'),
         apiFetch('/settings/invoice-custom-fields'),
         apiFetch('/settings/invoice'),
+        fetchSaleDiscountSettings(),
       ])
       if (partiesRes.ok) {
         const partyData = await partiesRes.json()
@@ -359,6 +370,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setPdfTemplate(s.template || 'classic')
         if (!terms && s.default_terms) setTerms(s.default_terms)
       }
+      setSaleDiscount(saleDiscountCfg)
       const bizSig = await fetchBusinessSignature()
       setBusinessSignature(bizSig)
       if (bizSig && !editId) setSignature(prev => prev || bizSig)
@@ -982,7 +994,23 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const taxTotal = cgstTotal + sgstTotal + igstTotal
   const additionalCharges = sumAdditionalChargeItems(chargeItems)
 
-  const preLoyaltyTotal = subTotal - discountTotal + taxTotal - invoiceDiscount + additionalCharges
+  const discountModeAuto = saleDiscount?.mode === 'auto'
+  const saleDiscountBase = subTotal - discountTotal + taxTotal + additionalCharges
+  const autoDiscountCap = computeAutoDiscount(saleDiscount, saleDiscountBase)
+  const effectiveInvoiceDiscount = discountModeAuto
+    ? (autoDiscountApplied ? Math.min(parseMoney(autoDiscountValue || '0'), autoDiscountCap) : 0)
+    : invoiceDiscount
+
+  const applyAutoDiscount = () => {
+    setAutoDiscountApplied(true)
+    setAutoDiscountValue(String(autoDiscountCap))
+  }
+  const changeAutoDiscountValue = (raw: string) => {
+    const next = limitDecimalInput(raw)
+    setAutoDiscountValue(parseMoney(next || '0') > autoDiscountCap ? String(autoDiscountCap) : next)
+  }
+
+  const preLoyaltyTotal = saleDiscountBase - effectiveInvoiceDiscount
   const { discount: loyaltyDiscount } = computeLoyaltyDiscount(
     loyaltySettings,
     selectedParty?.loyalty_points ?? 0,
@@ -1007,6 +1035,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     ? totalAmount
     : sumPaymentSplits(paymentSplits)
   const balance = totalAmount - effectiveAmountPaid
+  const isFullyPaid = effectiveAmountPaid >= totalAmount
 
   const splitAmountValue = (index: number) => {
     if (paymentSplits.length === 1 && !amountPaidEdited) return totalAmount
@@ -1055,6 +1084,15 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       const last = Math.max(0, parseMoney(totalAmount - sumPaymentSplits(others)))
       return [...others, { ...prev[prev.length - 1], amount: last }]
     })
+  }
+
+  const handleFullyPaidToggle = (checked: boolean) => {
+    if (checked) {
+      markFullyPaid()
+      return
+    }
+    setAmountPaidEdited(true)
+    setPaymentSplits((prev) => prev.map((row) => ({ ...row, amount: 0 })))
   }
 
   const applyLoyaltyRedemptionChange = (nextPoints: number) => {
@@ -1140,7 +1178,10 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setIsInterState(invoice.is_inter_state || false)
         setNotes(invoice.notes || '')
         setTerms(invoice.terms || '')
-        setInvoiceDiscount(invoice.invoice_discount ?? invoice.quotation_discount ?? 0)
+        const storedDiscount = invoice.invoice_discount ?? invoice.quotation_discount ?? 0
+        setInvoiceDiscount(storedDiscount)
+        setAutoDiscountApplied(storedDiscount > 0)
+        setAutoDiscountValue(storedDiscount > 0 ? String(storedDiscount) : '')
         setChargeItems(hydrateAdditionalCharges(invoice.additional_charge_items, invoice.additional_charges || 0))
         const loadedPaid = invoice.amount_paid || 0
         const loadedTotal = invoice.total_amount || 0
@@ -1239,7 +1280,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           is_inter_state: isInterState,
           notes,
           terms,
-          quotation_discount: parseMoney(invoiceDiscount),
+          quotation_discount: parseMoney(effectiveInvoiceDiscount),
           additional_charges: parseMoney(additionalCharges),
           additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
           signature,
@@ -1375,7 +1416,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             .filter((split) => split.amount > 0),
           notes,
           terms,
-          invoice_discount: parseMoney(invoiceDiscount),
+          invoice_discount: parseMoney(effectiveInvoiceDiscount),
           additional_charges: parseMoney(additionalCharges),
           additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
           ...( !editId && loyaltyPointsToRedeem > 0
@@ -1445,7 +1486,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       const title = `${docName} - ${parties.find(p => p.id === partyId)?.name || 'Untitled'}`
       const formData = {
         invoiceNumber, partyId, date, paymentTerms, dueDate, isInterState,
-        notes, terms, invoiceDiscount, additionalCharges, additionalChargeItems: chargeItems, autoRoundOff,
+        notes, terms, invoiceDiscount, autoDiscountApplied, autoDiscountValue, additionalCharges, additionalChargeItems: chargeItems, autoRoundOff,
         amountPaid: effectiveAmountPaid, amountPaidEdited, paymentMode, paymentSplits, signature, items
       }
       const res = await apiFetch('/drafts', {
@@ -1478,6 +1519,8 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setNotes(draftData.notes || '')
         setTerms(draftData.terms || '')
         setInvoiceDiscount(draftData.invoiceDiscount || 0)
+        setAutoDiscountApplied(draftData.autoDiscountApplied === true)
+        setAutoDiscountValue(draftData.autoDiscountValue || '')
         setChargeItems(hydrateAdditionalCharges(draftData.additionalChargeItems, draftData.additionalCharges || 0))
         setAutoRoundOff(draftData.autoRoundOff !== undefined ? draftData.autoRoundOff : true)
         const draftSplits = Array.isArray(draftData.paymentSplits) && draftData.paymentSplits.length
@@ -2113,137 +2156,26 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2 space-y-4">
               <CardHeader>
-                <CardTitle>Additional Charges & Discount</CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
-                <div className="space-y-2 min-[420px]:col-span-2">
-                  <Label>Additional Charges</Label>
-                  <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Invoice Discount</Label>
-                  <Input type="number" min="0" step="0.01" value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Number(e.target.value))} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Auto Round Off</Label>
-                  <select
-                    value={autoRoundOff ? 'true' : 'false'}
-                    onChange={(e) => setAutoRoundOff(e.target.value === 'true')}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
-                </div>
-              </CardContent>
-
-              {!isEstimateOnly && (
-                <>
-              <CardHeader>
-                <CardTitle>Payment Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {paymentSplits.map((split, index) => {
-                  const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
-                  return (
-                    <div key={`${split.mode}-${index}`} className="grid grid-cols-1 gap-3 items-end min-[420px]:grid-cols-[1fr_1fr_auto]">
-                      <div className="space-y-2">
-                        <Label>{index === 0 ? 'Payment Method' : `Method ${index + 1}`}</Label>
-                        <select
-                          value={split.mode}
-                          onChange={(e) => updateSplit(index, { mode: e.target.value })}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        >
-                          {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
-                            <option key={method.value} value={method.value}>
-                              {method.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>{index === 0 ? 'Amount Received' : 'Amount'}</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={splitAmountValue(index)}
-                          onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
-                        />
-                      </div>
-                      {paymentSplits.length > 1 ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-10 w-10"
-                          onClick={() => removePaymentSplit(index)}
-                          aria-label="Remove payment method"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      ) : (
-                        <div className="h-10 w-10" />
-                      )}
-                    </div>
-                  )
-                })}
-                <p className="text-xs text-muted-foreground">
-                  {paymentSplits.length === 1
-                    ? isInitialInvestmentMethod(paymentMode)
-                      ? 'Amount received is recorded against Owner\'s Equity and will not affect cash or bank balances.'
-                      : `Amount received is credited to: ${getDepositHint(paymentMode, bankAccounts)} (configure under Cash & Bank → Payment method accounts)`
-                    : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${getDepositHint(split.mode, bankAccounts)}`).join(' · ')}
-                </p>
-                {PAYMENT_METHODS.length > paymentSplits.length && (
-                  <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
-                    <Plus className="h-4 w-4" />
-                    Add payment method
-                  </Button>
-                )}
-                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Balance</Label>
-                    <Input value={formatCurrency(balance)} readOnly className="bg-gray-50" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Mark as Fully Paid</Label>
-                    <Button
-                      type="button"
-                      variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
-                      className="w-full"
-                      onClick={markFullyPaid}
-                    >
-                      {effectiveAmountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-                </>
-              )}
-
-              <CardHeader>
                 <CardTitle>Signature</CardTitle>
               </CardHeader>
               <CardContent>
-                {signature && (
-                  <div className="mb-3">
-                    <img src={signature} alt="Signature" className="max-h-[150px] max-w-full rounded border bg-white object-contain" />
-                  </div>
+                {signature ? (
+                  <img src={signature} alt="Signature" className="max-h-[150px] max-w-full rounded border bg-white object-contain" />
+                ) : (
+                  <canvas
+                    ref={canvasRef}
+                    width={400}
+                    height={150}
+                    className="max-w-full cursor-crosshair touch-none rounded border"
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                  />
                 )}
-                <canvas
-                  ref={canvasRef}
-                  width={400}
-                  height={150}
-                  className="max-w-full cursor-crosshair touch-none rounded border"
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDrawing}
-                />
                 <div className="mt-2 flex gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={clearSignature}>Clear</Button>
                   {businessSignature && signature !== businessSignature && (
@@ -2278,19 +2210,100 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             </Card>
 
             <Card>
+              <CardHeader className="flex-row items-center justify-between space-y-0">
+                <CardTitle>Charges & Discount</CardTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => setChargeItems([...chargeItems, { label: '', amount: 0 }])}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Charge
+                </Button>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 gap-4">
+                {chargeItems.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Additional Charges</Label>
+                    <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} hideAddButton />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>{docName} Discount</Label>
+                  {discountModeAuto ? (
+                    <div className="space-y-1.5">
+                      {autoDiscountEligible(saleDiscount, saleDiscountBase) ? (
+                        autoDiscountApplied ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="text"
+                              inputMode="decimal"
+                              value={autoDiscountValue}
+                              onChange={(e) => changeAutoDiscountValue(e.target.value)}
+                              onBlur={() => setAutoDiscountValue(String(Math.min(parseMoney(autoDiscountValue || '0'), autoDiscountCap)))}
+                              aria-label="Applied discount amount"
+                              className="h-9"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0"
+                              onClick={() => setAutoDiscountApplied(false)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={applyAutoDiscount}
+                            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-green-500 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 transition-colors hover:border-green-600 hover:bg-green-100"
+                          >
+                            <Tag className="h-3.5 w-3.5" />
+                            Apply {formatCurrency(autoDiscountCap)} discount
+                          </button>
+                        )
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No discount available</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {describeAutoDiscount(saleDiscount)}
+                        {autoDiscountApplied ? ` · max ${formatCurrency(autoDiscountCap)}` : ''}
+                      </p>
+                    </div>
+                  ) : (
+                    <Input type="number" min="0" step="0.01" value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Number(e.target.value))} />
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="auto-round-off">Auto Round Off</Label>
+                  <Switch
+                    id="auto-round-off"
+                    checked={autoRoundOff}
+                    onCheckedChange={setAutoRoundOff}
+                  />
+                </div>
+              </CardContent>
               <CardContent className="space-y-3 p-6">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Taxable Amount</span>
-                  <span className="font-medium">{formatCurrency(subTotal - discountTotal)}</span>
+                  <span className="text-gray-600">Subtotal</span>
+                  <span className="font-medium">{formatCurrency(subTotal)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Item Discount</span>
-                  <span className="font-medium text-red-600">-{formatCurrency(discountTotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">{docName} Discount</span>
-                  <span className="font-medium text-red-600">-{formatCurrency(invoiceDiscount)}</span>
-                </div>
+                {discountTotal > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Item Discount</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(discountTotal)}</span>
+                  </div>
+                )}
+                {effectiveInvoiceDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">{docName} Discount</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(effectiveInvoiceDiscount)}</span>
+                  </div>
+                )}
                 {chargeItems.filter((c) => Number(c.amount) > 0).map((charge, index) => (
                   <div key={index} className="flex justify-between text-sm">
                     <span className="text-gray-600">{charge.label.trim() || 'Additional Charge'}</span>
@@ -2328,20 +2341,26 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   </div>
                 )}
                 {isInterState ? (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">IGST</span>
-                    <span className="font-medium">{formatCurrency(igstTotal)}</span>
-                  </div>
+                  igstTotal > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">IGST</span>
+                      <span className="font-medium">{formatCurrency(igstTotal)}</span>
+                    </div>
+                  )
                 ) : (
                   <>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">CGST</span>
-                      <span className="font-medium">{formatCurrency(cgstTotal)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">SGST</span>
-                      <span className="font-medium">{formatCurrency(sgstTotal)}</span>
-                    </div>
+                    {cgstTotal > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">CGST</span>
+                        <span className="font-medium">{formatCurrency(cgstTotal)}</span>
+                      </div>
+                    )}
+                    {sgstTotal > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">SGST</span>
+                        <span className="font-medium">{formatCurrency(sgstTotal)}</span>
+                      </div>
+                    )}
                   </>
                 )}
                 {autoRoundOff && roundOff !== 0 && (
@@ -2357,6 +2376,89 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   </div>
                 </div>
               </CardContent>
+              {!isEstimateOnly && (
+                <>
+                  <CardHeader className="flex-row items-center justify-between space-y-0 pt-0">
+                    <CardTitle>Payment Details</CardTitle>
+                    {PAYMENT_METHODS.length > paymentSplits.length && (
+                      <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
+                        <Plus className="h-4 w-4" />
+                        Split Payment
+                      </Button>
+                    )}
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {paymentSplits.map((split, index) => {
+                      const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
+                      return (
+                        <div key={`${split.mode}-${index}`} className="space-y-3">
+                          <div className="space-y-2">
+                            <Label>{index === 0 ? 'Payment Method' : `Method ${index + 1}`}</Label>
+                            <select
+                              value={split.mode}
+                              onChange={(e) => updateSplit(index, { mode: e.target.value })}
+                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            >
+                              {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
+                                <option key={method.value} value={method.value}>
+                                  {method.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex items-end gap-3">
+                            <div className="flex-1 space-y-2">
+                              <Label>{index === 0 ? 'Amount Received' : 'Amount'}</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={splitAmountValue(index)}
+                                onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
+                              />
+                            </div>
+                            {paymentSplits.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-10 w-10 shrink-0"
+                                onClick={() => removePaymentSplit(index)}
+                                aria-label="Remove payment method"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <p className="text-xs text-muted-foreground">
+                      {paymentSplits.length === 1
+                        ? isInitialInvestmentMethod(paymentMode)
+                          ? 'Amount received is recorded against Owner\'s Equity and will not affect cash or bank balances.'
+                          : `Amount received is credited to: ${getDepositHint(paymentMode, bankAccounts)} (configure under Cash & Bank → Payment method accounts)`
+                        : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${getDepositHint(split.mode, bankAccounts)}`).join(' · ')}
+                    </p>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="fully-paid-toggle">Mark as Fully Paid</Label>
+                        <Switch
+                          id="fully-paid-toggle"
+                          checked={isFullyPaid}
+                          onCheckedChange={handleFullyPaidToggle}
+                        />
+                      </div>
+                      {!isFullyPaid && (
+                        <div className="space-y-2">
+                          <Label>Balance</Label>
+                          <Input value={formatCurrency(balance)} readOnly className="bg-gray-50" />
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </>
+              )}
             </Card>
           </div>
 
