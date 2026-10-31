@@ -154,6 +154,7 @@ export const navItems: NavItem[] = [
     accent: '#c026d3',
     children: [
       { name: 'GST Reports', href: '/gst', icon: Calculator },
+      { name: 'Composition Reports', href: '/gst-reports', icon: Scroll },
       { name: 'E-Invoicing', href: '/e-invoicing', icon: FileCode },
     ],
   },
