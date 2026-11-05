@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { useDiscount } from '@/hooks/useDiscount'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -113,6 +114,7 @@ export default function ProductsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, loading: authLoading } = useAuth()
+  const { isDiscountEnabled } = useDiscount()
   const canUseCameraBarcodeScanner = isSuperAdmin(user?.role)
   const {
     fieldErrors,
@@ -850,7 +852,7 @@ export default function ProductsPage() {
       const res = await apiFetch('/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newItem)
+        body: JSON.stringify({ ...newItem, discount: isDiscountEnabled ? newItem.discount : '' })
       })
       if (res.ok) {
         setShowCreateModal(false)
@@ -1215,21 +1217,23 @@ export default function ProductsPage() {
                       )}
                     </div>
                     
-                    <div className="space-y-2">
-                      <Label htmlFor="discount">Discount on Sale Price</Label>
-                      <Input
-                        id="discount"
-                        type="text"
-                        value={newItem.discount}
-                        onChange={(e) => updateNewItem({ discount: e.target.value }, 'discount')}
-                        placeholder="10% or 100"
-                        className={cn(fieldErrors.discount && 'border-red-500')}
-                      />
-                      <FieldError message={fieldErrors.discount} />
-                      <p className="text-xs text-gray-500">
-                        Enter percentage (e.g., 10%) for percentage discount, or amount (e.g., 100) for fixed amount discount
-                      </p>
-                    </div>
+                    {isDiscountEnabled && (
+                      <div className="space-y-2">
+                        <Label htmlFor="discount">Discount on Sale Price</Label>
+                        <Input
+                          id="discount"
+                          type="text"
+                          value={newItem.discount}
+                          onChange={(e) => updateNewItem({ discount: e.target.value }, 'discount')}
+                          placeholder="10% or 100"
+                          className={cn(fieldErrors.discount && 'border-red-500')}
+                        />
+                        <FieldError message={fieldErrors.discount} />
+                        <p className="text-xs text-gray-500">
+                          Enter percentage (e.g., 10%) for percentage discount, or amount (e.g., 100) for fixed amount discount
+                        </p>
+                      </div>
+                    )}
                   </TabsContent>
 
                   <TabsContent value="settings" className="space-y-4 mt-4">

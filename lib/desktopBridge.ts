@@ -61,6 +61,7 @@ type DesktopAppBridge = {
   AppVersion?: () => Promise<string>
   CheckForUpdates?: () => Promise<DesktopUpdateCheckResult>
   DownloadAndInstallUpdate?: () => Promise<void>
+  SetForceUpdate?: (enabled: boolean) => Promise<void>
 }
 
 type TauriCore = {
@@ -155,6 +156,7 @@ function getDesktopApp(): DesktopAppBridge | null {
       AppVersion: () => invoke('app_version') as Promise<string>,
       CheckForUpdates: () => invoke('check_for_updates') as Promise<DesktopUpdateCheckResult>,
       DownloadAndInstallUpdate: () => invoke('download_and_install_update') as Promise<void>,
+      SetForceUpdate: (enabled) => invoke('set_force_update', { enabled }) as Promise<void>,
     }
   }
 
@@ -310,6 +312,17 @@ export async function downloadAndInstallDesktopUpdate(): Promise<boolean> {
   if (!app?.DownloadAndInstallUpdate) return false
   await app.DownloadAndInstallUpdate()
   return true
+}
+
+/** Tell the native shell whether the active store forces silent auto-updates. */
+export async function setDesktopForceUpdate(enabled: boolean): Promise<void> {
+  const app = getDesktopApp()
+  if (!app?.SetForceUpdate) return
+  try {
+    await app.SetForceUpdate(enabled)
+  } catch {
+    // Older shells may lack the command — the manual startup prompt still works.
+  }
 }
 
 /** Native shell asks the UI to retry pending POS uploads while the app is open. */

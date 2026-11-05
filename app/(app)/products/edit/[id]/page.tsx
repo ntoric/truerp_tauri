@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { useDiscount } from '@/hooks/useDiscount'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageHeader from '@/components/layout/PageHeader'
 import PageActionBar from '@/components/layout/PageActionBar'
@@ -65,6 +66,7 @@ export default function EditProductPage() {
   const params = useParams()
   const router = useRouter()
   const { user } = useAuth()
+  const { isDiscountEnabled } = useDiscount()
   const productId = params.id as string
 
   const {
@@ -293,7 +295,7 @@ export default function EditProductPage() {
       const res = await apiFetch(`/products/${productId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({ ...formData, discount: isDiscountEnabled ? formData.discount : '' })
       })
 
       if (res.ok) {
@@ -660,20 +662,22 @@ export default function EditProductPage() {
                     )}
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="discount">Discount on Sale Price</Label>
-                    <Input
-                      id="discount"
-                      type="text"
-                      value={formData.discount}
-                      onChange={(e) => handleChange('discount', e.target.value)}
-                      placeholder="10% or 100"
-                    />
-                    <FieldError message={fieldErrors.discount} />
-                    <p className="text-xs text-gray-500">
-                      Enter percentage (e.g., 10%) for percentage discount, or amount (e.g., 100) for fixed amount discount
-                    </p>
-                  </div>
+                  {isDiscountEnabled && (
+                    <div className="space-y-2">
+                      <Label htmlFor="discount">Discount on Sale Price</Label>
+                      <Input
+                        id="discount"
+                        type="text"
+                        value={formData.discount}
+                        onChange={(e) => handleChange('discount', e.target.value)}
+                        placeholder="10% or 100"
+                      />
+                      <FieldError message={fieldErrors.discount} />
+                      <p className="text-xs text-gray-500">
+                        Enter percentage (e.g., 10%) for percentage discount, or amount (e.g., 100) for fixed amount discount
+                      </p>
+                    </div>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="settings" className="space-y-4 mt-4">

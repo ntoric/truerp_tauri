@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
+import { useDiscount } from '@/hooks/useDiscount'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, type StatusBadgeTone } from '@/components/ui/badge'
@@ -70,6 +71,7 @@ export default function PaymentsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { isDiscountEnabled } = useDiscount()
   const {
     fieldErrors,
     clearErrors,
@@ -274,7 +276,7 @@ export default function PaymentsPage() {
         body: JSON.stringify({
           party_id: formData.party_id,
           amount_received: amountReceived,
-          payment_in_discount: discount,
+          payment_in_discount: isDiscountEnabled ? discount : 0,
           payment_in_number: formData.payment_in_number,
           mode: formData.mode,
           date: new Date(formData.date).toISOString(),
@@ -433,21 +435,23 @@ export default function PaymentsPage() {
                   />
                   <FieldError message={fieldErrors.amount_received} />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="payment_in_discount">Payment In Discount</Label>
-                  <Input
-                    id="payment_in_discount"
-                    type="number"
-                    step="0.01"
-                    value={formData.payment_in_discount}
-                    onChange={(e) => {
-                      clearFieldError('payment_in_discount')
-                      setFormData({ ...formData, payment_in_discount: e.target.value })
-                    }}
-                    className={cn(fieldErrors.payment_in_discount && 'border-red-500')}
-                  />
-                  <FieldError message={fieldErrors.payment_in_discount} />
-                </div>
+                {isDiscountEnabled && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="payment_in_discount">Payment In Discount</Label>
+                    <Input
+                      id="payment_in_discount"
+                      type="number"
+                      step="0.01"
+                      value={formData.payment_in_discount}
+                      onChange={(e) => {
+                        clearFieldError('payment_in_discount')
+                        setFormData({ ...formData, payment_in_discount: e.target.value })
+                      }}
+                      className={cn(fieldErrors.payment_in_discount && 'border-red-500')}
+                    />
+                    <FieldError message={fieldErrors.payment_in_discount} />
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <Label htmlFor="payment_in_number">Payment In Number</Label>
                   <Input
@@ -636,7 +640,7 @@ export default function PaymentsPage() {
                       <th className="pb-3 font-medium">Payment ID</th>
                       <th className="pb-3 font-medium">Party Name</th>
                       <th className="pb-3 font-medium">Amount Received</th>
-                      <th className="pb-3 font-medium">Payment In Discount</th>
+                      {isDiscountEnabled && <th className="pb-3 font-medium">Payment In Discount</th>}
                       <th className="pb-3 font-medium">Payment Mode</th>
                       <th className="pb-3 font-medium">Payment In Number</th>
                       <th className="pb-3 font-medium">Notes</th>
@@ -663,7 +667,9 @@ export default function PaymentsPage() {
                         </td>
                         <td className="py-3 font-medium text-gray-900">{getPartyName(p)}</td>
                         <td className="py-3 font-medium text-gray-900">{formatCurrency(p.amount_received)}</td>
-                        <td className="py-3 font-medium text-gray-900">{formatCurrency(p.payment_in_discount)}</td>
+                        {isDiscountEnabled && (
+                          <td className="py-3 font-medium text-gray-900">{formatCurrency(p.payment_in_discount)}</td>
+                        )}
                         <td className="py-3">{getModeIcon(p.mode)}</td>
                         <td className="py-3 text-gray-600">{p.payment_in_number || '-'}</td>
                         <td className="py-3 text-gray-600">{p.notes || '-'}</td>
@@ -689,7 +695,7 @@ export default function PaymentsPage() {
                     ))}
                     {payments.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="py-8 text-center text-gray-500">
+                        <td colSpan={isDiscountEnabled ? 10 : 9} className="py-8 text-center text-gray-500">
                           {hasActiveFilters ? 'No payments match your filters' : 'No payments recorded yet'}
                         </td>
                       </tr>

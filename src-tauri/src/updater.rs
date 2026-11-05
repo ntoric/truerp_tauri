@@ -1,12 +1,18 @@
 use crate::processes;
 use serde::Serialize;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 pub const UPDATE_PROGRESS_EVENT: &str = "desktop-update-progress";
+
+/// Set by the web UI when the active store has "force update" enabled. While
+/// set, the startup check stays quiet because the UI installs the update itself.
+static FORCE_UPDATE: AtomicBool = AtomicBool::new(false);
+/// Guards against two install flows racing (startup prompt vs. forced install).
+static UPDATE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,6 +81,12 @@ pub fn app_version(app: AppHandle) -> String {
     current_version(&app)
 }
 
+/// The web UI reports whether the active store forces automatic updates.
+#[tauri::command]
+pub fn set_force_update(enabled: bool) {
+    FORCE_UPDATE.store(enabled, Ordering::Relaxed);
+}
+
 #[tauri::command]
 pub async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, String> {
     let current = current_version(&app);
@@ -98,13 +110,25 @@ pub async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, Stri
 
 #[tauri::command]
 pub async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
-    let Some(update) = fetch_update(&app).await? else {
+    if UPDATE_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+        log::info!("update install already in progress; ignoring duplicate request");
+        return Ok(());
+    }
+    let result = run_download_and_install(&app).await;
+    if result.is_err() {
+        UPDATE_IN_PROGRESS.store(false, Ordering::SeqCst);
+    }
+    result
+}
+
+async fn run_download_and_install<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let Some(update) = fetch_update(app).await? else {
         return Err("No update available".into());
     };
 
     log::info!(
         "downloading TruERP update {} -> {}",
-        current_version(&app),
+        current_version(app),
         update.version
     );
 
@@ -183,6 +207,12 @@ pub fn spawn_startup_check(app: AppHandle) {
             return;
         };
 
+        // A force-update store installs silently from the web UI — and any
+        // install already running — so don't double-prompt here.
+        if FORCE_UPDATE.load(Ordering::Relaxed) || UPDATE_IN_PROGRESS.load(Ordering::Relaxed) {
+            return;
+        }
+
         let version = update.version.clone();
         let notes = update
             .body
@@ -208,6 +238,11 @@ pub fn spawn_startup_check(app: AppHandle) {
             return;
         }
 
+        // The web UI may have started a forced install while the prompt was up.
+        if UPDATE_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
         if let Err(err) = update
             .download_and_install(
                 |_, _| {},
@@ -217,6 +252,7 @@ pub fn spawn_startup_check(app: AppHandle) {
             )
             .await
         {
+            UPDATE_IN_PROGRESS.store(false, Ordering::SeqCst);
             log::error!("failed to install update: {err}");
             app.dialog()
                 .message(format!("Could not install the update:\n{err}"))

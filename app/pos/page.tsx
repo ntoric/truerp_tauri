@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
+import { useEffect, useState, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { apiFetch } from '@/hooks/useAuth'
+import { usePageFeatures } from '@/hooks/usePageFeatures'
 import { useOfflineSync } from '@/hooks/useOfflineSync'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,7 +17,7 @@ import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
 import { computeLoyaltyDiscount, estimatePointsEarned } from '@/lib/loyalty'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
-import { Gift } from 'lucide-react'
+import { Gift, Loader2, UserPlus } from 'lucide-react'
 import { useWeighingScale } from '@/hooks/useWeighingScale'
 import WeighingScalePanel from '@/components/WeighingScalePanel'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
@@ -71,6 +72,7 @@ interface Product {
   sale_price: number
   sale_price_with_tax?: boolean
   purchase_price?: number
+  mrp?: number
   stock_qty: number
   unit: string
   tax_rate: number
@@ -373,6 +375,8 @@ export default function POSPage() {
   ])
   const [activeTabId, setActiveTabId] = useState('tab-1')
   const [searchTerm, setSearchTerm] = useState('')
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
+  const [searchHighlight, setSearchHighlight] = useState(0)
   const barcodeInputRef = useRef<BarcodeScannerInputHandle>(null)
   const tabListRef = useRef<HTMLDivElement>(null)
   const [canScrollTabsLeft, setCanScrollTabsLeft] = useState(false)
@@ -397,12 +401,14 @@ export default function POSPage() {
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
   const [saleDiscount, setSaleDiscount] = useState<SaleDiscountSettings | null>(null)
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0)
+  const [redeemPtsOpen, setRedeemPtsOpen] = useState(false)
   const [editingQty, setEditingQty] = useState<{ productId: string; value: string } | null>(null)
   const qtyEditCancelledRef = useRef(false)
   const prevLoyaltyDiscountRef = useRef(0)
   const checkoutInFlightRef = useRef(false)
   const { accounts: bankAccounts } = useBankAccounts()
   const { getDepositHint } = usePaymentMethodMappings()
+  const { isPageEnabled } = usePageFeatures()
   const [mounted, setMounted] = useState(false)
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
@@ -441,6 +447,7 @@ export default function POSPage() {
 
   useEffect(() => {
     setLoyaltyPointsToRedeem(0)
+    setRedeemPtsOpen(false)
     prevLoyaltyDiscountRef.current = 0
   }, [activeTab.selectedParty?.id])
 
@@ -468,7 +475,28 @@ export default function POSPage() {
     }
     const cached = await offlineStorage.getMeta<LoyaltySettings>(POS_META_KEYS.LOYALTY)
     if (cached) setLoyaltySettings(cached)
+    // Prime the card→customer map so scans still resolve while offline.
+    void loadLoyaltyCardMap()
   }
+
+  /** card_number → party_id map cached for offline lookups. */
+  const loadLoyaltyCardMap = async () => {
+    try {
+      const res = await apiFetch('/loyalty/cards', { timeoutMs: 5000 })
+      if (!res.ok) return
+      const data = await res.json()
+      const map: Record<string, string> = {}
+      for (const card of data.cards || []) {
+        if (card.party_id) map[card.card_number] = card.party_id
+      }
+      await offlineStorage.setMeta(POS_META_KEYS.LOYALTY_CARDS, map)
+    } catch {
+      /* offline — keep whatever is cached */
+    }
+  }
+
+  const normalizeCardNumber = (raw: string) =>
+    raw.trim().toUpperCase().replace(/\s+/g, '-').replace(/-+/g, '-')
 
   const loadSaleDiscountSettings = async () => {
     try {
@@ -1021,9 +1049,13 @@ export default function POSPage() {
     return Math.min(cartTotal, raw)
   }
 
-  const autoDiscountMode = saleDiscount?.mode === 'auto'
+  // Off when the Discount page is hidden in Pages & Menus or the store's own
+  // discount switch is off.
+  const discountsEnabled = saleDiscount?.is_enabled !== false && isPageEnabled('/discount')
+  const autoDiscountMode = discountsEnabled && saleDiscount?.mode === 'auto'
 
   const getSaleDiscount = () => {
+    if (!discountsEnabled) return 0
     if (autoDiscountMode) {
       if (!activeTab.autoDiscountApplied) return 0
       const cap = computeAutoDiscount(saleDiscount, getCartTotal() + getAdditionalCharges())
@@ -1414,6 +1446,333 @@ export default function POSPage() {
     setShowCustomerSuggestions(false)
     setIsEditingCustomer(false)
     setCustomerPanelOpen(false)
+    setCardNumber('')
+    setLinkCardCandidate(null)
+  }
+
+  // Loyalty card scan/type → resolve to linked customer
+  const [cardNumber, setCardNumber] = useState('')
+  const [cardLookupBusy, setCardLookupBusy] = useState(false)
+  const [linkCardCandidate, setLinkCardCandidate] = useState<{ id: string; card_number: string } | null>(null)
+
+  /** Offline path — resolve the card through the cached card→customer map. */
+  const lookupLoyaltyCardOffline = async (num: string): Promise<boolean> => {
+    const normalized = normalizeCardNumber(num)
+    const candidates = [normalized]
+    // Scanner may drop the dash — also try inserting one before the digit run.
+    if (!normalized.includes('-')) {
+      const m = normalized.match(/^(.*?)(\d+)$/)
+      if (m) candidates.push(`${m[1]}-${m[2]}`)
+    }
+    const map =
+      (await offlineStorage.getMeta<Record<string, string>>(POS_META_KEYS.LOYALTY_CARDS)) || {}
+    const partyId = candidates.map((c) => map[c]).find(Boolean)
+    if (!partyId) return false
+    let party =
+      parties.find((p) => p.id === partyId) ||
+      (await offlineStorage.getCachedParties()).find((p) => p.id === partyId)
+    if (!party) return false
+    selectCustomer(party)
+    notifySuccess(`Card scanned → ${party.name} (offline)`)
+    setCardNumber('')
+    return true
+  }
+
+  const lookupLoyaltyCard = async () => {
+    const num = cardNumber.trim()
+    if (!num) return
+    setCardLookupBusy(true)
+    setLinkCardCandidate(null)
+    try {
+      // 1) Try as a loyalty card number first.
+      if (/^[0-9\s-]{4,}$/.test(num)) {
+        try {
+          const res = await apiFetch(`/loyalty/cards/lookup?number=${encodeURIComponent(num)}`, {
+            timeoutMs: 5000,
+          })
+          const data = await res.json().catch(() => ({}))
+          if (res.ok) {
+            if (data.party) {
+              selectCustomer(data.party as Party)
+              notifySuccess(`Card ${data.card.card_number} → ${data.party.name}`)
+              setCardNumber('')
+              return
+            }
+            if (activeTab.selectedParty) {
+              // Card exists but isn't linked — offer to link it to the selected customer.
+              setLinkCardCandidate({ id: data.card.id, card_number: data.card.card_number })
+            } else {
+              notifyError(`Card ${data.card.card_number} is not linked to a customer`)
+            }
+            return
+          }
+          // 404 → fall through to customer search below.
+        } catch {
+          // Network failure → cached card map, then fall through to customer search.
+          if (await lookupLoyaltyCardOffline(num)) return
+        }
+      }
+
+      // 2) Mobile/name match — selects the customer if one exists.
+      const lq = num.toLowerCase()
+      const match =
+        parties.find((p) => p.phone === num) ||
+        parties.find((p) => p.phone?.includes(num)) ||
+        parties.find((p) => p.name?.toLowerCase() === lq) ||
+        parties.find((p) => p.name?.toLowerCase().includes(lq))
+      if (match) {
+        selectCustomer(match)
+        notifySuccess(`${match.name} selected`)
+        setCardNumber('')
+      } else {
+        notifyError('No card or customer found')
+      }
+    } finally {
+      setCardLookupBusy(false)
+    }
+  }
+
+  const linkCardToCustomer = async () => {
+    if (!linkCardCandidate || !activeTab.selectedParty) return
+    try {
+      const res = await apiFetch(`/loyalty/cards/${linkCardCandidate.id}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({ party_id: activeTab.selectedParty.id }),
+      })
+      if (res.ok) {
+        notifySuccess(`Card ${linkCardCandidate.card_number} linked to ${activeTab.selectedParty.name}`)
+        setLinkCardCandidate(null)
+        setCardNumber('')
+      } else {
+        notifyError('Failed to link card')
+      }
+    } catch {
+      notifyError('Failed to link card')
+    }
+  }
+
+  // Quick customer search — card number or mobile, from the cart header icon.
+  const [quickSearchOpen, setQuickSearchOpen] = useState(false)
+  const [quickQuery, setQuickQuery] = useState('')
+  const [quickBusy, setQuickBusy] = useState(false)
+  const [quickMatches, setQuickMatches] = useState<Party[]>([])
+  const [quickCardUnlinked, setQuickCardUnlinked] = useState<string | null>(null)
+  const [quickSearched, setQuickSearched] = useState(false)
+
+  const doQuickSearch = async (raw: string, autoSelect = false) => {
+    const q = raw.trim()
+    if (!q) {
+      setQuickMatches([])
+      setQuickSearched(false)
+      setQuickCardUnlinked(null)
+      return
+    }
+    setQuickBusy(true)
+    setQuickCardUnlinked(null)
+    setQuickSearched(true)
+    try {
+      const matches: Party[] = []
+      const seen = new Set<string>()
+      const push = (p: Party | null | undefined) => {
+        if (p?.id && !seen.has(p.id)) {
+          seen.add(p.id)
+          matches.push(p)
+        }
+      }
+
+      const isNumericish = /^[0-9\s-]{4,}$/.test(q)
+
+      // 1) Loyalty card lookup when the input could be a card number.
+      if (isNumericish && loyaltySettings?.is_enabled) {
+        try {
+          const res = await apiFetch(
+            `/loyalty/cards/lookup?number=${encodeURIComponent(q)}`,
+            { timeoutMs: 5000 }
+          )
+          const data = await res.json().catch(() => ({}))
+          if (res.ok) {
+            if (data.party) push(data.party as Party)
+            else setQuickCardUnlinked(data.card?.card_number || normalizeCardNumber(q))
+          }
+        } catch {
+          // Offline → resolve via the cached card→customer map.
+          const normalized = normalizeCardNumber(q)
+          const map =
+            (await offlineStorage.getMeta<Record<string, string>>(POS_META_KEYS.LOYALTY_CARDS)) || {}
+          const candidates = [normalized]
+          if (!normalized.includes('-')) {
+            const m = normalized.match(/^(.*?)(\d+)$/)
+            if (m) candidates.push(`${m[1]}-${m[2]}`)
+          }
+          const pid = candidates.map((c) => map[c]).find(Boolean)
+          if (pid) {
+            const p =
+              parties.find((x) => x.id === pid) ||
+              (await offlineStorage.getCachedParties()).find((x) => x.id === pid)
+            push(p)
+          }
+        }
+      }
+
+      // 2) Mobile/name matches from the loaded parties list (top 5).
+      const lq = q.toLowerCase()
+      parties
+        .filter((p) => p.phone?.includes(q) || p.name?.toLowerCase().includes(lq))
+        .slice(0, 5)
+        .forEach(push)
+
+      setQuickMatches(matches)
+      // Enter pressed → pick the first (often only) match directly.
+      if (autoSelect && matches.length > 0) {
+        pickQuickResult(matches[0])
+      }
+    } finally {
+      setQuickBusy(false)
+    }
+  }
+
+  const quickSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const runQuickSearch = () => doQuickSearch(quickQuery, true)
+
+  // Live search-as-you-type — debounced so card lookups don't fire per keystroke.
+  const handleQuickQuery = (v: string) => {
+    setQuickQuery(v)
+    if (quickSearchTimer.current) clearTimeout(quickSearchTimer.current)
+    if (!v.trim()) {
+      setQuickMatches([])
+      setQuickSearched(false)
+      setQuickCardUnlinked(null)
+      return
+    }
+    quickSearchTimer.current = setTimeout(() => doQuickSearch(v), 300)
+  }
+
+  const pickQuickResult = (party: Party) => {
+    selectCustomer(party)
+    setQuickQuery('')
+    setQuickMatches([])
+    setQuickSearched(false)
+    setQuickSearchOpen(false)
+  }
+
+  const startAddFromQuick = () => {
+    // Pre-fill the customer form — digits go to phone, text to name.
+    const q = quickQuery.trim()
+    if (/^\d+$/.test(q)) {
+      setCustomerPhone(q)
+      setCustomerName('')
+    } else {
+      setCustomerName(q)
+      setCustomerPhone('')
+    }
+    setIsEditingCustomer(true)
+    setCustomerPanelOpen(true)
+    setQuickSearchOpen(false)
+  }
+
+  // "Add & link card" modal — creates the customer and links a loyalty card.
+  const [linkModalOpen, setLinkModalOpen] = useState(false)
+  const [linkCardInput, setLinkCardInput] = useState('')
+  const [linkNameInput, setLinkNameInput] = useState('')
+  const [linkPhoneInput, setLinkPhoneInput] = useState('')
+  const [linkModalError, setLinkModalError] = useState('')
+  const [linkModalBusy, setLinkModalBusy] = useState(false)
+  // Inline confirm — shown when the entered mobile already belongs to a customer.
+  const [linkAsk, setLinkAsk] = useState<{ party: Party; cardId: string | null; cardNum: string | null } | null>(null)
+
+  const finishLinkFlow = (party: Party) => {
+    selectCustomer(party)
+    setLinkAsk(null)
+    setLinkModalOpen(false)
+  }
+
+  const linkCardToParty = async (cardId: string, cardNum: string, party: Party) => {
+    const res = await apiFetch(`/loyalty/cards/${cardId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ party_id: party.id }),
+    })
+    if (res.ok) notifySuccess(`Card ${cardNum} linked to ${party.name}`)
+    else notifyError('Failed to link card')
+    finishLinkFlow(party)
+  }
+
+  const submitLinkCustomer = async () => {
+    const phone = linkPhoneInput.trim()
+    if (!/^[0-9+\-\s]{6,15}$/.test(phone)) {
+      setLinkModalError('Mobile number is required')
+      return
+    }
+    setLinkModalBusy(true)
+    setLinkModalError('')
+    try {
+      // Validate the card first — it must exist as a generated card.
+      let cardId: string | null = null
+      let cardNum: string | null = null
+      const rawCard = linkCardInput.trim()
+      if (rawCard) {
+        if (!/^[0-9\s-]{3,}$/.test(rawCard)) {
+          setLinkModalError('Card number can only contain digits')
+          return
+        }
+        const lr = await apiFetch(
+          `/loyalty/cards/lookup?number=${encodeURIComponent(rawCard)}`,
+          { timeoutMs: 5000 }
+        )
+        const ld = await lr.json().catch(() => ({}))
+        if (!lr.ok || !ld.card?.id) {
+          setLinkModalError(`Card ${rawCard} not found`)
+          return
+        }
+        if (ld.party) {
+          setLinkModalError(`Card ${ld.card.card_number} is already linked to ${ld.party.name}`)
+          return
+        }
+        cardId = ld.card.id
+        cardNum = ld.card.card_number
+      }
+
+      // Customer already exists → ask before linking instead of duplicating.
+      const existing = parties.find((p) => p.phone === phone)
+      if (existing) {
+        setLinkAsk({ party: existing, cardId, cardNum })
+        return
+      }
+
+      let party: Party | undefined
+      {
+        const res = await apiFetch('/parties', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: linkNameInput.trim() || phone,
+            phone,
+            party_type: 'customer',
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          setLinkModalError(data.error || 'Failed to create customer')
+          return
+        }
+        party = (data.id ? data : data.party) as Party
+        setParties((prev) => [party as Party, ...prev])
+      }
+
+      if (cardId && cardNum) {
+        await apiFetch(`/loyalty/cards/${cardId}/assign`, {
+          method: 'POST',
+          body: JSON.stringify({ party_id: party.id }),
+        })
+        notifySuccess(`Card ${cardNum} linked to ${party.name}`)
+      }
+
+      notifySuccess(`${party.name} added`)
+      finishLinkFlow(party as Party)
+    } catch {
+      setLinkModalError('Something went wrong')
+    } finally {
+      setLinkModalBusy(false)
+    }
   }
 
   const cancelEditingCustomer = () => {
@@ -1666,6 +2025,32 @@ export default function POSPage() {
     p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.item_code?.toLowerCase().includes(searchTerm.toLowerCase()))
   )
+  const searchSuggestions = filteredProducts.slice(0, 12)
+
+  const selectSearchSuggestion = (product: Product) => {
+    addToCart(product)
+    setSearchTerm('')
+    setSearchHighlight(0)
+    setSearchDropdownOpen(false)
+  }
+
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSearchDropdownOpen(true)
+      setSearchHighlight((i) => Math.min(i + 1, searchSuggestions.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSearchHighlight((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      if (!searchDropdownOpen) return
+      e.preventDefault()
+      const product = searchSuggestions[searchHighlight] ?? searchSuggestions[0]
+      if (product) selectSearchSuggestion(product)
+    } else if (e.key === 'Escape') {
+      setSearchDropdownOpen(false)
+    }
+  }
 
   if (!mounted) {
     return (
@@ -1923,8 +2308,58 @@ export default function POSPage() {
                   placeholder="Search products..."
                   className="h-7 pl-8 text-xs"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value)
+                    setSearchHighlight(0)
+                    setSearchDropdownOpen(true)
+                  }}
+                  onFocus={() => setSearchDropdownOpen(true)}
+                  onBlur={() => setSearchDropdownOpen(false)}
+                  onKeyDown={handleSearchKeyDown}
                 />
+                {searchDropdownOpen && (
+                  <div className="absolute right-0 top-full z-50 mt-1 w-[22rem] max-w-[92vw] overflow-hidden rounded-md border bg-white shadow-lg">
+                    <div className="max-h-80 overflow-y-auto p-1">
+                      {searchSuggestions.length === 0 ? (
+                        <p className="px-2 py-4 text-center text-xs text-gray-500">No products found</p>
+                      ) : (
+                        searchSuggestions.map((product, i) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onMouseEnter={() => setSearchHighlight(i)}
+                            onClick={() => selectSearchSuggestion(product)}
+                            className={`flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left ${
+                              i === searchHighlight ? 'bg-blue-50' : 'hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-semibold text-gray-900">{product.name}</p>
+                              {(product.sku || product.item_code) && (
+                                <p className="truncate text-[10px] text-gray-500">
+                                  {product.sku || product.item_code}
+                                </p>
+                              )}
+                            </div>
+                            <div className="shrink-0 space-y-0.5 text-right text-[10px] leading-tight text-gray-500">
+                              <p>
+                                MRP <span className="font-medium text-gray-800">{formatCurrency(Number(product.mrp || 0))}</span>
+                                {' · '}
+                                Sale <span className="font-semibold text-blue-600">{formatCurrency(product.sale_price)}</span>
+                              </p>
+                              <p>
+                                Purchase <span className="font-medium text-gray-800">{formatCurrency(Number(product.purchase_price || 0))}</span>
+                                {' · '}
+                                Stock <span className={Number(product.stock_qty || 0) <= 0 ? 'font-medium text-red-500' : 'font-medium text-gray-800'}>{formatQty(product.stock_qty)}</span>
+                              </p>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -2024,6 +2459,34 @@ export default function POSPage() {
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => setQuickSearchOpen((v) => !v)}
+                className={`h-7 w-7 p-0 ${quickSearchOpen ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
+                aria-label={loyaltySettings?.is_enabled ? 'Search customer by card or mobile' : 'Search customer by mobile or name'}
+                title={loyaltySettings?.is_enabled ? 'Search by loyalty card / mobile' : 'Search by mobile / name'}
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+              {loyaltySettings?.is_enabled && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setLinkCardInput('')
+                    setLinkNameInput('')
+                    setLinkPhoneInput('')
+                    setLinkModalError('')
+                    setLinkModalOpen(true)
+                  }}
+                  className="h-7 w-7 p-0 text-gray-600"
+                  aria-label="Add customer & link loyalty card"
+                  title="Add customer & link loyalty card"
+                >
+                  <UserPlus className="h-4 w-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   updateTab(activeTabId, { cart: [] })
                   setReceivedEdited(false)
@@ -2045,6 +2508,63 @@ export default function POSPage() {
               </Button>
             </div>
           </div>
+
+          {/* Quick search — card no. / mobile, toggled from header icon */}
+          {quickSearchOpen && (
+            <div className="p-2 border-b space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <Input
+                  autoFocus
+                  placeholder={loyaltySettings?.is_enabled ? 'Loyalty card no. or mobile…' : 'Mobile or Name'}
+                  value={quickQuery}
+                  onChange={(e) => handleQuickQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      runQuickSearch()
+                    }
+                  }}
+                  className="h-8 text-xs"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={runQuickSearch}
+                  disabled={quickBusy || !quickQuery.trim()}
+                  className="h-8 px-2 text-xs"
+                >
+                  {quickBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Find'}
+                </Button>
+              </div>
+              {quickMatches.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => pickQuickResult(p)}
+                  className="w-full rounded border px-2 py-1.5 text-left hover:border-blue-300 hover:bg-blue-50"
+                >
+                  <p className="text-xs font-medium text-gray-900">{p.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {p.phone || '—'}
+                    {loyaltySettings?.is_enabled ? ` · ${(p.loyalty_points ?? 0).toLocaleString()} pts` : ''}
+                  </p>
+                </button>
+              ))}
+              {quickCardUnlinked && quickMatches.length === 0 && (
+                <p className="text-xs text-amber-700">
+                  Card {quickCardUnlinked} exists but isn't linked to a customer
+                </p>
+              )}
+              {quickSearched && !quickBusy && quickMatches.length === 0 && !quickCardUnlinked && (
+                <div className="flex items-center justify-between rounded border border-dashed px-2 py-1.5">
+                  <span className="text-xs text-gray-500">No customer found for “{quickQuery.trim()}”</span>
+                  <Button size="sm" variant="outline" onClick={startAddFromQuick} className="h-6 px-2 text-xs">
+                    <Plus className="mr-1 h-3 w-3" /> Add
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Customer Panel - toggled from header icon */}
           {customerPanelOpen && (
@@ -2084,6 +2604,43 @@ export default function POSPage() {
                   <p className="font-medium text-gray-900 text-xs">{walkInCustomer.name}</p>
                   <p className="text-xs text-gray-500">Default customer</p>
                 </button>
+              )}
+              {loyaltySettings?.is_enabled && (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      placeholder="Loyalty card no. (e.g. 000142)"
+                      value={cardNumber}
+                      onChange={(e) => setCardNumber(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          lookupLoyaltyCard()
+                        }
+                      }}
+                      className="h-8 text-xs font-mono"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={lookupLoyaltyCard}
+                      disabled={cardLookupBusy || !cardNumber.trim()}
+                      className="h-8 px-2 text-xs"
+                    >
+                      {cardLookupBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Scan'}
+                    </Button>
+                  </div>
+                  {linkCardCandidate && activeTab.selectedParty && (
+                    <div className="flex items-center justify-between rounded border border-amber-200 bg-amber-50 px-2 py-1.5">
+                      <span className="text-xs text-amber-800">
+                        Link {linkCardCandidate.card_number} to {activeTab.selectedParty.name}?
+                      </span>
+                      <Button size="sm" onClick={linkCardToCustomer} className="h-6 px-2 text-xs">
+                        Link
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
               <Input
                 placeholder="Customer name"
@@ -2398,6 +2955,7 @@ export default function POSPage() {
                     <span className="text-blue-600">{formatCurrency(getCartTotal())}</span>
                   </div>
                   <div className="flex items-center gap-2">
+                    {discountsEnabled && (
                     <div className="flex min-w-0 flex-1 items-center gap-1">
                       <span className="text-xs text-gray-600 shrink-0">Discount</span>
                       {autoDiscountMode ? (
@@ -2475,7 +3033,8 @@ export default function POSPage() {
                         </div>
                       )}
                     </div>
-                    <div className="flex min-w-0 flex-1 items-center gap-1 border-l border-gray-200 pl-2">
+                    )}
+                    <div className={`flex min-w-0 flex-1 items-center gap-1 ${discountsEnabled ? 'border-l border-gray-200 pl-2' : ''}`}>
                       <span className="text-xs text-gray-600 shrink-0">Charges</span>
                       <Popover modal={false}>
                         <PopoverTrigger asChild>
@@ -2527,19 +3086,48 @@ export default function POSPage() {
                   )}
                   {loyaltySettings?.is_enabled && activeTab.selectedParty && (
                     <div className="rounded border border-amber-100 bg-amber-50/80 p-2 space-y-1">
-                      <div className="flex items-center gap-1 text-[10px] font-medium text-amber-900">
-                        <Gift className="h-3 w-3" />
-                        {(activeTab.selectedParty.loyalty_points ?? 0).toLocaleString()} pts
+                      <div className="flex items-center justify-between gap-1 text-[10px] font-medium text-amber-900">
+                        <span className="flex items-center gap-1">
+                          <Gift className="h-3 w-3" />
+                          {(activeTab.selectedParty.loyalty_points ?? 0).toLocaleString()} pts
+                        </span>
+                        {redeemPtsOpen ? (
+                          <button
+                            type="button"
+                            aria-label="Close redeem"
+                            onClick={() => {
+                              setRedeemPtsOpen(false)
+                              applyPosLoyaltyChange(0)
+                            }}
+                            className="rounded p-0.5 text-amber-700 hover:bg-amber-100"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        ) : (
+                          (activeTab.selectedParty.loyalty_points ?? 0) > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setRedeemPtsOpen(true)}
+                              className="h-5 px-1.5 text-[10px] border-amber-300 text-amber-800 hover:bg-amber-100"
+                            >
+                              Redeem
+                            </Button>
+                          )
+                        )}
                       </div>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={activeTab.selectedParty.loyalty_points ?? 0}
-                        placeholder="Redeem pts"
-                        className="h-7 text-xs"
-                        value={loyaltyPointsToRedeem || ''}
-                        onChange={(e) => applyPosLoyaltyChange(parseInt(e.target.value, 10) || 0)}
-                      />
+                      {redeemPtsOpen && (
+                        <Input
+                          type="number"
+                          autoFocus
+                          min={0}
+                          max={activeTab.selectedParty.loyalty_points ?? 0}
+                          placeholder="Redeem pts"
+                          className="h-7 text-xs"
+                          value={loyaltyPointsToRedeem || ''}
+                          onChange={(e) => applyPosLoyaltyChange(parseInt(e.target.value, 10) || 0)}
+                        />
+                      )}
                       {getLoyaltyDiscount() > 0 && (
                         <p className="text-[10px] text-green-700">
                           −{formatCurrency(getLoyaltyDiscount())} loyalty discount
@@ -2725,6 +3313,92 @@ export default function POSPage() {
       )}
 
       <AttendanceReminderDialog />
+
+      {linkModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Add customer &amp; link card</h3>
+              <button onClick={() => setLinkModalOpen(false)} aria-label="Close">
+                <X className="h-4 w-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Loyalty card number <span className="text-gray-400">(optional)</span>
+                </label>
+                <Input
+                  value={linkCardInput}
+                  onChange={(e) => setLinkCardInput(e.target.value)}
+                  placeholder="e.g. 000142"
+                  className="h-9 font-mono text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
+                <Input
+                  value={linkNameInput}
+                  onChange={(e) => setLinkNameInput(e.target.value)}
+                  placeholder="Customer name"
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Mobile number <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  type="tel"
+                  value={linkPhoneInput}
+                  onChange={(e) => setLinkPhoneInput(e.target.value)}
+                  placeholder="98765 43210"
+                  className="h-9 text-sm"
+                />
+              </div>
+              {linkModalError && <p className="text-xs text-red-600">{linkModalError}</p>}
+              {linkAsk && (
+                <div className="rounded border border-blue-200 bg-blue-50 px-2.5 py-2 space-y-1.5">
+                  <p className="text-xs text-blue-800">
+                    Customer <b>{linkAsk.party.name}</b> already exists with this mobile.
+                    {linkAsk.cardNum ? ` Link card ${linkAsk.cardNum} to them?` : ' Select them?'}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() =>
+                        linkAsk.cardId && linkAsk.cardNum
+                          ? linkCardToParty(linkAsk.cardId, linkAsk.cardNum, linkAsk.party)
+                          : finishLinkFlow(linkAsk.party)
+                      }
+                    >
+                      {linkAsk.cardNum ? 'Link & select' : 'Select'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setLinkAsk(null)}
+                    >
+                      Back
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setLinkModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={submitLinkCustomer} disabled={linkModalBusy}>
+                {linkModalBusy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                Save &amp; select
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </KeyboardShortcutsProvider>
   )

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { useDiscount } from '@/hooks/useDiscount'
 import { isSuperAdmin } from '@/lib/roles'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -131,6 +132,7 @@ export default function CreateProductDialog({
   initialValues = null,
 }: CreateProductDialogProps) {
   const { user } = useAuth()
+  const { isDiscountEnabled } = useDiscount()
   const canUseCameraBarcodeScanner = isSuperAdmin(user?.role)
   const {
     fieldErrors,
@@ -294,7 +296,7 @@ export default function CreateProductDialog({
       const res = await apiFetch('/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newItem),
+        body: JSON.stringify({ ...newItem, discount: isDiscountEnabled ? newItem.discount : '' }),
       })
 
       if (res.ok) {
@@ -751,21 +753,23 @@ export default function CreateProductDialog({
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="create_discount">Discount on Sale Price</Label>
-                <Input
-                  id="create_discount"
-                  type="text"
-                  value={newItem.discount}
-                  onChange={(e) => updateNewItem({ discount: e.target.value }, 'discount')}
-                  placeholder="10% or 100"
-                  className={cn(fieldErrors.discount && 'border-red-500')}
-                />
-                <FieldError message={fieldErrors.discount} />
-                <p className="text-xs text-gray-500">
-                  Enter percentage (e.g., 10%) for percentage discount, or amount (e.g., 100) for fixed amount discount
-                </p>
-              </div>
+              {isDiscountEnabled && (
+                <div className="space-y-2">
+                  <Label htmlFor="create_discount">Discount on Sale Price</Label>
+                  <Input
+                    id="create_discount"
+                    type="text"
+                    value={newItem.discount}
+                    onChange={(e) => updateNewItem({ discount: e.target.value }, 'discount')}
+                    placeholder="10% or 100"
+                    className={cn(fieldErrors.discount && 'border-red-500')}
+                  />
+                  <FieldError message={fieldErrors.discount} />
+                  <p className="text-xs text-gray-500">
+                    Enter percentage (e.g., 10%) for percentage discount, or amount (e.g., 100) for fixed amount discount
+                  </p>
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="settings" className="space-y-4 mt-4">

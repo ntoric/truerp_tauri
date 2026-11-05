@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
@@ -30,6 +31,7 @@ import {
   ExternalLink,
   Copy,
   QrCode,
+  ChevronsUpDown,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -61,6 +63,7 @@ interface AppUser {
   two_factor_enabled: boolean
   must_change_password?: boolean
   store_id?: string
+  store_ids?: string[]
   store_name?: string
   created_at?: string
 }
@@ -115,6 +118,81 @@ interface AuditLogRow {
   created_at: string
 }
 
+interface StoreOption {
+  id: string
+  name: string
+}
+
+// Checkbox-based multi-select for assigning a user to multiple stores.
+function StoreMultiSelect({
+  stores,
+  value,
+  onChange,
+  disabled,
+}: {
+  stores: StoreOption[]
+  value: string[]
+  onChange: (ids: string[]) => void
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const selected = stores.filter((s) => value.includes(s.id))
+  const toggle = (id: string) => {
+    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id])
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          className="h-auto min-h-9 w-full min-w-[190px] justify-between gap-2 px-3 py-1.5 font-normal"
+        >
+          {selected.length === 0 ? (
+            <span className="text-muted-foreground">Select stores</span>
+          ) : (
+            <span className="flex min-w-0 flex-wrap gap-1">
+              {selected.map((s) => (
+                <Badge key={s.id} variant="secondary" className="max-w-[150px] truncate">
+                  {s.name}
+                </Badge>
+              ))}
+            </span>
+          )}
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-2" align="start">
+        <div className="max-h-60 space-y-0.5 overflow-y-auto">
+          {stores.map((s) => (
+            <label
+              key={s.id}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-white/10"
+            >
+              <Checkbox
+                checked={value.includes(s.id)}
+                onCheckedChange={() => toggle(s.id)}
+              />
+              <span className="truncate">{s.name}</span>
+            </label>
+          ))}
+          {stores.length === 0 && (
+            <p className="px-2 py-1.5 text-sm text-muted-foreground">No stores available</p>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+// Every store assigned to a user, falling back to the single primary store
+// when the backend doesn't return the expanded list yet.
+function assignedStoreIds(u: AppUser): string[] {
+  if (u.store_ids && u.store_ids.length > 0) return u.store_ids
+  return u.store_id ? [u.store_id] : []
+}
+
 function formatSecretKey(secret: string) {
   return secret.replace(/(.{4})/g, '$1 ').trim()
 }
@@ -151,6 +229,7 @@ export default function UserManagementPage() {
     phone: '',
     role: 'staff',
     store_id: '',
+    store_ids: [] as string[],
   })
   const [roleForm, setRoleForm] = useState({ name: '', description: '', permissionIds: [] as string[] })
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null)
@@ -248,24 +327,32 @@ export default function UserManagementPage() {
   }, [authLoading, user, fetchCore])
 
   useEffect(() => {
-    if (isSA && activeStore?.id && !newUser.store_id) {
-      setNewUser((prev) => ({ ...prev, store_id: activeStore.id }))
+    if (isSA && activeStore?.id && !newUser.store_id && newUser.store_ids.length === 0) {
+      setNewUser((prev) => ({ ...prev, store_id: activeStore.id, store_ids: [activeStore.id] }))
     }
-  }, [isSA, activeStore?.id, newUser.store_id])
+  }, [isSA, activeStore?.id, newUser.store_id, newUser.store_ids.length])
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
     try {
-      const payload: Record<string, string> = {
+      const payload: Record<string, unknown> = {
         name: newUser.name,
         email: newUser.email,
         password: newUser.password,
         phone: newUser.phone,
         role: newUser.role,
       }
-      if (isSA && newUser.store_id) {
-        payload.store_id = newUser.store_id
+      if (isSA) {
+        const ids = newUser.store_ids.length
+          ? newUser.store_ids
+          : newUser.store_id
+            ? [newUser.store_id]
+            : []
+        if (ids.length > 0) {
+          payload.store_ids = ids
+          payload.store_id = ids[0]
+        }
       }
       const res = await apiFetch('/settings/users', {
         method: 'POST',
@@ -280,6 +367,7 @@ export default function UserManagementPage() {
           phone: '',
           role: 'staff',
           store_id: isSA ? activeStore?.id || '' : '',
+          store_ids: isSA && activeStore?.id ? [activeStore.id] : [],
         })
         fetchCore()
       } else {
@@ -561,24 +649,22 @@ export default function UserManagementPage() {
                 {showStore && (
                   <TableCell>
                     {isSA && !isSuperAdmin(u.role) ? (
-                      <Select
-                        value={u.store_id || ''}
-                        onValueChange={(value) => handleUpdateUser(u, { store_id: value })}
-                      >
-                        <SelectTrigger className="w-[180px]">
-                          <SelectValue placeholder="Select store" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {stores.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>
-                              {s.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <StoreMultiSelect
+                        stores={stores}
+                        value={assignedStoreIds(u)}
+                        disabled={saving}
+                        onChange={(ids) =>
+                          handleUpdateUser(u, { store_ids: ids, store_id: ids[0] })
+                        }
+                      />
                     ) : (
                       <span className="text-sm text-muted-foreground">
-                        {u.store_name || '—'}
+                        {assignedStoreIds(u)
+                          .map((id) => stores.find((s) => s.id === id)?.name)
+                          .filter(Boolean)
+                          .join(', ') ||
+                          u.store_name ||
+                          '—'}
                       </span>
                     )}
                   </TableCell>
@@ -729,24 +815,23 @@ export default function UserManagementPage() {
                   </div>
                   {isSA ? (
                     <div className="space-y-2">
-                      <Label>Store</Label>
-                      <Select
-                        value={newUser.store_id || activeStore?.id || ''}
-                        onValueChange={(value) => setNewUser({ ...newUser, store_id: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select store" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {stores
-                            .filter((s) => s.is_active)
-                            .map((s) => (
-                              <SelectItem key={s.id} value={s.id}>
-                                {s.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
+                      <Label>Stores</Label>
+                      <StoreMultiSelect
+                        stores={stores.filter((s) => s.is_active)}
+                        value={
+                          newUser.store_ids.length
+                            ? newUser.store_ids
+                            : newUser.store_id
+                              ? [newUser.store_id]
+                              : []
+                        }
+                        onChange={(ids) =>
+                          setNewUser({ ...newUser, store_ids: ids, store_id: ids[0] || '' })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Assign multiple stores to let the user switch between them.
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2">

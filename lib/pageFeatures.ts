@@ -23,6 +23,7 @@ export const TOGGLEABLE_PAGES: ToggleablePage[] = [
   { key: '/credit-notes', label: 'Credit Notes', group: 'Sales' },
   { key: '/payments', label: 'Payment In', group: 'Sales' },
   { key: '/expenses', label: 'Expenses', group: 'Finance' },
+  { key: '/discount', label: 'Discount', group: 'Finance' },
   { key: '/expense-categories', label: 'Expense Categories', group: 'Finance' },
   { key: '/cash-bank', label: 'Cash & Bank', group: 'Finance' },
   { key: '/profit-distribution', label: 'Profit Distribution', group: 'Finance' },

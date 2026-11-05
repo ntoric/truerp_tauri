@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
+import { useDiscount } from '@/hooks/useDiscount'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -170,6 +171,7 @@ export default function PaymentOutsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { isDiscountEnabled } = useDiscount()
   const {
     fieldErrors,
     clearErrors,
@@ -489,7 +491,7 @@ export default function PaymentOutsPage() {
       const payload: Record<string, string | number> = {
         party_id: formData.party_id,
         amount_paid: amountPaid,
-        payment_out_discount: discount,
+        payment_out_discount: isDiscountEnabled ? discount : 0,
         payment_out_number: formData.payment_out_number,
         mode: formData.mode,
         date: new Date(formData.date).toISOString(),
@@ -786,28 +788,30 @@ export default function PaymentOutsPage() {
                       />
                       <FieldError message={fieldErrors.amount_paid} />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="payment_out_discount">Payment Out Discount</Label>
-                      <Input
-                        id="payment_out_discount"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0"
-                        value={formData.payment_out_discount}
-                        onChange={(e) => {
-                          clearFieldError('payment_out_discount')
-                          setFormData({ ...formData, payment_out_discount: e.target.value })
-                        }}
-                        onBlur={() => {
-                          if (formData.payment_out_discount === '' || Number.isNaN(parseFloat(formData.payment_out_discount))) {
-                            setFormData({ ...formData, payment_out_discount: '0' })
-                          }
-                        }}
-                        className={cn(fieldErrors.payment_out_discount && 'border-red-500')}
-                      />
-                      <FieldError message={fieldErrors.payment_out_discount} />
-                    </div>
+                    {isDiscountEnabled && (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="payment_out_discount">Payment Out Discount</Label>
+                        <Input
+                          id="payment_out_discount"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0"
+                          value={formData.payment_out_discount}
+                          onChange={(e) => {
+                            clearFieldError('payment_out_discount')
+                            setFormData({ ...formData, payment_out_discount: e.target.value })
+                          }}
+                          onBlur={() => {
+                            if (formData.payment_out_discount === '' || Number.isNaN(parseFloat(formData.payment_out_discount))) {
+                              setFormData({ ...formData, payment_out_discount: '0' })
+                            }
+                          }}
+                          className={cn(fieldErrors.payment_out_discount && 'border-red-500')}
+                        />
+                        <FieldError message={fieldErrors.payment_out_discount} />
+                      </div>
+                    )}
                     <div className="space-y-1.5">
                       <Label htmlFor="payment_out_number">Payment Out Number</Label>
                       <Input
@@ -985,7 +989,7 @@ export default function PaymentOutsPage() {
                       <th className="pb-3 font-medium">Party Name</th>
                       <th className="pb-3 font-medium">Bill #</th>
                       <th className="pb-3 font-medium">Amount Paid</th>
-                      <th className="pb-3 font-medium">Discount</th>
+                      {isDiscountEnabled && <th className="pb-3 font-medium">Discount</th>}
                       <th className="pb-3 font-medium">Net Amount</th>
                       <th className="pb-3 font-medium">Payment Mode</th>
                       <th className="pb-3 font-medium">Payment Out Number</th>
@@ -996,7 +1000,7 @@ export default function PaymentOutsPage() {
                   <tbody>
                     {paymentOuts.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="py-8 text-center text-gray-500">
+                        <td colSpan={isDiscountEnabled ? 11 : 10} className="py-8 text-center text-gray-500">
                           {hasActiveFilters
                             ? 'No payment outs match your filters'
                             : 'No payment outs recorded yet'}
@@ -1010,9 +1014,11 @@ export default function PaymentOutsPage() {
                           <td className="py-3 font-medium text-gray-900">{getPartyName(p)}</td>
                           <td className="py-3 text-gray-600">{getDocNumber(p)}</td>
                           <td className="py-3 font-medium text-gray-900">{formatCurrency(p.amount_paid)}</td>
-                          <td className="py-3 font-medium text-gray-900">
-                            {formatCurrency(p.payment_out_discount)}
-                          </td>
+                          {isDiscountEnabled && (
+                            <td className="py-3 font-medium text-gray-900">
+                              {formatCurrency(p.payment_out_discount)}
+                            </td>
+                          )}
                           <td className="py-3 font-medium text-gray-900">{formatCurrency(getNetAmount(p))}</td>
                           <td className="py-3">{getModeIcon(p.mode)}</td>
                           <td className="py-3 text-gray-600">{p.payment_out_number || '-'}</td>

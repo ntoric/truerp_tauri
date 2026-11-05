@@ -6,6 +6,7 @@ import { ColorThemeProvider } from '@/hooks/useColorTheme'
 import { ThemeModeProvider } from '@/hooks/useThemeMode'
 import { StoreProvider } from '@/hooks/useStore'
 import { PageFeaturesProvider } from '@/hooks/usePageFeatures'
+import { DiscountProvider } from '@/hooks/useDiscount'
 import { OfflineSyncProvider } from '@/hooks/useOfflineSync'
 import { Toaster } from '@/components/ui/toaster'
 import ExportProgressOverlay from '@/components/ExportProgressOverlay'
@@ -45,11 +46,13 @@ export function Providers({ children }: { children: ReactNode }) {
         <ColorThemeProvider>
         <StoreProvider>
           <PageFeaturesProvider>
+            <DiscountProvider>
             <OfflineSyncProvider>
               {children}
               <Toaster />
               <ExportProgressOverlay />
             </OfflineSyncProvider>
+            </DiscountProvider>
           </PageFeaturesProvider>
         </StoreProvider>
       </ColorThemeProvider>

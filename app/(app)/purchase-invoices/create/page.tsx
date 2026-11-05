@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, Fragment } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { useDiscount } from '@/hooks/useDiscount'
 import { isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
@@ -163,6 +164,7 @@ export default function CreatePurchaseInvoicePage() {
   const searchParams = useSearchParams()
   const editId = searchParams.get('id')
   const { user } = useAuth()
+  const { isDiscountEnabled } = useDiscount()
   const canScanInvoice = isSuperAdmin(user?.role)
   const {
     fieldErrors,
@@ -630,7 +632,7 @@ export default function CreatePurchaseInvoicePage() {
   const calcItemTotals = (item: PurchaseBillItem, exempt = taxExempt): PurchaseBillItem => {
     const qty = parseItemNumber(item.quantity)
     const price = parseItemNumber(item.unit_price)
-    const disc = parseItemNumber(item.discount)
+    const disc = isDiscountEnabled ? parseItemNumber(item.discount) : 0
     const tax = exempt ? 0 : parseItemNumber(item.tax_rate)
 
     const itemTotal = qty * price
@@ -1290,11 +1292,14 @@ export default function CreatePurchaseInvoicePage() {
   }
 
   const subTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
-  const discountTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price * (item.discount / 100)), 0)
+  const discountTotal = isDiscountEnabled
+    ? items.reduce((sum, item) => sum + (item.quantity * item.unit_price * (item.discount / 100)), 0)
+    : 0
   const taxTotal = items.reduce((sum, item) => sum + item.tax_amount, 0)
   const additionalCharges = sumAdditionalChargeItems(chargeItems)
+  const effectiveInvoiceDiscount = isDiscountEnabled ? invoiceDiscount : 0
 
-  let totalBeforeRound = subTotal - discountTotal + taxTotal - invoiceDiscount + additionalCharges
+  let totalBeforeRound = subTotal - discountTotal + taxTotal - effectiveInvoiceDiscount + additionalCharges
   let roundOff = 0
   if (autoRoundOff) {
     const rounded = Math.round(totalBeforeRound)
@@ -1399,7 +1404,7 @@ export default function CreatePurchaseInvoicePage() {
       quantity: parseItemNumber(item.quantity),
       unit: item.unit,
       unit_price: parseMoney(item.unit_price),
-      discount: parseItemNumber(item.discount),
+      discount: isDiscountEnabled ? parseItemNumber(item.discount) : 0,
       tax_rate: taxExempt ? 0 : parseItemNumber(item.tax_rate),
       mrp: parseMoney(item.mrp),
       sale_price: parseMoney(item.sale_price),
@@ -1459,7 +1464,7 @@ export default function CreatePurchaseInvoicePage() {
         terms,
         signature,
         tax_exempt: taxExempt,
-        invoice_discount: parseMoney(invoiceDiscount),
+        invoice_discount: isDiscountEnabled ? parseMoney(invoiceDiscount) : 0,
         additional_charges: parseMoney(additionalCharges),
         additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
         // client_bill_id makes creation idempotent (also sent via
@@ -1529,7 +1534,7 @@ export default function CreatePurchaseInvoicePage() {
           terms,
           signature,
           tax_exempt: taxExempt,
-          invoice_discount: parseMoney(invoiceDiscount),
+          invoice_discount: isDiscountEnabled ? parseMoney(invoiceDiscount) : 0,
           additional_charges: parseMoney(additionalCharges),
           additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
           client_bill_id: clientBillIdRef.current,
@@ -2042,7 +2047,9 @@ export default function CreatePurchaseInvoicePage() {
                       <th className="min-w-[12rem] whitespace-nowrap pb-2 pr-2 font-medium">Item</th>
                       <th className="min-w-[6rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Quantity</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Unit Price</th>
-                      <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
+                      {isDiscountEnabled && (
+                        <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
+                      )}
                       {!taxExempt && (
                         <th className="min-w-[5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Tax %</th>
                       )}
@@ -2072,7 +2079,7 @@ export default function CreatePurchaseInvoicePage() {
                           return next
                         })
                       }
-                      const detailColSpan = taxExempt ? 9 : 10
+                      const detailColSpan = (taxExempt ? 9 : 10) - (isDiscountEnabled ? 0 : 1)
 
                       if (isNewProduct) {
                         return (
@@ -2137,16 +2144,18 @@ export default function CreatePurchaseInvoicePage() {
                               required
                             />
                           </td>
-                          <td className="px-1 py-2">
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={item.discount}
-                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
-                              className="h-8 w-full min-w-0 text-right"
-                            />
-                          </td>
+                          {isDiscountEnabled && (
+                            <td className="px-1 py-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={item.discount}
+                                onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                                className="h-8 w-full min-w-0 text-right"
+                              />
+                            </td>
+                          )}
                           {!taxExempt && (
                             <td className="px-1 py-2">
                               <Input
@@ -2292,17 +2301,19 @@ export default function CreatePurchaseInvoicePage() {
                               className="h-8 w-full min-w-0 text-right"
                             />
                           </div>
-                          <div className="min-w-0 space-y-1">
-                            <Label className="text-xs text-gray-500">Discount %</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={item.discount}
-                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
-                              className="h-8 w-full min-w-0 text-right"
-                            />
-                          </div>
+                          {isDiscountEnabled && (
+                            <div className="min-w-0 space-y-1">
+                              <Label className="text-xs text-gray-500">Discount %</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={item.discount}
+                                onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                                className="h-8 w-full min-w-0 text-right"
+                              />
+                            </div>
+                          )}
                           {!taxExempt && (
                             <div className="min-w-0 space-y-1">
                               <Label className="text-xs text-gray-500">Tax %</Label>
@@ -2422,7 +2433,7 @@ export default function CreatePurchaseInvoicePage() {
 
             <Card>
               <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle>Charges & Discount</CardTitle>
+                <CardTitle>{isDiscountEnabled ? 'Charges & Discount' : 'Charges'}</CardTitle>
                 <Button
                   type="button"
                   variant="outline"
@@ -2441,17 +2452,19 @@ export default function CreatePurchaseInvoicePage() {
                     <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} hideAddButton />
                   </div>
                 )}
-                <div className="min-w-0 space-y-2">
-                  <Label>Invoice Discount</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={invoiceDiscount}
-                    onChange={(e) => setInvoiceDiscount(Number(e.target.value))}
-                    className="w-full min-w-0"
-                  />
-                </div>
+                {isDiscountEnabled && (
+                  <div className="min-w-0 space-y-2">
+                    <Label>Invoice Discount</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={invoiceDiscount}
+                      onChange={(e) => setInvoiceDiscount(Number(e.target.value))}
+                      className="w-full min-w-0"
+                    />
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <Label htmlFor="auto-round-off">Auto Round Off</Label>
                   <Switch
@@ -2472,10 +2485,10 @@ export default function CreatePurchaseInvoicePage() {
                     <span className="font-medium text-red-600">-{formatCurrency(discountTotal)}</span>
                   </div>
                 )}
-                {invoiceDiscount > 0 && (
+                {effectiveInvoiceDiscount > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Invoice Discount</span>
-                    <span className="font-medium text-red-600">-{formatCurrency(invoiceDiscount)}</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(effectiveInvoiceDiscount)}</span>
                   </div>
                 )}
                 {chargeItems.filter((c) => Number(c.amount) > 0).map((charge, index) => (

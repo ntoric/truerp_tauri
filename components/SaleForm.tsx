@@ -59,12 +59,11 @@ import {
   sumAdditionalChargeItems,
 } from '@/lib/additionalCharges'
 import {
-  type SaleDiscountSettings,
   autoDiscountEligible,
   computeAutoDiscount,
   describeAutoDiscount,
-  fetchSaleDiscountSettings,
 } from '@/lib/saleDiscount'
+import { useDiscount } from '@/hooks/useDiscount'
 
 interface Party {
   id: string
@@ -172,7 +171,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const [notes, setNotes] = useState('')
   const [terms, setTerms] = useState('')
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
-  const [saleDiscount, setSaleDiscount] = useState<SaleDiscountSettings | null>(null)
+  const { settings: saleDiscount, isDiscountEnabled } = useDiscount()
   const [autoDiscountApplied, setAutoDiscountApplied] = useState(false)
   const [autoDiscountValue, setAutoDiscountValue] = useState('')
   const [chargeItems, setChargeItems] = useState<AdditionalChargeItem[]>([])
@@ -329,7 +328,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
 
   const fetchData = async () => {
     try {
-      const [partiesRes, productsRes, numRes, loyaltyRes, templatesRes, fieldsRes, invoiceSettingsRes, saleDiscountCfg] = await Promise.all([
+      const [partiesRes, productsRes, numRes, loyaltyRes, templatesRes, fieldsRes, invoiceSettingsRes] = await Promise.all([
         apiFetch('/parties'),
         apiFetch('/products'),
         editId ? Promise.resolve(null) : apiFetch(isEstimateOnly ? '/quotations/next-number' : '/invoices/next-number'),
@@ -337,7 +336,6 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         apiFetch('/invoice-templates'),
         apiFetch('/settings/invoice-custom-fields'),
         apiFetch('/settings/invoice'),
-        fetchSaleDiscountSettings(),
       ])
       if (partiesRes.ok) {
         const partyData = await partiesRes.json()
@@ -370,7 +368,6 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setPdfTemplate(s.template || 'classic')
         if (!terms && s.default_terms) setTerms(s.default_terms)
       }
-      setSaleDiscount(saleDiscountCfg)
       const bizSig = await fetchBusinessSignature()
       setBusinessSignature(bizSig)
       if (bizSig && !editId) setSignature(prev => prev || bizSig)
@@ -987,19 +984,23 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   }
 
   const subTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
-  const discountTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price * (item.discount / 100)), 0)
+  const discountTotal = isDiscountEnabled
+    ? items.reduce((sum, item) => sum + (item.quantity * item.unit_price * (item.discount / 100)), 0)
+    : 0
   const cgstTotal = items.reduce((sum, item) => sum + item.cgst, 0)
   const sgstTotal = items.reduce((sum, item) => sum + item.sgst, 0)
   const igstTotal = items.reduce((sum, item) => sum + item.igst, 0)
   const taxTotal = cgstTotal + sgstTotal + igstTotal
   const additionalCharges = sumAdditionalChargeItems(chargeItems)
 
-  const discountModeAuto = saleDiscount?.mode === 'auto'
+  const discountModeAuto = isDiscountEnabled && saleDiscount?.mode === 'auto'
   const saleDiscountBase = subTotal - discountTotal + taxTotal + additionalCharges
   const autoDiscountCap = computeAutoDiscount(saleDiscount, saleDiscountBase)
-  const effectiveInvoiceDiscount = discountModeAuto
-    ? (autoDiscountApplied ? Math.min(parseMoney(autoDiscountValue || '0'), autoDiscountCap) : 0)
-    : invoiceDiscount
+  const effectiveInvoiceDiscount = !isDiscountEnabled
+    ? 0
+    : discountModeAuto
+      ? (autoDiscountApplied ? Math.min(parseMoney(autoDiscountValue || '0'), autoDiscountCap) : 0)
+      : invoiceDiscount
 
   const applyAutoDiscount = () => {
     setAutoDiscountApplied(true)
@@ -1280,7 +1281,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           is_inter_state: isInterState,
           notes,
           terms,
-          quotation_discount: parseMoney(effectiveInvoiceDiscount),
+          quotation_discount: isDiscountEnabled ? parseMoney(effectiveInvoiceDiscount) : 0,
           additional_charges: parseMoney(additionalCharges),
           additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
           signature,
@@ -1290,7 +1291,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             hsn_code: item.hsn_code,
             quantity: Number(parseItemNumber(item.quantity, 1)),
             unit_price: parseMoney(item.unit_price),
-            discount: parseItemNumber(item.discount),
+            discount: isDiscountEnabled ? parseItemNumber(item.discount) : 0,
             tax_rate: parseItemNumber(item.tax_rate),
             unit: item.unit,
             batch_no: item.batch_no || '',
@@ -1416,7 +1417,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             .filter((split) => split.amount > 0),
           notes,
           terms,
-          invoice_discount: parseMoney(effectiveInvoiceDiscount),
+          invoice_discount: isDiscountEnabled ? parseMoney(effectiveInvoiceDiscount) : 0,
           additional_charges: parseMoney(additionalCharges),
           additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
           ...( !editId && loyaltyPointsToRedeem > 0
@@ -1428,7 +1429,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             hsn_code: item.hsn_code,
             quantity: Number(parseItemNumber(item.quantity, 1)),
             unit_price: parseMoney(item.unit_price),
-            discount: parseItemNumber(item.discount),
+            discount: isDiscountEnabled ? parseItemNumber(item.discount) : 0,
             tax_rate: parseItemNumber(item.tax_rate),
             unit: item.unit,
             batch_no: item.batch_no || '',
@@ -1767,7 +1768,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       <th className="min-w-[12rem] whitespace-nowrap pb-2 pr-2 font-medium">Item</th>
                       <th className="min-w-[6rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Quantity</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Unit Price</th>
-                      <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
+                      {isDiscountEnabled && (
+                        <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
+                      )}
                       <th className="min-w-[5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Tax %</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Amount</th>
                       <th className="w-12 min-w-12 pb-2 pl-1 font-medium"></th>
@@ -1794,7 +1797,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                           return next
                         })
                       }
-                      const detailColSpan = 9
+                      const detailColSpan = isDiscountEnabled ? 9 : 8
                       return (
                         <Fragment key={index}>
                         <tr className="border-b">
@@ -1874,16 +1877,18 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                               required
                             />
                           </td>
-                          <td className="px-1 py-2">
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={item.discount}
-                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
-                              className="h-8 w-full min-w-0 text-right"
-                            />
-                          </td>
+                          {isDiscountEnabled && (
+                            <td className="px-1 py-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={item.discount}
+                                onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                                className="h-8 w-full min-w-0 text-right"
+                              />
+                            </td>
+                          )}
                           <td className="px-1 py-2">
                             <Input
                               type="number"
@@ -2059,17 +2064,19 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                               className="h-8 w-full text-right"
                             />
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs text-gray-500">Discount %</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={item.discount}
-                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
-                              className="h-8 w-full text-right"
-                            />
-                          </div>
+                          {isDiscountEnabled && (
+                            <div className="space-y-1">
+                              <Label className="text-xs text-gray-500">Discount %</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={item.discount}
+                                onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                                className="h-8 w-full text-right"
+                              />
+                            </div>
+                          )}
                           <div className="space-y-1">
                             <Label className="text-xs text-gray-500">Tax %</Label>
                             <Input
@@ -2211,7 +2218,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
 
             <Card>
               <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle>Charges & Discount</CardTitle>
+                <CardTitle>{isDiscountEnabled ? 'Charges & Discount' : 'Charges'}</CardTitle>
                 <Button
                   type="button"
                   variant="outline"
@@ -2230,6 +2237,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                     <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} hideAddButton />
                   </div>
                 )}
+                {isDiscountEnabled && (
                 <div className="space-y-2">
                   <Label>{docName} Discount</Label>
                   {discountModeAuto ? (
@@ -2278,6 +2286,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                     <Input type="number" min="0" step="0.01" value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Number(e.target.value))} />
                   )}
                 </div>
+                )}
                 <div className="flex items-center justify-between">
                   <Label htmlFor="auto-round-off">Auto Round Off</Label>
                   <Switch

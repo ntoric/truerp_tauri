@@ -7,6 +7,11 @@ import { parseMoney } from '@/lib/numbers'
 // (discount_type "percent") or a flat amount (discount_type "amount") once the
 // sale total reaches min_sale_amount.
 export interface SaleDiscountSettings {
+  // Master switch for the whole discount feature. When false, every
+  // discount input across the app is hidden (line discounts, invoice-level
+  // discounts, payment discounts, product default discounts) — only the
+  // dedicated /discount page stays reachable.
+  is_enabled: boolean
   mode: 'manual' | 'auto'
   discount_type: 'percent' | 'amount'
   discount_value: number
@@ -14,6 +19,7 @@ export interface SaleDiscountSettings {
 }
 
 export const DEFAULT_SALE_DISCOUNT_SETTINGS: SaleDiscountSettings = {
+  is_enabled: true,
   mode: 'manual',
   discount_type: 'percent',
   discount_value: 0,
@@ -23,6 +29,7 @@ export const DEFAULT_SALE_DISCOUNT_SETTINGS: SaleDiscountSettings = {
 export function normalizeSaleDiscountSettings(data: unknown): SaleDiscountSettings {
   const raw = (data ?? {}) as Record<string, unknown>
   return {
+    is_enabled: raw.is_enabled !== false,
     mode: raw.mode === 'auto' ? 'auto' : 'manual',
     discount_type: raw.discount_type === 'amount' ? 'amount' : 'percent',
     discount_value: Math.max(0, parseMoney(raw.discount_value ?? 0)),

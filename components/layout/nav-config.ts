@@ -48,6 +48,7 @@ import {
   Headset,
   Ticket,
   FlagBanner,
+  SealPercent,
 } from '@phosphor-icons/react'
 import { canManageUsers, isSuperAdmin } from '@/lib/roles'
 
@@ -131,6 +132,7 @@ export const navItems: NavItem[] = [
     ],
   },
   { name: 'Expenses', href: '/expenses', icon: Receipt, accent: '#e11d48' },
+  { name: 'Discount', href: '/discount', icon: SealPercent, accent: '#f59e0b' },
   { name: 'Cash & Bank', href: '/cash-bank', icon: Wallet, accent: '#16a34a' },
   { name: 'Profit Distribution', href: '/profit-distribution', icon: HandCoins, accent: '#65a30d' },
   { name: 'Accounting', href: '/accounting', icon: BookOpenText, accent: '#0d9488' },
