@@ -49,6 +49,7 @@ import {
   Ticket,
   FlagBanner,
   SealPercent,
+  CreditCard,
 } from '@phosphor-icons/react'
 import { canManageUsers, isSuperAdmin } from '@/lib/roles'
 
@@ -201,6 +202,7 @@ export const navItems: NavItem[] = [
     ],
   },
   { name: 'Notifications', href: '/notifications', icon: Bell, accent: '#d97706' },
+  { name: 'Subscription', href: '/subscription', icon: CreditCard, accent: '#059669' },
   { name: 'Customer Portal', href: '/customer-portal', icon: GlobeHemisphereWest, accent: '#0e7490', superAdminOnly: true },
   { name: 'Support Requests', href: '/support-requests', icon: Ticket, accent: '#be123c', superAdminOnly: true },
   { name: 'Notification Center', href: '/notification-center', icon: BellRinging, accent: '#ea580c', superAdminOnly: true },

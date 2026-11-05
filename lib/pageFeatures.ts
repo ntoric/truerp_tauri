@@ -47,6 +47,7 @@ export const TOGGLEABLE_PAGES: ToggleablePage[] = [
   { key: '/email-marketing', label: 'Email Marketing', group: 'Marketing' },
   { key: '/whatsapp-marketing', label: 'WhatsApp Marketing', group: 'Marketing' },
   { key: '/loyalty', label: 'Loyalty Program', group: 'Marketing' },
+  { key: '/subscription', label: 'Subscription', group: 'Other' },
   { key: '/stores', label: 'Stores', group: 'Security' },
   { key: '/user-management', label: 'User Management', group: 'Security' },
   { key: '/audit', label: 'Audit Trails', group: 'Security' },
