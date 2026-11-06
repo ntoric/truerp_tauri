@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
 import PageHeader from '@/components/layout/PageHeader'
@@ -27,6 +28,7 @@ import { displayAdditionalChargeRows } from '@/lib/additionalCharges'
 import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2, Package, BarChart3, ChevronUp, ChevronDown, ArrowUpDown, Gift } from 'lucide-react'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
@@ -134,6 +136,9 @@ const INVOICE_IMPORT_SAMPLE_ROWS: (string | number)[][] = [
 
 export default function InvoicesPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { user } = useAuth()
+  const { requestCancelReason, cancelReasonDialog } = useCancelReasonDialog()
+  const canDelete = isSuperAdmin(user?.role)
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [stats, setStats] = useState<InvoiceStats>({ total_sales: 0, paid: 0, unpaid: 0, cancelled: 0 })
   const [showStats, setShowStats] = useState(false)
@@ -372,18 +377,27 @@ export default function InvoicesPage() {
   }
 
   const handleCancelInvoice = async (id: string) => {
+    const reason = await requestCancelReason({
+      title: 'Cancel invoice?',
+      description: 'The invoice will be kept for reference but no longer counts in reports, balances or stock.',
+    })
+    if (!reason) return
     try {
       const res = await apiFetch(`/invoices/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'cancelled', note: 'Cancelled from invoice list' })
+        body: JSON.stringify({ status: 'cancelled', note: reason })
       })
       if (res.ok) {
+        notifySuccess('Invoice cancelled')
         fetchInvoices()
         fetchStats()
+        return
       }
+      const data = await res.json().catch(() => ({}))
+      notifyError(data.error || 'Failed to cancel invoice')
     } catch (err) {
-      console.error(err)
+      notifyError(err instanceof Error ? err.message : 'Failed to cancel invoice')
     }
   }
 
@@ -483,16 +497,21 @@ export default function InvoicesPage() {
 
   const handleBulkCancelInvoices = async () => {
     const eligible = invoices.filter(
-      inv => selectedInvoices.has(inv.id) && inv.status !== 'cancelled' && inv.status !== 'paid'
+      inv => selectedInvoices.has(inv.id) && inv.status !== 'cancelled' && (inv.status !== 'paid' || canDelete)
     )
     if (eligible.length === 0) return
+    const reason = await requestCancelReason({
+      title: `Cancel ${eligible.length} invoice(s)?`,
+      description: 'The invoices will be kept for reference but no longer count in reports, balances or stock.',
+    })
+    if (!reason) return
     try {
       await Promise.all(
         eligible.map(inv =>
           apiFetch(`/invoices/${inv.id}/status`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'cancelled', note: 'Bulk cancelled from invoice list' })
+            body: JSON.stringify({ status: 'cancelled', note: reason })
           })
         )
       )
@@ -639,9 +658,11 @@ export default function InvoicesPage() {
                       <Button variant="outline" size="sm" onClick={handleBulkCancelInvoices}>
                         Cancel
                       </Button>
-                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteInvoices}>
-                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
-                      </Button>
+                      {canDelete && (
+                        <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteInvoices}>
+                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -725,19 +746,21 @@ export default function InvoicesPage() {
                                   Edit
                                 </Link>
                               </DropdownMenuItem>
-                              {inv.status !== 'cancelled' && inv.status !== 'paid' && (
+                              {inv.status !== 'cancelled' && (inv.status !== 'paid' || canDelete) && (
                                 <DropdownMenuItem onClick={() => handleCancelInvoice(inv.id)}>
                                   <X className="mr-2 h-4 w-4" />
                                   Cancel
                                 </DropdownMenuItem>
                               )}
-                              <DropdownMenuItem
-                                onClick={() => handleDeleteInvoice(inv.id)}
-                                className="text-red-600"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
+                              {canDelete && (
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteInvoice(inv.id)}
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </td>
@@ -776,6 +799,14 @@ export default function InvoicesPage() {
                   {previewData?.invoice_number || 'Invoice Preview'}
                 </h2>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => previewId && window.open(`/invoices/${previewId}/pdf`, '_blank')}
+                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <Eye className="h-4 w-4" />
+                    Preview Invoice
+                  </button>
                   <button
                     type="button"
                     onClick={() => void handleDownloadPreviewPdf()}
@@ -845,6 +876,17 @@ export default function InvoicesPage() {
                       </span>
                     )}
                   </div>
+
+                  {previewData.status === 'cancelled' && (previewData.cancel_reason || previewData.cancelled_by) && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm">
+                      <span className="font-medium text-red-700">
+                        Cancelled{previewData.cancelled_by ? ` by ${previewData.cancelled_by}` : ''}
+                      </span>
+                      {previewData.cancel_reason && (
+                        <p className="mt-1 text-red-600">Reason: {previewData.cancel_reason}</p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Items */}
                   <div>
@@ -1057,6 +1099,7 @@ export default function InvoicesPage() {
       />
 
       {confirmDialog}
+      {cancelReasonDialog}
     </DashboardLayout>
   )
 }

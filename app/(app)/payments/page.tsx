@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
 import { useDiscount } from '@/hooks/useDiscount'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
@@ -19,9 +20,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, MoreVertical, Trash2, Search } from 'lucide-react'
+import { Plus, MoreVertical, Trash2, Search, X } from 'lucide-react'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
@@ -36,6 +38,8 @@ interface Payment {
   date: string
   reference: string
   notes: string
+  status?: string
+  cancel_reason?: string
   invoice?: {
     id: string
     invoice_number: string
@@ -71,6 +75,9 @@ export default function PaymentsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { requestCancelReason, cancelReasonDialog } = useCancelReasonDialog()
+  const { user } = useAuth()
+  const canDelete = isSuperAdmin(user?.role)
   const { isDiscountEnabled } = useDiscount()
   const {
     fieldErrors,
@@ -361,6 +368,56 @@ export default function PaymentsPage() {
     }
   }
 
+  const handleCancelPayment = async (id: string) => {
+    const reason = await requestCancelReason({
+      title: 'Cancel payment?',
+      description: 'The payment will be reversed and kept for reference — it will no longer count in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      const res = await apiFetch(`/payments/${id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
+      if (res.ok) {
+        showSuccessToast('Payment cancelled')
+        fetchPayments()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showErrorToast(data.error || 'Failed to cancel payment')
+      }
+    } catch (err) {
+      console.error(err)
+      showErrorToast('Failed to cancel payment')
+    }
+  }
+
+  const handleBulkCancelPayments = async () => {
+    const eligible = payments.filter(
+      (p) => selectedPayments.has(p.id) && p.status !== 'cancelled'
+    )
+    if (eligible.length === 0) return
+    const reason = await requestCancelReason({
+      title: `Cancel ${eligible.length} payment(s)?`,
+      description: 'The payments will be reversed and kept for reference — they will no longer count in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      await Promise.all(
+        eligible.map((p) =>
+          apiFetch(`/payments/${p.id}/cancel`, {
+            method: 'POST',
+            body: JSON.stringify({ reason }),
+          })
+        )
+      )
+      setSelectedPayments(new Set())
+      fetchPayments()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   const handleBulkDeletePayments = async () => {
     if (!(await confirm({
       title: 'Delete payments?',
@@ -618,9 +675,14 @@ export default function PaymentsPage() {
                   <div className="mb-3 flex items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
                     <span className="text-sm text-gray-600">{selectedPayments.size} selected</span>
                     <div className="ml-auto flex gap-2">
-                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeletePayments}>
-                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                      <Button variant="outline" size="sm" onClick={handleBulkCancelPayments}>
+                        Cancel
                       </Button>
+                      {canDelete && (
+                        <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeletePayments}>
+                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -671,7 +733,16 @@ export default function PaymentsPage() {
                           <td className="py-3 font-medium text-gray-900">{formatCurrency(p.payment_in_discount)}</td>
                         )}
                         <td className="py-3">{getModeIcon(p.mode)}</td>
-                        <td className="py-3 text-gray-600">{p.payment_in_number || '-'}</td>
+                        <td className="py-3 text-gray-600">
+                          <div className="flex items-center gap-2">
+                            {p.payment_in_number || '-'}
+                            {p.status === 'cancelled' && (
+                              <span title={p.cancel_reason || undefined}>
+                                <StatusBadge status="cancelled" />
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-3 text-gray-600">{p.notes || '-'}</td>
                         <td className="py-3">
                           <DropdownMenu>
@@ -681,13 +752,21 @@ export default function PaymentsPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => handleDeletePayment(p.id)}
-                                className="text-red-600"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
+                              {p.status !== 'cancelled' && (
+                                <DropdownMenuItem onClick={() => handleCancelPayment(p.id)}>
+                                  <X className="mr-2 h-4 w-4" />
+                                  Cancel
+                                </DropdownMenuItem>
+                              )}
+                              {canDelete && (
+                                <DropdownMenuItem
+                                  onClick={() => handleDeletePayment(p.id)}
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </td>
@@ -721,6 +800,7 @@ export default function PaymentsPage() {
         </Card>
       </div>
       {confirmDialog}
+      {cancelReasonDialog}
     </DashboardLayout>
   )
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -17,12 +18,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Search, Download, MoreVertical, Edit, Trash2, Eye, CheckCircle } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Edit, Trash2, Eye, CheckCircle, X } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
@@ -49,8 +51,10 @@ interface DebitNote {
 
 export default function DebitNotesPage() {
   const { user, loading: authLoading } = useAuth()
+  const canDelete = isSuperAdmin(user?.role)
   const router = useRouter()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { requestCancelReason, cancelReasonDialog } = useCancelReasonDialog()
   const [debitNotes, setDebitNotes] = useState<DebitNote[]>([])
   const [vendors, setVendors] = useState<Party[]>([])
   const [loading, setLoading] = useState(true)
@@ -166,6 +170,28 @@ export default function DebitNotesPage() {
     }
   }
 
+  const handleCancel = async (id: string) => {
+    const reason = await requestCancelReason({
+      title: 'Cancel debit note?',
+      description: 'The debit note will be kept for reference but no longer counts in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      const res = await apiFetch(`/debit-notes/${id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
+      if (res.ok) {
+        fetchData()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to cancel debit note')
+      }
+    } catch {
+      notifyError('An error occurred')
+    }
+  }
+
   const handleDelete = async (id: string) => {
     if (!(await confirm({
       title: 'Delete debit note?',
@@ -232,6 +258,7 @@ export default function DebitNotesPage() {
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
                   <SelectItem value="issued">Issued</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={vendorFilter} onValueChange={setVendorFilter}>
@@ -327,14 +354,22 @@ export default function DebitNotesPage() {
                                   <CheckCircle className="mr-2 h-4 w-4" />
                                   Issue
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => handleDelete(note.id)}
-                                  className="text-red-600"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
+                                {canDelete && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleDelete(note.id)}
+                                    className="text-red-600"
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                )}
                               </>
+                            )}
+                            {note.status !== 'cancelled' && (
+                              <DropdownMenuItem onClick={() => handleCancel(note.id)}>
+                                <X className="mr-2 h-4 w-4" />
+                                Cancel
+                              </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -355,6 +390,7 @@ export default function DebitNotesPage() {
         </Card>
       </div>
       {confirmDialog}
+      {cancelReasonDialog}
     </DashboardLayout>
   )
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -17,11 +18,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Plus, Eye, Pencil, Trash2, MoreVertical, Search } from 'lucide-react'
+import { Plus, Eye, Pencil, Trash2, MoreVertical, Search, X } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 
 interface Party {
@@ -47,8 +49,10 @@ interface CreditNote {
 
 export default function CreditNotesPage() {
   const { user, loading: authLoading } = useAuth()
+  const canDelete = isSuperAdmin(user?.role)
   const router = useRouter()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { requestCancelReason, cancelReasonDialog } = useCancelReasonDialog()
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set())
@@ -105,6 +109,28 @@ export default function CreditNotesPage() {
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val)
 
   const getStatusBadge = (status: string) => <StatusBadge status={status} />
+
+  const handleCancel = async (id: string) => {
+    const reason = await requestCancelReason({
+      title: 'Cancel credit note?',
+      description: 'The credit note will be kept for reference but no longer counts in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      const res = await apiFetch(`/credit-notes/${id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
+      if (res.ok) {
+        fetchData()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to cancel credit note')
+      }
+    } catch (err) {
+      notifyError('An error occurred')
+    }
+  }
 
   const handleDelete = async (id: string) => {
     if (!(await confirm({
@@ -199,6 +225,7 @@ export default function CreditNotesPage() {
                 <option value="">All Status</option>
                 <option value="draft">Draft</option>
                 <option value="issued">Issued</option>
+                <option value="cancelled">Cancelled</option>
               </select>
               <Input
                 type="date"
@@ -225,11 +252,13 @@ export default function CreditNotesPage() {
             {selectedNotes.size > 0 && (
               <div className="flex items-center gap-2 border-b bg-gray-50 px-4 py-2">
                 <span className="text-sm text-gray-600">{selectedNotes.size} selected</span>
-                <div className="ml-auto">
-                  <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteNotes}>
-                    <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
-                  </Button>
-                </div>
+                {canDelete && (
+                  <div className="ml-auto">
+                    <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteNotes}>
+                      <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
             <Table>
@@ -278,19 +307,25 @@ export default function CreditNotesPage() {
                             View
                           </DropdownMenuItem>
                           {note.status === 'draft' && (
-                            <>
-                              <DropdownMenuItem onClick={() => router.push(`/credit-notes/${note.id}/edit`)}>
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDelete(note.id)}
-                                className="text-red-600"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            </>
+                            <DropdownMenuItem onClick={() => router.push(`/credit-notes/${note.id}/edit`)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                          )}
+                          {note.status !== 'cancelled' && (
+                            <DropdownMenuItem onClick={() => handleCancel(note.id)}>
+                              <X className="mr-2 h-4 w-4" />
+                              Cancel
+                            </DropdownMenuItem>
+                          )}
+                          {canDelete && note.status === 'draft' && (
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(note.id)}
+                              className="text-red-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -319,6 +354,7 @@ export default function CreditNotesPage() {
         </Card>
       </div>
       {confirmDialog}
+      {cancelReasonDialog}
     </DashboardLayout>
   )
 }

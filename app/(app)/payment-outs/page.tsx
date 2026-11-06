@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
 import { useDiscount } from '@/hooks/useDiscount'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
@@ -20,12 +21,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
-import { Plus, Search, Download, MoreVertical, Trash2 } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Trash2, X } from 'lucide-react'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
+import { StatusBadge } from '@/components/ui/badge'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
 import { PAYMENT_METHODS, formatPaymentMethod } from '@/lib/paymentSplits'
 
@@ -38,6 +41,8 @@ interface PaymentOut {
   date: string
   reference: string
   notes: string
+  status?: string
+  cancel_reason?: string
   purchase_bill_id?: string
   sales_return_id?: string
   credit_note_id?: string
@@ -171,6 +176,9 @@ export default function PaymentOutsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { requestCancelReason, cancelReasonDialog } = useCancelReasonDialog()
+  const { user } = useAuth()
+  const canDelete = isSuperAdmin(user?.role)
   const { isDiscountEnabled } = useDiscount()
   const {
     fieldErrors,
@@ -372,6 +380,7 @@ export default function PaymentOutsPage() {
         const paid = new Set<string>()
         const refunded = new Map<string, number>()
         for (const row of rows) {
+          if (row.status === 'cancelled') continue
           if (row.sales_return_id) paid.add(row.sales_return_id)
           if (row.credit_note_id) paid.add(row.credit_note_id)
           if (row.invoice_id) {
@@ -528,6 +537,29 @@ export default function PaymentOutsPage() {
       showErrorToast('Failed to create payment out. Please try again.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleCancel = async (id: string) => {
+    const reason = await requestCancelReason({
+      title: 'Cancel payment out?',
+      description: 'The payment will be reversed and kept for reference — it will no longer count in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      const res = await apiFetch(`/payment-outs/${id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
+      if (res.ok) {
+        showSuccessToast('Payment out cancelled')
+        fetchPaymentOuts()
+      } else {
+        await handleApiError(res, { toastTitle: 'Unable to cancel' })
+      }
+    } catch (err) {
+      console.error(err)
+      showErrorToast('Failed to cancel payment out. Please try again.')
     }
   }
 
@@ -1021,7 +1053,16 @@ export default function PaymentOutsPage() {
                           )}
                           <td className="py-3 font-medium text-gray-900">{formatCurrency(getNetAmount(p))}</td>
                           <td className="py-3">{getModeIcon(p.mode)}</td>
-                          <td className="py-3 text-gray-600">{p.payment_out_number || '-'}</td>
+                          <td className="py-3 text-gray-600">
+                            <div className="flex items-center gap-2">
+                              {p.payment_out_number || '-'}
+                              {p.status === 'cancelled' && (
+                                <span title={p.cancel_reason || undefined}>
+                                  <StatusBadge status="cancelled" />
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="py-3 text-gray-600">{p.notes || '-'}</td>
                           <td className="py-3">
                             <DropdownMenu>
@@ -1031,13 +1072,21 @@ export default function PaymentOutsPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() => handleDelete(p.id)}
-                                  className="text-red-600"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
+                                {p.status !== 'cancelled' && (
+                                  <DropdownMenuItem onClick={() => handleCancel(p.id)}>
+                                    <X className="mr-2 h-4 w-4" />
+                                    Cancel
+                                  </DropdownMenuItem>
+                                )}
+                                {canDelete && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleDelete(p.id)}
+                                    className="text-red-600"
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </td>
@@ -1061,6 +1110,7 @@ export default function PaymentOutsPage() {
         </Card>
       </div>
       {confirmDialog}
+      {cancelReasonDialog}
     </DashboardLayout>
   )
 }

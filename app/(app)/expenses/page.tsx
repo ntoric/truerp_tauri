@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
@@ -22,6 +23,7 @@ import ThermalPrintModal from '@/components/ThermalPrintModal'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
 
@@ -52,6 +54,9 @@ interface Expense {
   bank_account?: { account_name: string } | null
   notes?: string
   receipt_url?: string
+  status?: string
+  cancel_reason?: string
+  cancelled_by?: string
   items?: ExpenseItem[]
 }
 
@@ -71,6 +76,9 @@ interface Category {
 export default function ExpensesPage() {
   const router = useRouter()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { requestCancelReason, cancelReasonDialog } = useCancelReasonDialog()
+  const { user } = useAuth()
+  const canDelete = isSuperAdmin(user?.role)
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
@@ -147,7 +155,7 @@ export default function ExpensesPage() {
     setPreviewData(null)
   }
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
+  const totalExpenses = expenses.reduce((sum, e) => (e.status === 'cancelled' ? sum : sum + e.amount), 0)
 
   const { page, setPage, totalPages, totalItems, paginatedItems, resetPage, pageSize } = usePagination(expenses)
 
@@ -192,6 +200,29 @@ export default function ExpensesPage() {
     }
   }
 
+  const handleCancelExpense = async (id: string) => {
+    const reason = await requestCancelReason({
+      title: 'Cancel expense?',
+      description: 'The expense will be reversed and kept for reference — it will no longer count in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      const res = await apiFetch(`/expenses/${id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
+      if (res.ok) {
+        notifySuccess('Expense cancelled')
+        fetchExpenses()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to cancel expense')
+      }
+    } catch (err) {
+      notifyError('An error occurred')
+    }
+  }
+
   const handleExportExpenses = async () => {
     const exportList =
       selectedExpenses.size > 0
@@ -223,6 +254,32 @@ export default function ExpensesPage() {
       )
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Failed to export expenses')
+    }
+  }
+
+  const handleBulkCancelExpenses = async () => {
+    const eligible = expenses.filter(
+      (e) => selectedExpenses.has(e.id) && e.status !== 'cancelled'
+    )
+    if (eligible.length === 0) return
+    const reason = await requestCancelReason({
+      title: `Cancel ${eligible.length} expense(s)?`,
+      description: 'The expenses will be reversed and kept for reference — they will no longer count in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      await Promise.all(
+        eligible.map((e) =>
+          apiFetch(`/expenses/${e.id}/cancel`, {
+            method: 'POST',
+            body: JSON.stringify({ reason }),
+          })
+        )
+      )
+      setSelectedExpenses(new Set())
+      fetchExpenses()
+    } catch (err) {
+      notifyError('An error occurred')
     }
   }
 
@@ -320,9 +377,14 @@ export default function ExpensesPage() {
                       <Button variant="outline" size="sm" onClick={handleExportExpenses}>
                         <Download className="mr-1 h-3.5 w-3.5" /> Export
                       </Button>
-                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteExpenses}>
-                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                      <Button variant="outline" size="sm" onClick={handleBulkCancelExpenses}>
+                        Cancel
                       </Button>
+                      {canDelete && (
+                        <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteExpenses}>
+                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -359,13 +421,20 @@ export default function ExpensesPage() {
                         </td>
                         <td className="py-3 text-gray-600">{formatDate(e.date)}</td>
                         <td className="py-3 font-medium text-gray-900">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewId(e.id)}
-                            className="font-medium text-blue-600 hover:underline"
-                          >
-                            {e.expense_number}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewId(e.id)}
+                              className="font-medium text-blue-600 hover:underline"
+                            >
+                              {e.expense_number}
+                            </button>
+                            {e.status === 'cancelled' && (
+                              <span title={e.cancel_reason || undefined}>
+                                <StatusBadge status="cancelled" />
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 text-gray-600">{e.vendor || '-'}</td>
                         <td className="py-3">
@@ -386,21 +455,31 @@ export default function ExpensesPage() {
                                 <Eye className="mr-2 h-4 w-4" />
                                 Preview
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => router.push(`/expenses/edit/${e.id}`)}>
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Edit
-                              </DropdownMenuItem>
+                              {e.status !== 'cancelled' && (
+                                <DropdownMenuItem onClick={() => router.push(`/expenses/edit/${e.id}`)}>
+                                  <Pencil className="mr-2 h-4 w-4" />
+                                  Edit
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem onClick={() => openThermalPrint(e)}>
                                 <ThermalPrinter className="mr-2 h-4 w-4" />
                                 Print
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDeleteExpense(e.id)}
-                                className="text-red-600"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
+                              {e.status !== 'cancelled' && (
+                                <DropdownMenuItem onClick={() => handleCancelExpense(e.id)}>
+                                  <X className="mr-2 h-4 w-4" />
+                                  Cancel
+                                </DropdownMenuItem>
+                              )}
+                              {canDelete && (
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteExpense(e.id)}
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </td>
@@ -574,6 +653,7 @@ export default function ExpensesPage() {
         )}
       </div>
       {confirmDialog}
+      {cancelReasonDialog}
     </DashboardLayout>
   )
 }
