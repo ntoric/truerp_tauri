@@ -1667,8 +1667,9 @@ export default function InventoryPage() {
             <p className="text-sm text-gray-500">
               Declares the overall opening stock — all products and warehouses — at the
               start of the selected date. It defaults to the previous day&apos;s closing
-              stock; edit to override. Stock reports and P&L will use this value instead
-              of the computed opening.
+              stock; edit to override. Stock reports and P&L for a period starting on
+              this date will use this value as the opening stock. Closing stock is
+              always the computed figure and is not affected.
             </p>
             <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 py-2">
               <div className="space-y-2">
