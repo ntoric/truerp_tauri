@@ -13,6 +13,7 @@ import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { cn, formatCurrency } from '@/lib/utils'
@@ -177,10 +178,10 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const [chargeItems, setChargeItems] = useState<AdditionalChargeItem[]>([])
   const [autoRoundOff, setAutoRoundOff] = useState(true)
   const [amountPaidEdited, setAmountPaidEdited] = useState(false)
-  const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: number }[]>([
-    { mode: 'cash', amount: 0 },
+  const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: number; bank_account_id: string | null }[]>([
+    { mode: 'cash', amount: 0, bank_account_id: null },
   ])
-  const { accounts: bankAccounts } = useBankAccounts()
+  const { accounts: bankAccounts, loading: bankAccountsLoading } = useBankAccounts()
   const { getDepositHint } = usePaymentMethodMappings()
   const [signature, setSignature] = useState('')
   const [businessSignature, setBusinessSignature] = useState('')
@@ -278,6 +279,19 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   useEffect(() => {
     fetchData()
   }, [])
+
+  // Drop per-split account selections that no longer resolve to a known
+  // account (e.g. deleted since the draft was saved).
+  useEffect(() => {
+    if (bankAccountsLoading) return
+    setPaymentSplits((prev) =>
+      prev.map((split) =>
+        split.bank_account_id && !bankAccounts.some((a) => a.id === split.bank_account_id)
+          ? { ...split, bank_account_id: null }
+          : split
+      )
+    )
+  }, [bankAccounts, bankAccountsLoading])
 
   useEffect(() => {
     if (date && paymentTerms) {
@@ -1043,7 +1057,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     return paymentSplits[index]?.amount || 0
   }
 
-  const updateSplit = (index: number, patch: Partial<{ mode: string; amount: number }>) => {
+  const updateSplit = (index: number, patch: Partial<{ mode: string; amount: number; bank_account_id: string | null }>) => {
     if (patch.amount !== undefined) setAmountPaidEdited(true)
     setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
@@ -1056,7 +1070,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           ? { ...row, amount: totalAmount }
           : row
       ))
-      return appendPaymentSplit(normalized, totalAmount, (mode, amount) => ({ mode, amount }))
+      return appendPaymentSplit(normalized, totalAmount, (mode, amount) => ({ mode, amount, bank_account_id: null }))
     })
   }
 
@@ -1076,7 +1090,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const markFullyPaid = () => {
     if (paymentSplits.length <= 1) {
       setAmountPaidEdited(false)
-      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'cash', amount: totalAmount }])
+      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'cash', amount: totalAmount, bank_account_id: paymentSplits[0]?.bank_account_id ?? null }])
       return
     }
     setAmountPaidEdited(true)
@@ -1094,6 +1108,16 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     }
     setAmountPaidEdited(true)
     setPaymentSplits((prev) => prev.map((row) => ({ ...row, amount: 0 })))
+  }
+
+  // Human-readable destination for a split: explicit account, method-mapped
+  // account/primary, or Cash in hand — matching the backend resolver.
+  const splitAccountLabel = (split: { mode: string; bank_account_id: string | null }) => {
+    if (isInitialInvestmentMethod(split.mode)) return "Owner's Equity"
+    if (split.bank_account_id) {
+      return bankAccounts.find((a) => a.id === split.bank_account_id)?.account_name || 'the selected account'
+    }
+    return getDepositHint(split.mode, bankAccounts)
   }
 
   const applyLoyaltyRedemptionChange = (nextPoints: number) => {
@@ -1187,7 +1211,11 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         const loadedPaid = invoice.amount_paid || 0
         const loadedTotal = invoice.total_amount || 0
         const loadedSplits = splitsFromInvoice(invoice)
-        setPaymentSplits(loadedSplits.length ? loadedSplits : [{ mode: invoice.payment_mode || 'cash', amount: loadedPaid }])
+        setPaymentSplits(
+          loadedSplits.length
+            ? loadedSplits.map((s) => ({ mode: s.mode, amount: s.amount, bank_account_id: s.bank_account_id ?? null }))
+            : [{ mode: invoice.payment_mode || 'cash', amount: loadedPaid, bank_account_id: invoice.bank_account_id ?? null }]
+        )
         setAmountPaidEdited(loadedPaid + 0.01 < loadedTotal || loadedSplits.length > 1)
         setSignature(invoice.signature || '')
         setPdfTemplate(invoice.pdf_template || pdfTemplate)
@@ -1405,6 +1433,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           is_inter_state: isInterState,
           payment_mode: paymentMode,
           amount_paid: parseMoney(Math.min(Math.max(0, effectiveAmountPaid), totalAmount)),
+          bank_account_id: paymentSplits.find((s) => s.bank_account_id)?.bank_account_id ?? null,
           payment_splits: paymentSplits
             .map((split, index) => ({
               mode: split.mode,
@@ -1413,6 +1442,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   ? Math.min(Math.max(0, totalAmount), totalAmount)
                   : split.amount
               ),
+              bank_account_id: split.bank_account_id || null,
             }))
             .filter((split) => split.amount > 0),
           notes,
@@ -1525,8 +1555,12 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setChargeItems(hydrateAdditionalCharges(draftData.additionalChargeItems, draftData.additionalCharges || 0))
         setAutoRoundOff(draftData.autoRoundOff !== undefined ? draftData.autoRoundOff : true)
         const draftSplits = Array.isArray(draftData.paymentSplits) && draftData.paymentSplits.length
-          ? draftData.paymentSplits
-          : [{ mode: draftData.paymentMode || 'cash', amount: draftData.amountPaid || 0 }]
+          ? draftData.paymentSplits.map((s: { mode?: string; amount?: number; bank_account_id?: string | null }) => ({
+              mode: s.mode || 'cash',
+              amount: s.amount ?? 0,
+              bank_account_id: s.bank_account_id ?? null,
+            }))
+          : [{ mode: draftData.paymentMode || 'cash', amount: draftData.amountPaid || 0, bank_account_id: null }]
         setPaymentSplits(draftSplits)
         setAmountPaidEdited(
           typeof draftData.amountPaidEdited === 'boolean'
@@ -2399,6 +2433,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   <CardContent className="space-y-4">
                     {paymentSplits.map((split, index) => {
                       const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
+                      const initialInvestment = isInitialInvestmentMethod(split.mode)
                       return (
                         <div key={`${split.mode}-${index}`} className="space-y-3">
                           <div className="space-y-2">
@@ -2414,6 +2449,36 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                                 </option>
                               ))}
                             </select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Received Into</Label>
+                            {initialInvestment ? (
+                              <div className="flex h-10 items-center rounded-md border border-input bg-gray-50 px-3 text-sm text-muted-foreground">
+                                Owner&apos;s Equity
+                              </div>
+                            ) : bankAccountsLoading ? (
+                              <Skeleton className="h-10" />
+                            ) : (
+                              <select
+                                value={split.bank_account_id || ''}
+                                onChange={(e) => updateSplit(index, { bank_account_id: e.target.value || null })}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                              >
+                                <option value="">
+                                  {split.mode === 'cash' ? 'Cash in-hand' : `Auto — ${getDepositHint(split.mode, bankAccounts)}`}
+                                </option>
+                                {bankAccounts
+                                  .filter((a) => a.is_active || a.id === split.bank_account_id)
+                                  .map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                      {account.account_name}
+                                      {account.bank_name ? ` (${account.bank_name})` : ''}
+                                      {' — '}
+                                      {formatCurrency(account.balance)}
+                                    </option>
+                                  ))}
+                              </select>
+                            )}
                           </div>
                           <div className="flex items-end gap-3">
                             <div className="flex-1 space-y-2">
@@ -2446,8 +2511,8 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       {paymentSplits.length === 1
                         ? isInitialInvestmentMethod(paymentMode)
                           ? 'Amount received is recorded against Owner\'s Equity and will not affect cash or bank balances.'
-                          : `Amount received is credited to: ${getDepositHint(paymentMode, bankAccounts)} (configure under Cash & Bank → Payment method accounts)`
-                        : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${getDepositHint(split.mode, bankAccounts)}`).join(' · ')}
+                          : `Amount received is credited to: ${splitAccountLabel(paymentSplits[0] || { mode: paymentMode, bank_account_id: null })} (configure under Cash & Bank → Payment method accounts)`
+                        : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${splitAccountLabel(split)}`).join(' · ')}
                     </p>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">

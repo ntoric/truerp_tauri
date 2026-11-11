@@ -30,7 +30,10 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import { StatusBadge } from '@/components/ui/badge'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
-import { PAYMENT_METHODS, formatPaymentMethod } from '@/lib/paymentSplits'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useBankAccounts } from '@/hooks/useBankAccounts'
+import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
+import { PAYMENT_METHODS, formatPaymentMethod, isInitialInvestmentMethod } from '@/lib/paymentSplits'
 
 interface PaymentOut {
   id: string
@@ -156,6 +159,7 @@ const emptyForm = () => ({
   payment_out_discount: '0',
   payment_out_number: '',
   mode: '',
+  bank_account_id: '',
   date: new Date().toISOString().split('T')[0],
   reference: '',
   notes: '',
@@ -180,6 +184,8 @@ export default function PaymentOutsPage() {
   const { user } = useAuth()
   const canDelete = isSuperAdmin(user?.role)
   const { isDiscountEnabled } = useDiscount()
+  const { accounts: bankAccounts, loading: bankAccountsLoading } = useBankAccounts()
+  const { getDepositHint } = usePaymentMethodMappings()
   const {
     fieldErrors,
     clearErrors,
@@ -255,6 +261,13 @@ export default function PaymentOutsPage() {
   function getNetAmount(paymentOut: PaymentOut) {
     return paymentOut.amount_paid - paymentOut.payment_out_discount
   }
+
+  // Resolved source account for the form's method + explicit selection,
+  // mirroring the backend's resolveBankAccountForPaymentMode order: explicit
+  // account → method mapping → primary account → cash in-hand.
+  const paymentOutAccountLabel = formData.bank_account_id
+    ? bankAccounts.find((a) => a.id === formData.bank_account_id)?.account_name || 'the selected account'
+    : getDepositHint(formData.mode || 'cash', bankAccounts)
 
   const buildPaymentOutParams = (targetPage: number, perPage: number) => {
     const params = new URLSearchParams()
@@ -497,12 +510,13 @@ export default function PaymentOutsPage() {
 
     setSubmitting(true)
     try {
-      const payload: Record<string, string | number> = {
+      const payload: Record<string, string | number | null> = {
         party_id: formData.party_id,
         amount_paid: amountPaid,
         payment_out_discount: isDiscountEnabled ? discount : 0,
         payment_out_number: formData.payment_out_number,
         mode: formData.mode,
+        bank_account_id: formData.bank_account_id || null,
         date: new Date(formData.date).toISOString(),
         reference: formData.reference,
         notes: formData.notes,
@@ -877,6 +891,44 @@ export default function PaymentOutsPage() {
                         </SelectContent>
                       </Select>
                       <FieldError message={fieldErrors.mode} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="bank_account_id">Paid From</Label>
+                      {isInitialInvestmentMethod(formData.mode) ? (
+                        <div className="flex h-9 items-center rounded-md border border-input bg-gray-50 px-3 text-sm text-muted-foreground">
+                          Owner&apos;s Equity
+                        </div>
+                      ) : bankAccountsLoading ? (
+                        <Skeleton className="h-9" />
+                      ) : (
+                        <select
+                          id="bank_account_id"
+                          value={formData.bank_account_id}
+                          onChange={(e) => setFormData({ ...formData, bank_account_id: e.target.value })}
+                          className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                        >
+                          <option value="">
+                            {!formData.mode || formData.mode === 'cash'
+                              ? 'Cash in-hand'
+                              : `Auto — ${getDepositHint(formData.mode, bankAccounts)}`}
+                          </option>
+                          {bankAccounts
+                            .filter((a) => a.is_active || a.id === formData.bank_account_id)
+                            .map((account) => (
+                              <option key={account.id} value={account.id}>
+                                {account.account_name}
+                                {account.bank_name ? ` (${account.bank_name})` : ''}
+                                {' — '}
+                                {formatCurrency(account.balance)}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {isInitialInvestmentMethod(formData.mode)
+                          ? 'Recorded as owner\u2019s capital; does not affect cash or bank balances.'
+                          : `Amount paid is deducted from: ${paymentOutAccountLabel} (configure under Cash & Bank → Payment method accounts)`}
+                      </p>
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="date">Payment Date *</Label>

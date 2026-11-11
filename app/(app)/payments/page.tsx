@@ -27,7 +27,10 @@ import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { PAYMENT_METHODS, formatPaymentMethod } from '@/lib/paymentSplits'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useBankAccounts } from '@/hooks/useBankAccounts'
+import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
+import { PAYMENT_METHODS, formatPaymentMethod, isInitialInvestmentMethod } from '@/lib/paymentSplits'
 
 interface Payment {
   id: string
@@ -67,6 +70,7 @@ const emptyForm = () => ({
   payment_in_discount: '0',
   payment_in_number: '',
   mode: '',
+  bank_account_id: '',
   date: new Date().toISOString().split('T')[0],
   notes: '',
 })
@@ -79,6 +83,8 @@ export default function PaymentsPage() {
   const { user } = useAuth()
   const canDelete = isSuperAdmin(user?.role)
   const { isDiscountEnabled } = useDiscount()
+  const { accounts: bankAccounts, loading: bankAccountsLoading } = useBankAccounts()
+  const { getDepositHint } = usePaymentMethodMappings()
   const {
     fieldErrors,
     clearErrors,
@@ -286,6 +292,7 @@ export default function PaymentsPage() {
           payment_in_discount: isDiscountEnabled ? discount : 0,
           payment_in_number: formData.payment_in_number,
           mode: formData.mode,
+          bank_account_id: formData.bank_account_id || null,
           date: new Date(formData.date).toISOString(),
           notes: formData.notes,
         }),
@@ -320,6 +327,13 @@ export default function PaymentsPage() {
   const getPosBadge = () => <StatusBadge tone="violet">POS</StatusBadge>
 
   const isPosPayment = (payment: Payment) => payment.invoice?.is_pos === true
+
+  // Resolved destination account for the form's method + explicit selection,
+  // mirroring the backend's resolveBankAccountForPaymentMode order: explicit
+  // account → method mapping → primary account → cash in-hand.
+  const paymentInAccountLabel = formData.bank_account_id
+    ? bankAccounts.find((a) => a.id === formData.bank_account_id)?.account_name || 'the selected account'
+    : getDepositHint(formData.mode || 'cash', bankAccounts)
 
   const handleDeletePayment = async (id: string) => {
     if (!(await confirm({
@@ -545,6 +559,44 @@ export default function PaymentsPage() {
                     </SelectContent>
                   </Select>
                   <FieldError message={fieldErrors.mode} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="bank_account_id">Received Into</Label>
+                  {isInitialInvestmentMethod(formData.mode) ? (
+                    <div className="flex h-9 items-center rounded-md border border-input bg-gray-50 px-3 text-sm text-muted-foreground">
+                      Owner&apos;s Equity
+                    </div>
+                  ) : bankAccountsLoading ? (
+                    <Skeleton className="h-9" />
+                  ) : (
+                    <select
+                      id="bank_account_id"
+                      value={formData.bank_account_id}
+                      onChange={(e) => setFormData({ ...formData, bank_account_id: e.target.value })}
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                    >
+                      <option value="">
+                        {!formData.mode || formData.mode === 'cash'
+                          ? 'Cash in-hand'
+                          : `Auto — ${getDepositHint(formData.mode, bankAccounts)}`}
+                      </option>
+                      {bankAccounts
+                        .filter((a) => a.is_active || a.id === formData.bank_account_id)
+                        .map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_name}
+                            {account.bank_name ? ` (${account.bank_name})` : ''}
+                            {' — '}
+                            {formatCurrency(account.balance)}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {isInitialInvestmentMethod(formData.mode)
+                      ? 'Recorded as owner\u2019s capital; does not affect cash or bank balances.'
+                      : `Amount received is credited to: ${paymentInAccountLabel} (configure under Cash & Bank → Payment method accounts)`}
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="date">Payment Date *</Label>

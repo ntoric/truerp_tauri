@@ -77,6 +77,7 @@ const PERIOD_LABELS: Record<DashboardPeriod, string> = {
 
 interface DashboardStats {
   total_sales: number
+  total_sales_paid: number
   total_invoices: number
   total_parties: number
   total_customers?: number
@@ -314,11 +315,19 @@ export default function DashboardPage() {
                 </h2>
               </div>
               <div className="flex flex-wrap items-end justify-between gap-6">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">{periodLabel} Sales</p>
-                  <p className="mt-1 text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
-                    {formatCurrency(stats?.total_sales || 0)}
-                  </p>
+                <div className="flex items-end gap-5 sm:gap-8">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">{periodLabel} Sale</p>
+                    <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">
+                      {formatCurrency(stats?.total_sales || 0)}
+                    </p>
+                  </div>
+                  <div className="border-l border-white/25 pl-5 sm:pl-8">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Sales Paid</p>
+                    <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">
+                      {formatCurrency(stats?.total_sales_paid || 0)}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <span className={HERO_CHIP}>
