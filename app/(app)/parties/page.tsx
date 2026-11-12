@@ -29,7 +29,8 @@ import {
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { Plus, Search, Phone, ArrowUp, ArrowDown, Trash2, Edit, MoreVertical, Download, BarChart3, ChevronUp, ChevronDown, FileText } from 'lucide-react'
-import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
+import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
+import { notifyError, notifySuccess } from '@/lib/notify'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
@@ -246,6 +247,25 @@ export default function PartiesPage() {
     await downloadCsv(`parties_${accountingExportDateStamp()}.csv`, rows, { label: 'Exporting parties' })
   }
 
+  const handleExportPdf = async () => {
+    try {
+      const params = buildPartyParams(1, 0)
+      params.delete('page')
+      params.delete('per_page')
+      const res = await apiFetch(`/parties/pdf?${params.toString()}`, { timeoutMs: 60000 })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error((err as { error?: string }).error || 'Failed to export PDF')
+      }
+      const blob = await res.blob()
+      if (!blob.size) throw new Error('Export was empty')
+      await downloadBlob(`parties_${accountingExportDateStamp()}.pdf`, blob, { label: 'Exporting parties PDF' })
+      notifySuccess('PDF exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'PDF export failed')
+    }
+  }
+
   const handleSelectParty = (id: string) => {
     // Unchecking a row while "all matching" is active drops back to an
     // explicit selection of the loaded page.
@@ -435,9 +455,22 @@ export default function PartiesPage() {
                 Stats
                 {showStats ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
               </Button>
-              <Button variant="outline" onClick={handleExport} disabled={loading || total === 0}>
-                <Download className="mr-2 h-4 w-4" /> Export
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={loading || total === 0}>
+                    <Download className="mr-2 h-4 w-4" /> Export
+                    <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => void handleExport()}>
+                    <Download className="mr-2 h-4 w-4" /> Export CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void handleExportPdf()}>
+                    <FileText className="mr-2 h-4 w-4" /> Export PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Dialog open={isCreateModalOpen} onOpenChange={handleCreateModalChange}>
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 h-4 w-4" /> Create Party</Button>
