@@ -147,6 +147,7 @@ export const navItems: NavItem[] = [
       { name: 'Profit & Loss', href: '/reports/profit-loss', icon: Scales },
       { name: 'Billwise Profit', href: '/reports/billwise-profit', icon: ReceiptX },
       { name: 'Stock Report', href: '/reports/stock', icon: Warehouse },
+      { name: 'Party Balances', href: '/reports/party-balance', icon: UsersThree },
       { name: 'Reports & Analytics', href: '/reports', icon: ChartLineUp },
     ],
   },

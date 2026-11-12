@@ -34,6 +34,7 @@ export const TOGGLEABLE_PAGES: ToggleablePage[] = [
   { key: '/reports/profit-loss', label: 'Profit & Loss Report', group: 'Reports' },
   { key: '/reports/billwise-profit', label: 'Billwise Profit Report', group: 'Reports' },
   { key: '/reports/stock', label: 'Stock Report', group: 'Reports' },
+  { key: '/reports/party-balance', label: 'Party Balance Report', group: 'Reports' },
   { key: '/reports', label: 'Reports & Analytics', group: 'Reports' },
   { key: '/gst', label: 'GST Reports', group: 'GST' },
   { key: '/e-invoicing', label: 'E-Invoicing', group: 'GST' },
