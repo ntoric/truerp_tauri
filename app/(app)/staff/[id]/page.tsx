@@ -76,6 +76,8 @@ interface StaffAdvance {
   recovered_amount: number
   pending_amount: number
   payment_mode: string
+  bank_account_id?: string | null
+  bank_account?: { account_name: string } | null
   status: string
   notes: string
 }
@@ -670,7 +672,10 @@ export default function StaffDetailPage() {
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(a.amount)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums text-green-600">{formatCurrency(a.recovered_amount)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums text-red-600">{formatCurrency(a.pending_amount)}</TableCell>
-                    <TableCell className="whitespace-nowrap">{formatPaymentMethod(a.payment_mode)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {formatPaymentMethod(a.payment_mode)}
+                      {a.bank_account?.account_name ? ` · ${a.bank_account.account_name}` : ''}
+                    </TableCell>
                     <TableCell>
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${

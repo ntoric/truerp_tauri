@@ -4,6 +4,7 @@ import * as React from "react"
 import { Check, ChevronDown, Plus, Search, X } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { matchesSearch } from "@/lib/search"
 
 export interface SearchableSelectOption {
   value: string
@@ -46,7 +47,7 @@ export function SearchableSelect({
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return options
-    return options.filter((opt) => opt.label.toLowerCase().includes(q))
+    return options.filter((opt) => matchesSearch(opt.label, q))
   }, [options, search])
 
   const handleSelect = (optValue: string) => {

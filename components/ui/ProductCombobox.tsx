@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Search, X, Plus } from 'lucide-react'
 import { cn, formatCurrency } from '@/lib/utils'
+import { matchesSearch } from '@/lib/search'
 
 export interface ProductComboboxProduct {
   id: string
@@ -60,7 +61,7 @@ export const ProductCombobox = React.forwardRef<HTMLInputElement, ProductCombobo
     return products
       .filter((p) => {
         return (
-          p.name.toLowerCase().includes(q) ||
+          matchesSearch(p.name, q) ||
           (p.sku && p.sku.toLowerCase().includes(q)) ||
           (p.item_code && p.item_code.toLowerCase().includes(q))
         )

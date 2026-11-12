@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { formatCurrency, asArray } from '@/lib/utils'
+import { matchesSearch } from '@/lib/search'
 import { offlineStorage, POS_META_KEYS, type POSSaleRecord } from '@/lib/offlineStorage'
 import Link from 'next/link'
 import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, ChevronDown, Percent, Wifi, WifiOff, Eye, User, Tag } from 'lucide-react'
@@ -2021,7 +2022,7 @@ export default function POSPage() {
 
   const filteredProducts = products.filter(p =>
     (allowNegativeStock || Number(p.stock_qty || 0) > 0) &&
-    (p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (matchesSearch(p.name, searchTerm) ||
     p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.item_code?.toLowerCase().includes(searchTerm.toLowerCase()))
   )

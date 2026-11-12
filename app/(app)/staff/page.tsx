@@ -29,6 +29,12 @@ import { notifyError, notifySuccess } from '@/lib/notify'
 import { formatDate } from '@/lib/utils'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import {
+  useBankAccounts,
+  CASH_IN_HAND_ACCOUNT,
+  bankAccountIdForApi,
+  defaultBankAccountSelection,
+} from '@/hooks/useBankAccounts'
 
 interface Staff {
   id: string
@@ -71,6 +77,7 @@ export default function StaffPage() {
   const [advanceDate, setAdvanceDate] = useState(new Date().toISOString().split('T')[0])
   const [advanceAmount, setAdvanceAmount] = useState('')
   const [advanceSaving, setAdvanceSaving] = useState(false)
+  const [advancePaidFrom, setAdvancePaidFrom] = useState(CASH_IN_HAND_ACCOUNT)
   const [extraStaff, setExtraStaff] = useState<Staff | null>(null)
   const [extraDate, setExtraDate] = useState(new Date().toISOString().split('T')[0])
   const [extraAmount, setExtraAmount] = useState('')
@@ -78,6 +85,9 @@ export default function StaffPage() {
   const [extraReason, setExtraReason] = useState('')
   const [extraPayNow, setExtraPayNow] = useState(true)
   const [extraSaving, setExtraSaving] = useState(false)
+  const [extraPaidFrom, setExtraPaidFrom] = useState(CASH_IN_HAND_ACCOUNT)
+  const { accounts: bankAccounts, primaryAccount, refresh: refreshBankAccounts } = useBankAccounts()
+  const activeBankAccounts = bankAccounts.filter((a) => a.is_active)
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -231,6 +241,7 @@ export default function StaffPage() {
     setAdvanceStaff(s)
     setAdvanceDate(new Date().toISOString().split('T')[0])
     setAdvanceAmount('')
+    setAdvancePaidFrom(defaultBankAccountSelection(bankAccounts, primaryAccount))
   }
 
   const handlePayAdvance = async () => {
@@ -254,12 +265,14 @@ export default function StaffPage() {
           amount,
           advance_date: new Date(advanceDate).toISOString(),
           reason: 'Advance salary',
-          payment_mode: 'cash',
+          payment_mode: advancePaidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
+          bank_account_id: bankAccountIdForApi(advancePaidFrom),
         }),
       })
       if (res.ok) {
         notifySuccess(`Advance salary of ${formatCurrency(amount)} recorded for ${advanceStaff.name}`)
         setAdvanceStaff(null)
+        refreshBankAccounts()
       } else {
         const data = await res.json().catch(() => ({}))
         notifyError(data.error || 'Failed to record advance salary')
@@ -279,6 +292,7 @@ export default function StaffPage() {
     setExtraDirection('deduct')
     setExtraReason('')
     setExtraPayNow(true)
+    setExtraPaidFrom(defaultBankAccountSelection(bankAccounts, primaryAccount))
   }
 
   const handleSaveExtra = async () => {
@@ -304,7 +318,8 @@ export default function StaffPage() {
           reason: extraReason,
           entry_date: new Date(extraDate).toISOString(),
           redeem_now: extraPayNow,
-          payment_mode: 'cash',
+          payment_mode: extraPaidFrom === CASH_IN_HAND_ACCOUNT ? 'cash' : 'bank_transfer',
+          bank_account_id: extraPayNow ? bankAccountIdForApi(extraPaidFrom) : null,
         }),
       })
       if (res.ok) {
@@ -315,6 +330,7 @@ export default function StaffPage() {
         )
         setExtraStaff(null)
         fetchStaffs()
+        if (extraPayNow) refreshBankAccounts()
       } else {
         const data = await res.json().catch(() => ({}))
         notifyError(data.error || 'Failed to record extra amount')
@@ -742,8 +758,24 @@ export default function StaffPage() {
                 <Label>Amount *</Label>
                 <Input type="number" min="0" step="0.01" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} placeholder="0.00" />
               </div>
+              <div className="space-y-2">
+                <Label>Paid From *</Label>
+                <Select value={advancePaidFrom} onValueChange={setAdvancePaidFrom}>
+                  <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={CASH_IN_HAND_ACCOUNT}>Cash in-hand</SelectItem>
+                    {activeBankAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.account_name}
+                        {account.bank_name ? ` (${account.bank_name})` : ''}
+                        {` — ${formatCurrency(account.balance)}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <p className="text-xs text-muted-foreground">
-                The advance is recorded as a Staff Advance expense paid from cash in-hand, and is automatically deducted from the next payroll for this staff member.
+                The advance is recorded as a Staff Advance expense, deducted from the selected account&apos;s balance, and is automatically deducted from the next payroll for this staff member.
               </p>
             </div>
             <DialogFooter>
@@ -786,7 +818,7 @@ export default function StaffPage() {
                   onCheckedChange={(checked) => setExtraPayNow(checked === true)}
                 />
                 <div className="space-y-1">
-                  <Label htmlFor="extra-pay-now" className="cursor-pointer">Pay out now (cash)</Label>
+                  <Label htmlFor="extra-pay-now" className="cursor-pointer">Pay out now</Label>
                   <p className="text-xs text-muted-foreground">
                     {extraDirection === 'add'
                       ? 'Pays immediately and settles it — no payroll adjustment. Unchecked, it stays due and is added to the next salary.'
@@ -794,6 +826,24 @@ export default function StaffPage() {
                   </p>
                 </div>
               </div>
+              {extraPayNow && (
+                <div className="space-y-2">
+                  <Label>Paid From *</Label>
+                  <Select value={extraPaidFrom} onValueChange={setExtraPaidFrom}>
+                    <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CASH_IN_HAND_ACCOUNT}>Cash in-hand</SelectItem>
+                      {activeBankAccounts.map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.account_name}
+                          {account.bank_name ? ` (${account.bank_name})` : ''}
+                          {` — ${formatCurrency(account.balance)}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setExtraStaff(null)} disabled={extraSaving}>Cancel</Button>
