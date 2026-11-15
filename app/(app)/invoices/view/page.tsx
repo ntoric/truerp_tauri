@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter, Gift, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter, Gift, ExternalLink, MessageCircle } from 'lucide-react'
 import ThermalPrintModal from '@/components/ThermalPrintModal'
 import InvoiceAttachments from '@/components/InvoiceAttachments'
 import InvoiceStatusTracker from '@/components/InvoiceStatusTracker'
@@ -20,7 +20,8 @@ import InvoiceCustomFieldsForm, {
   parseCustomFieldsFromInvoice,
 } from '@/components/InvoiceCustomFieldsForm'
 import { downloadInvoicePdf } from '@/lib/printDocument'
-import { notifyError } from '@/lib/notify'
+import { notifyError, notifySuccess } from '@/lib/notify'
+import { sendInvoiceOnWhatsApp } from '@/lib/whatsappInvoice'
 import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
 
@@ -113,6 +114,7 @@ function InvoiceViewContent() {
   const [loading, setLoading] = useState(true)
   const [thermalPrintOpen, setThermalPrintOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false)
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
 
   useEffect(() => {
@@ -160,6 +162,19 @@ function InvoiceViewContent() {
     }
   }
 
+  const handleSendWhatsApp = async () => {
+    if (!invoice?.id || sendingWhatsApp) return
+    setSendingWhatsApp(true)
+    try {
+      await sendInvoiceOnWhatsApp(invoice.id)
+      notifySuccess('Invoice sent on WhatsApp')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to send WhatsApp message')
+    } finally {
+      setSendingWhatsApp(false)
+    }
+  }
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -196,6 +211,14 @@ function InvoiceViewContent() {
             <Button variant="outline"><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button>
           </Link>
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => void handleSendWhatsApp()} disabled={sendingWhatsApp}>
+              {sendingWhatsApp ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <MessageCircle className="mr-2 h-4 w-4" />
+              )}
+              WhatsApp
+            </Button>
             <Button variant="outline" onClick={() => setThermalPrintOpen(true)}>
               <ThermalPrinter className="mr-2 h-4 w-4" /> Thermal
             </Button>

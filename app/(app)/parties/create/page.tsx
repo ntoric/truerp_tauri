@@ -98,7 +98,7 @@ export default function CreatePartyPage() {
         body: JSON.stringify(payload),
       })
       if (res.ok) {
-        router.push('/parties')
+        router.push(payload.party_type === 'vendor' ? '/parties/vendors' : '/parties/customers')
       } else {
         await handleApiError(res)
       }
@@ -114,7 +114,7 @@ export default function CreatePartyPage() {
       <div className="max-w-3xl space-y-4 pb-2">
         <PageHeader
           title={`Create New ${formData.party_type === 'customer' ? 'Customer' : 'Vendor'}`}
-          backHref="/parties"
+          backHref={formData.party_type === 'vendor' ? '/parties/vendors' : '/parties/customers'}
         />
 
         <form onSubmit={handleSubmit} className="space-y-4">

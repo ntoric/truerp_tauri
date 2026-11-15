@@ -43,6 +43,12 @@ interface InventoryItemOption {
   unit?: string
 }
 
+interface Category {
+  id: string
+  name: string
+  description?: string
+}
+
 interface StockBalance {
   product_id: string
   product_name: string
@@ -296,6 +302,8 @@ export default function InventoryPage() {
   const [entryTypeFilter, setEntryTypeFilter] = useState<string>('all')
   const [productSearchQuery, setProductSearchQuery] = useState('')
   const [debouncedProductSearch, setDebouncedProductSearch] = useState('')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [approvingEntryId, setApprovingEntryId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [showStats, setShowStats] = useState(false)
@@ -352,21 +360,23 @@ export default function InventoryPage() {
 
   // Inventory stocks always show current batch-level rows; date filter applies to entries/transfers only.
   const isProductSearchActive = productSearchQuery.trim().length > 0
+  const isCategoryFilterActive = categoryFilter !== 'all'
 
   // Lightweight data needed regardless of the active tab: dropdown options for
   // the dialogs, the pending-approval badge, and the stat widgets.
   useEffect(() => { if (!authLoading && user) fetchStats() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchInventoryItems() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchWarehouses() }, [authLoading, user])
+  useEffect(() => { if (!authLoading && user) fetchCategories() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchPendingCount() }, [authLoading, user])
 
   // Each tab fetches its own page of data when opened and when its
   // filters/page change while it is active.
-  useEffect(() => { if (!authLoading && user && activeTab === 'balance') fetchBalance() }, [authLoading, user, activeTab, debouncedProductSearch, balancePage])
-  useEffect(() => { if (!authLoading && user && activeTab === 'entries') fetchEntries() }, [authLoading, user, activeTab, debouncedProductSearch, entryApprovalFilter, entryTypeFilter, dateRange, entriesPage])
-  useEffect(() => { if (!authLoading && user && activeTab === 'stocks') fetchStocks() }, [authLoading, user, activeTab, debouncedProductSearch, stocksPage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'balance') fetchBalance() }, [authLoading, user, activeTab, debouncedProductSearch, categoryFilter, balancePage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'entries') fetchEntries() }, [authLoading, user, activeTab, debouncedProductSearch, categoryFilter, entryApprovalFilter, entryTypeFilter, dateRange, entriesPage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'stocks') fetchStocks() }, [authLoading, user, activeTab, debouncedProductSearch, categoryFilter, stocksPage])
   useEffect(() => { if (!authLoading && user && activeTab === 'transfers') fetchTransfers() }, [authLoading, user, activeTab, dateRange, transfersPage])
-  useEffect(() => { if (!authLoading && user && activeTab === 'low-stock') fetchLowStock() }, [authLoading, user, activeTab, lowStockPage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'low-stock') fetchLowStock() }, [authLoading, user, activeTab, categoryFilter, lowStockPage])
 
   // Debounce the shared product search so each keystroke doesn't hit the API.
   useEffect(() => {
@@ -467,6 +477,7 @@ export default function InventoryPage() {
     try {
       const params = new URLSearchParams()
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', String(balancePage))
       params.append('per_page', String(pageSize))
       const res = await apiFetch(`/inventory/balance?${params.toString()}`)
@@ -491,6 +502,7 @@ export default function InventoryPage() {
     setLowStockLoading(true)
     try {
       const params = new URLSearchParams()
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', String(lowStockPage))
       params.append('per_page', String(pageSize))
       const res = await apiFetch(`/inventory/alerts/low-stock?${params.toString()}`)
@@ -519,6 +531,7 @@ export default function InventoryPage() {
       if (entryApprovalFilter !== 'all') params.append('approval_status', entryApprovalFilter)
       if (entryTypeFilter !== 'all') params.append('entry_type', entryTypeFilter)
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', String(entriesPage))
       params.append('per_page', String(pageSize))
       const res = await apiFetch(`/inventory/entries?${params.toString()}`)
@@ -544,6 +557,7 @@ export default function InventoryPage() {
     try {
       const params = new URLSearchParams()
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', String(stocksPage))
       params.append('per_page', String(pageSize))
       const res = await apiFetch(`/inventory/stocks?${params.toString()}`)
@@ -714,6 +728,15 @@ export default function InventoryPage() {
       const res = await apiFetch('/warehouses?is_active=true')
       if (res.ok) {
         setWarehouses(asArray(await res.json()))
+      }
+    } catch (err) { console.error(err) }
+  }
+
+  const fetchCategories = async () => {
+    try {
+      const res = await apiFetch('/categories')
+      if (res.ok) {
+        setCategories(asArray<Category>(await res.json()))
       }
     } catch (err) { console.error(err) }
   }
@@ -1179,6 +1202,7 @@ export default function InventoryPage() {
       // per_page=0 returns every matching row for the export.
       const params = new URLSearchParams()
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', '1')
       params.append('per_page', '0')
       const res = await apiFetch(`/inventory/balance?${params.toString()}`, { timeoutMs: 30000 })
@@ -1214,6 +1238,7 @@ export default function InventoryPage() {
       if (entryApprovalFilter !== 'all') params.append('approval_status', entryApprovalFilter)
       if (entryTypeFilter !== 'all') params.append('entry_type', entryTypeFilter)
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', '1')
       params.append('per_page', '0')
       const res = await apiFetch(`/inventory/entries?${params.toString()}`, { timeoutMs: 30000 })
@@ -1282,6 +1307,7 @@ export default function InventoryPage() {
       // per_page=0 returns every matching row for the export.
       const params = new URLSearchParams()
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', '1')
       params.append('per_page', '0')
       const res = await apiFetch(`/inventory/stocks?${params.toString()}`, { timeoutMs: 30000 })
@@ -1316,7 +1342,11 @@ export default function InventoryPage() {
   const handleExportLowStock = async () => {
     try {
       // per_page=0 returns every matching row for the export.
-      const res = await apiFetch('/inventory/alerts/low-stock?page=1&per_page=0', { timeoutMs: 30000 })
+      const params = new URLSearchParams()
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
+      params.append('page', '1')
+      params.append('per_page', '0')
+      const res = await apiFetch(`/inventory/alerts/low-stock?${params.toString()}`, { timeoutMs: 30000 })
       if (!res.ok) throw new Error('Failed to fetch low stock alerts')
       const rows = asArray<LowStockAlert>(await res.json())
       await downloadCsv(
@@ -1357,6 +1387,29 @@ export default function InventoryPage() {
         aria-label="Product search"
       />
     </div>
+  )
+
+  const categorySelect = (
+    <Select
+      value={categoryFilter}
+      onValueChange={(value) => {
+        setCategoryFilter(value)
+        setBalancePage(1)
+        setEntriesPage(1)
+        setStocksPage(1)
+        setLowStockPage(1)
+      }}
+    >
+      <SelectTrigger className="w-full sm:w-[180px]" aria-label="Category filter">
+        <SelectValue placeholder="All Categories" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All Categories</SelectItem>
+        {categories.map((cat) => (
+          <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 
   if (authLoading) {
@@ -2005,6 +2058,11 @@ export default function InventoryPage() {
                       Product search applies to Stock Balance, Stock Entries, and Inventory Stocks.
                     </p>
                   )}
+                  {isCategoryFilterActive && (
+                    <p className="mt-1">
+                      Category filter applies to Stock Balance, Stock Entries, Inventory Stocks, and Low Stock Alerts.
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -2097,6 +2155,7 @@ export default function InventoryPage() {
               headerActions={
                 <>
                   {productSearchInput}
+                  {categorySelect}
                   {exportButton(handleExportBalance)}
                 </>
               }
@@ -2180,6 +2239,7 @@ export default function InventoryPage() {
               headerActions={
                 <>
                   {productSearchInput}
+                  {categorySelect}
                   <Select
                     value={entryTypeFilter}
                     onValueChange={setEntryTypeFilter}
@@ -2402,6 +2462,7 @@ export default function InventoryPage() {
               headerActions={
                 <>
                   {productSearchInput}
+                  {categorySelect}
                   {exportButton(handleExportStocks)}
                 </>
               }
@@ -2488,7 +2549,12 @@ export default function InventoryPage() {
                   )}
                 </CardTitle>
               }
-              headerActions={exportButton(handleExportLowStock)}
+              headerActions={
+                <>
+                  {categorySelect}
+                  {exportButton(handleExportLowStock)}
+                </>
+              }
               description={
                 <p className="text-sm text-gray-500">
                   Products at or below their minimum stock level. Always shows current data.

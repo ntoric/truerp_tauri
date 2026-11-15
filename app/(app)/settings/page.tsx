@@ -880,6 +880,19 @@ export default function SettingsPage() {
                 </Button>
               </CardContent>
             </Card>
+            <Card className="mb-6 border-green-100 bg-green-50/40">
+              <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold text-gray-900">WhatsApp invoice message</p>
+                  <p className="text-sm text-muted-foreground">
+                    Send the purchase summary and invoice PDF to customers on WhatsApp (WhatsApp Cloud API) for this store.
+                  </p>
+                </div>
+                <Button asChild variant="outline">
+                  <Link href="/settings/whatsapp-invoice">Configure WhatsApp</Link>
+                </Button>
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader className="flex flex-row items-center gap-2">
                 <FileText className="h-5 w-5 text-blue-600" />

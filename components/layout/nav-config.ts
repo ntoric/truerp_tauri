@@ -35,6 +35,7 @@ import {
   Megaphone,
   ChatCircleText,
   EnvelopeSimple,
+  Factory,
   WhatsappLogo,
   Gift,
   ShieldCheck,
@@ -102,7 +103,15 @@ export function filterNavForPageFeatures(
 
 export const navItems: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: SquaresFour, accent: '#4f46e5' },
-  { name: 'Parties', href: '/parties', icon: UsersThree, accent: '#7c3aed' },
+  {
+    name: 'Parties',
+    icon: UsersThree,
+    accent: '#7c3aed',
+    children: [
+      { name: 'Customers', href: '/parties/customers', icon: Users },
+      { name: 'Vendors', href: '/parties/vendors', icon: Factory },
+    ],
+  },
   { name: 'Product Categories', href: '/categories', icon: Tag, accent: '#b45309' },
   { name: 'Products', href: '/products', icon: Package, accent: '#059669' },
   { name: 'Inventory', href: '/inventory', icon: Warehouse, accent: '#0891b2' },
