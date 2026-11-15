@@ -91,6 +91,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [balanceFilter, setBalanceFilter] = useState('all')
   const [selectedParties, setSelectedParties] = useState<Set<string>>(new Set())
   const [selectAllMatching, setSelectAllMatching] = useState(false)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -118,7 +119,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
 
   useEffect(() => {
     fetchParties()
-  }, [debouncedSearch, categoryFilter, page])
+  }, [debouncedSearch, categoryFilter, balanceFilter, page])
 
   useEffect(() => {
     fetchStats()
@@ -142,6 +143,13 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
     setSelectAllMatching(false)
   }
 
+  const handleBalanceFilterChange = (value: string) => {
+    setBalanceFilter(value)
+    setPage(1)
+    setSelectedParties(new Set())
+    setSelectAllMatching(false)
+  }
+
   const clearSelection = () => {
     setSelectAllMatching(false)
     setSelectedParties(new Set())
@@ -157,6 +165,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
             search: debouncedSearch,
             category: categoryFilter === 'all' ? '' : categoryFilter,
             party_type: partyType ?? '',
+            balance: balanceFilter === 'all' ? '' : balanceFilter,
           },
         }
       : { ids: Array.from(selectedParties) }
@@ -166,6 +175,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
     if (debouncedSearch) params.append('search', debouncedSearch)
     if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
     if (partyType) params.append('party_type', partyType)
+    if (balanceFilter !== 'all') params.append('balance', balanceFilter)
     params.append('page', String(targetPage))
     params.append('per_page', String(perPage))
     return params
@@ -790,6 +800,16 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
                     {categories.map(cat => (
                       <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+                <Select value={balanceFilter} onValueChange={handleBalanceFilterChange}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Balance" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Balances</SelectItem>
+                    <SelectItem value="to_collect">To Collect</SelectItem>
+                    <SelectItem value="to_pay">To Pay</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

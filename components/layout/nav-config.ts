@@ -1,5 +1,6 @@
 import type { Icon } from '@phosphor-icons/react'
 import {
+  AddressBook,
   UsersThree,
   Tag,
   Package,
@@ -108,13 +109,21 @@ export const navItems: NavItem[] = [
     icon: UsersThree,
     accent: '#7c3aed',
     children: [
+      { name: 'All Parties', href: '/parties', icon: AddressBook },
       { name: 'Customers', href: '/parties/customers', icon: Users },
       { name: 'Vendors', href: '/parties/vendors', icon: Factory },
     ],
   },
-  { name: 'Product Categories', href: '/categories', icon: Tag, accent: '#b45309' },
-  { name: 'Products', href: '/products', icon: Package, accent: '#059669' },
-  { name: 'Inventory', href: '/inventory', icon: Warehouse, accent: '#0891b2' },
+  {
+    name: 'Inventory',
+    icon: Warehouse,
+    accent: '#0891b2',
+    children: [
+      { name: 'Products', href: '/products', icon: Package },
+      { name: 'Product Categories', href: '/categories', icon: Tag },
+      { name: 'Stock', href: '/inventory', icon: Warehouse },
+    ],
+  },
   { name: 'Warehouses', href: '/warehouses', icon: Buildings, accent: '#64748b' },
   {
     name: 'Purchases',
@@ -123,8 +132,6 @@ export const navItems: NavItem[] = [
     children: [
       { name: 'Purchase Invoices', href: '/purchase-invoices', icon: FileText },
       { name: 'Purchase Return', href: '/purchase-returns', icon: ArrowCounterClockwise },
-      { name: 'Debit Notes', href: '/debit-notes', icon: FileMinus },
-      { name: 'Payment Out', href: '/payment-outs', icon: HandWithdraw },
     ],
   },
   {
@@ -136,12 +143,28 @@ export const navItems: NavItem[] = [
       { name: 'Estimates', href: '/estimates', icon: ClipboardText },
       { name: 'Delivery Challans', href: '/delivery-challans', icon: Truck },
       { name: 'Sales Return', href: '/sales-returns', icon: ArrowCounterClockwise },
+      { name: 'Discount', href: '/discount', icon: SealPercent },
+    ],
+  },
+  {
+    name: 'Credit/Debit',
+    icon: Scales,
+    accent: '#0f766e',
+    children: [
       { name: 'Credit Notes', href: '/credit-notes', icon: ReceiptX },
+      { name: 'Debit Notes', href: '/debit-notes', icon: FileMinus },
+    ],
+  },
+  {
+    name: 'Payments',
+    icon: Money,
+    accent: '#6366f1',
+    children: [
       { name: 'Payment In', href: '/payments', icon: HandCoins },
+      { name: 'Payment Out', href: '/payment-outs', icon: HandWithdraw },
     ],
   },
   { name: 'Expenses', href: '/expenses', icon: Receipt, accent: '#e11d48' },
-  { name: 'Discount', href: '/discount', icon: SealPercent, accent: '#f59e0b' },
   { name: 'Cash & Bank', href: '/cash-bank', icon: Wallet, accent: '#16a34a' },
   { name: 'Profit Distribution', href: '/profit-distribution', icon: HandCoins, accent: '#65a30d' },
   { name: 'Accounting', href: '/accounting', icon: BookOpenText, accent: '#0d9488' },
@@ -237,7 +260,8 @@ export const bottomNavPrimary: {
 export function isNavChildActive(pathname: string, href?: string): boolean {
   if (!href) return false
   if (pathname === href) return true
-  if (href === '/reports') return false
+  // Index pages whose sub-routes are separate menu entries match exactly.
+  if (href === '/reports' || href === '/parties') return false
   return pathname.startsWith(`${href}/`)
 }
 
