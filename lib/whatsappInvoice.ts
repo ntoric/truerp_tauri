@@ -1,6 +1,8 @@
 import { apiFetch } from '@/hooks/useAuth'
 
-/** Per-store WhatsApp invoice message (WhatsApp Cloud API) settings + API helpers. */
+/** Per-store WhatsApp invoice message settings (Meta WhatsApp Cloud API or Fast2SMS) + API helpers. */
+
+export type WhatsAppProvider = 'whatsapp_cloud' | 'fast2sms'
 
 export interface WhatsAppInvoiceField {
   key: string
@@ -9,7 +11,7 @@ export interface WhatsAppInvoiceField {
 
 export interface WhatsAppInvoiceSettings {
   enabled: boolean
-  provider: string
+  provider: WhatsAppProvider
   message_id: string
   phone_number_id: string
   language_code: string
@@ -27,6 +29,7 @@ export interface WhatsAppInvoiceSettings {
   has_api_key?: boolean
   api_key_hint?: string
   available_fields?: WhatsAppInvoiceField[]
+  providers?: { key: WhatsAppProvider; label: string }[]
   default_mapping?: string
   env_public_base_url?: string
   can_edit_link_ttl?: boolean
@@ -40,9 +43,9 @@ export interface WhatsAppInvoiceSettingsPayload
     | 'has_api_key'
     | 'api_key_hint'
     | 'available_fields'
+    | 'providers'
     | 'default_mapping'
     | 'env_public_base_url'
-    | 'provider'
     | 'can_edit_link_ttl'
     | 'min_link_ttl_minutes'
     | 'max_link_ttl_minutes'
@@ -143,4 +146,34 @@ export const SAMPLE_FIELD_VALUES: Record<string, string> = {
   balance_due: '0.00',
   loyalty_discount: '0.00',
   store_phone: '9876543210',
+}
+
+/** Provider-specific labels and hints for the settings page. */
+export const WHATSAPP_PROVIDER_COPY: Record<
+  WhatsAppProvider,
+  {
+    label: string
+    secretLabel: string
+    secretPlaceholder: string
+    secretHint: string
+    templateHint: string
+    phoneIdHint: string
+  }
+> = {
+  whatsapp_cloud: {
+    label: 'WhatsApp Cloud API (Meta)',
+    secretLabel: 'Access token',
+    secretPlaceholder: 'Permanent access token',
+    secretHint: 'Meta → WhatsApp → API Setup → permanent token. Stored encrypted.',
+    templateHint: 'Name of the approved template in WhatsApp Manager.',
+    phoneIdHint: 'From Meta → WhatsApp → API Setup.',
+  },
+  fast2sms: {
+    label: 'Fast2SMS',
+    secretLabel: 'Fast2SMS API key',
+    secretPlaceholder: 'Fast2SMS API authorization key',
+    secretHint: 'Fast2SMS dashboard → Dev API → API key. Stored encrypted.',
+    templateHint: 'Exact approved template name (not the numeric message ID) from Fast2SMS → WhatsApp Manager.',
+    phoneIdHint: 'Phone Number ID (not the mobile number) from Fast2SMS → WhatsApp Manager.',
+  },
 }

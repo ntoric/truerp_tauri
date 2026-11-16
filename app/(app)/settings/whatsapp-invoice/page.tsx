@@ -17,12 +17,14 @@ import { formatDateTime } from '@/lib/utils'
 import {
   DEFAULT_TEMPLATE_PREVIEW,
   SAMPLE_FIELD_VALUES,
+  WHATSAPP_PROVIDER_COPY,
   fetchWhatsAppInvoiceLogs,
   fetchWhatsAppInvoiceSettings,
   saveWhatsAppInvoiceSettings,
   sendWhatsAppInvoiceTest,
   type WhatsAppInvoiceLog,
   type WhatsAppInvoiceSettings,
+  type WhatsAppProvider,
 } from '@/lib/whatsappInvoice'
 
 const STATUS_CLASS: Record<string, string> = {
@@ -35,6 +37,8 @@ export default function WhatsAppInvoiceSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [settings, setSettings] = useState<WhatsAppInvoiceSettings | null>(null)
+  // Provider as last saved; a switch needs a fresh secret for the new gateway.
+  const [savedProvider, setSavedProvider] = useState<WhatsAppProvider>('whatsapp_cloud')
   const [apiKey, setApiKey] = useState('')
   const [mapping, setMapping] = useState<string[]>([])
   const [testPhone, setTestPhone] = useState('')
@@ -44,6 +48,7 @@ export default function WhatsAppInvoiceSettingsPage() {
 
   const applySettings = (s: WhatsAppInvoiceSettings) => {
     setSettings(s)
+    setSavedProvider(s.provider || 'whatsapp_cloud')
     setMapping((s.variable_mapping || s.default_mapping || '').split(',').filter(Boolean))
     setApiKey('')
   }
@@ -89,6 +94,16 @@ export default function WhatsAppInvoiceSettingsPage() {
     )
   }
 
+  const provider: WhatsAppProvider = settings.provider === 'fast2sms' ? 'fast2sms' : 'whatsapp_cloud'
+  const copy = WHATSAPP_PROVIDER_COPY[provider]
+  const providerSwitched = provider !== savedProvider
+  const providerOptions = settings.providers?.length
+    ? settings.providers
+    : (Object.keys(WHATSAPP_PROVIDER_COPY) as WhatsAppProvider[]).map((key) => ({
+        key,
+        label: WHATSAPP_PROVIDER_COPY[key].label,
+      }))
+
   const update = <K extends keyof WhatsAppInvoiceSettings>(key: K, value: WhatsAppInvoiceSettings[K]) =>
     setSettings((s) => (s ? { ...s, [key]: value } : s))
 
@@ -97,6 +112,7 @@ export default function WhatsAppInvoiceSettingsPage() {
     try {
       const saved = await saveWhatsAppInvoiceSettings({
         enabled: settings.enabled,
+        provider: settings.provider,
         message_id: settings.message_id,
         phone_number_id: settings.phone_number_id,
         language_code: settings.language_code,
@@ -151,8 +167,8 @@ export default function WhatsAppInvoiceSettingsPage() {
                 <MessageCircle className="h-5 w-5 text-green-600" /> WhatsApp Invoice
               </h1>
               <p className="text-sm text-muted-foreground">
-                Send a purchase summary with the invoice PDF to the customer&apos;s WhatsApp via the WhatsApp Cloud API (Meta).
-                These settings apply to the current store only.
+                Send a purchase summary with the invoice PDF to the customer&apos;s WhatsApp via the WhatsApp Cloud API (Meta)
+                or Fast2SMS. These settings apply to the current store only.
               </p>
             </div>
           </div>
@@ -179,20 +195,48 @@ export default function WhatsAppInvoiceSettingsPage() {
           <div className="space-y-6 lg:col-span-3">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">WhatsApp Cloud API connection</CardTitle>
+                <CardTitle className="text-base">WhatsApp connection</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="wa-api-key">Access token</Label>
+                  <Label htmlFor="wa-provider">Provider</Label>
+                  <Select value={provider} onValueChange={(v) => update('provider', v as WhatsAppProvider)}>
+                    <SelectTrigger id="wa-provider">
+                      <SelectValue>{copy.label}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {providerOptions.map((p) => (
+                        <SelectItem key={p.key} value={p.key}>
+                          {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Use the account you already have. Both send the same approved WhatsApp template.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="wa-api-key">{copy.secretLabel}</Label>
                   <Input
                     id="wa-api-key"
                     type="password"
                     autoComplete="off"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    placeholder={settings.has_api_key ? `Saved (${settings.api_key_hint || '••••'}), leave blank to keep` : 'Permanent access token'}
+                    placeholder={
+                      settings.has_api_key && !providerSwitched
+                        ? `Saved (${settings.api_key_hint || '••••'}), leave blank to keep`
+                        : copy.secretPlaceholder
+                    }
                   />
-                  <p className="text-xs text-muted-foreground">Meta → WhatsApp → API Setup → permanent token. Stored encrypted.</p>
+                  <p className="text-xs text-muted-foreground">{copy.secretHint}</p>
+                  {providerSwitched && settings.has_api_key && (
+                    <p className="text-xs text-amber-700">
+                      Switching provider removes the saved key for the previous provider. Enter the {copy.secretLabel}{' '}
+                      before saving.
+                    </p>
+                  )}
                 </div>
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div className="space-y-1.5">
@@ -203,7 +247,7 @@ export default function WhatsAppInvoiceSettingsPage() {
                       onChange={(e) => update('message_id', e.target.value)}
                       placeholder="e.g. purchase_summary"
                     />
-                    <p className="text-xs text-muted-foreground">Name of the approved template in WhatsApp Manager.</p>
+                    <p className="text-xs text-muted-foreground">{copy.templateHint}</p>
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="wa-language">Template language</Label>
@@ -223,7 +267,7 @@ export default function WhatsAppInvoiceSettingsPage() {
                       onChange={(e) => update('phone_number_id', e.target.value)}
                       placeholder="e.g. 123456789012345"
                     />
-                    <p className="text-xs text-muted-foreground">From Meta → WhatsApp → API Setup.</p>
+                    <p className="text-xs text-muted-foreground">{copy.phoneIdHint}</p>
                   </div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
