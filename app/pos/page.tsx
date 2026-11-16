@@ -2945,6 +2945,29 @@ export default function POSPage() {
                     <span className="text-gray-600">Subtotal</span>
                     <span className="font-medium">{formatCurrency(getCartTotal() - getTaxTotal())}</span>
                   </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-600">Total Qty</span>
+                    <span className="font-medium">
+                      {formatQty(activeTab.cart.reduce((sum, item) => sum + item.quantity, 0))}
+                    </span>
+                  </div>
+                  {getSaleDiscount() > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-green-700">
+                        Invoice Discount
+                        {!autoDiscountMode && activeTab.discountType === 'percent' ? ` (${parseMoney(activeTab.discountValue)}%)` : ''}
+                      </span>
+                      <span className="font-medium text-green-700">−{formatCurrency(getSaleDiscount())}</span>
+                    </div>
+                  )}
+                  {getLoyaltyDiscount() > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-green-700">
+                        Points Discount{loyaltyPointsToRedeem > 0 ? ` (${loyaltyPointsToRedeem.toLocaleString()} pts)` : ''}
+                      </span>
+                      <span className="font-medium text-green-700">−{formatCurrency(getLoyaltyDiscount())}</span>
+                    </div>
+                  )}
                   {getTaxTotal() > 0 && (
                     <div className="flex justify-between text-xs">
                       <span className="text-gray-600">Tax</span>
@@ -3057,23 +3080,10 @@ export default function POSPage() {
                       </Popover>
                     </div>
                   </div>
-                  {(getSaleDiscount() > 0 || getAdditionalCharges() > 0) && (
+                  {getAdditionalCharges() > 0 && (
                     <div className="flex justify-between text-xs">
-                      {getSaleDiscount() > 0 ? (
-                        <span className="text-green-700">
-                          {!autoDiscountMode && activeTab.discountType === 'percent' ? `${parseMoney(activeTab.discountValue)}% off` : 'Discount'}
-                        </span>
-                      ) : (
-                        <span />
-                      )}
-                      <div className="flex gap-3">
-                        {getSaleDiscount() > 0 && (
-                          <span className="text-green-700">−{formatCurrency(getSaleDiscount())}</span>
-                        )}
-                        {getAdditionalCharges() > 0 && (
-                          <span className="text-gray-600">+{formatCurrency(getAdditionalCharges())}</span>
-                        )}
-                      </div>
+                      <span className="text-gray-600">Additional Charges</span>
+                      <span className="text-gray-600">+{formatCurrency(getAdditionalCharges())}</span>
                     </div>
                   )}
                   {getRoundOff() !== 0 && (
