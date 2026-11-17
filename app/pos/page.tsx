@@ -2975,8 +2975,8 @@ export default function POSPage() {
                     </div>
                   )}
                   <div className="flex justify-between text-sm font-bold pt-1 border-t">
-                    <span>Total</span>
-                    <span className="text-blue-600">{formatCurrency(getCartTotal())}</span>
+                    <span>Amount Payable</span>
+                    <span className="text-blue-600">{formatCurrency(getRoundedTotal())}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     {discountsEnabled && (

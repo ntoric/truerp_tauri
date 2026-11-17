@@ -1,6 +1,5 @@
 import { apiFetch } from '@/hooks/useAuth'
 import { downloadBlob } from '@/lib/accountingExport'
-import { printHtmlDocument } from '@/lib/printDocument'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 export interface PartyLedgerParty {
@@ -150,22 +149,26 @@ export async function downloadPartyLedgerExcel(
   })
 }
 
-/** Fetch the printable HTML statement and print it in-app (no system browser). */
-export async function printPartyLedger(
+/** Download the party statement as a PDF file. */
+export async function downloadPartyLedgerPdf(
   partyId: string,
   fromDate: string,
-  toDate: string
+  toDate: string,
+  partyName: string
 ): Promise<void> {
   const res = await apiFetch(`/parties/${partyId}/ledger/pdf${buildQuery(fromDate, toDate)}`, {
     timeoutMs: 30000,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error((err as { error?: string }).error || 'Failed to prepare statement')
+    throw new Error((err as { error?: string }).error || 'Failed to download PDF')
   }
-  const html = await res.text()
-  if (!html.trim()) throw new Error('Statement was empty')
-  await printHtmlDocument(html, { title: 'Party Statement' })
+  const blob = await res.blob()
+  if (!blob.size) throw new Error('PDF was empty')
+  const safe = partyName.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^\w-]/g, '')
+  await downloadBlob(`party_statement_${safe || 'ledger'}.pdf`, blob, {
+    label: 'Downloading party statement PDF',
+  })
 }
 
 export function partyLedgerModeLabel(mode: string): string {

@@ -26,7 +26,7 @@ import {
   fetchPartyLedger,
   partyLedgerModeLabel,
   partyLedgerRange,
-  printPartyLedger,
+  downloadPartyLedgerPdf,
   type PartyLedger,
   type PartyLedgerEntry,
   type PartyLedgerPeriod,
@@ -37,7 +37,7 @@ import {
   Download,
   Mail,
   MessageCircle,
-  Printer,
+  FileDown,
   Receipt,
   Star,
   TrendingUp,
@@ -184,13 +184,14 @@ export default function PartyLedgerPage() {
     }
   }
 
-  const printLedger = async () => {
-    if (!partyId) return
+  const downloadPdf = async () => {
+    if (!partyId || !ledger) return
     setBusy('pdf')
     try {
-      await printPartyLedger(partyId, fromDate, toDate)
+      await downloadPartyLedgerPdf(partyId, fromDate, toDate, ledger.party.name)
+      notifySuccess('PDF downloaded')
     } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Print failed')
+      notifyError(err instanceof Error ? err.message : 'PDF download failed')
     } finally {
       setBusy(null)
     }
@@ -232,9 +233,9 @@ export default function PartyLedgerPage() {
                 <Download className="mr-2 h-4 w-4" />
                 {busy === 'excel' ? 'Exporting…' : 'Download Excel'}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => void printLedger()} disabled={!ledger || busy !== null}>
-                <Printer className="mr-2 h-4 w-4" />
-                {busy === 'pdf' ? 'Preparing…' : 'Print PDF'}
+              <Button variant="outline" size="sm" onClick={() => void downloadPdf()} disabled={!ledger || busy !== null}>
+                <FileDown className="mr-2 h-4 w-4" />
+                {busy === 'pdf' ? 'Downloading…' : 'Download PDF'}
               </Button>
             </>
           }
