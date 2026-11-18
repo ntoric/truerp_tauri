@@ -128,7 +128,7 @@ export function buildPOSReceiptContent(
   if (business.phone?.trim()) lines.push(truncate(`Ph: ${business.phone.trim()}`, cols))
 
   lines.push(strong)
-  lines.push('TAX INVOICE')
+  lines.push('BILL OF SUPPLY')
   lines.push(labelValue('Invoice', sale.invoice_number, cols))
   const date = sale.date ? new Date(sale.date) : new Date()
   const dateLabel = Number.isNaN(date.getTime())

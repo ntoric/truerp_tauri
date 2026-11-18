@@ -2033,7 +2033,7 @@ export default function CreatePurchaseInvoicePage() {
                 </div>
               )}
               <div className="hidden min-w-0 overflow-x-auto xl:block">
-                <table className={cn('w-full text-sm', taxExempt ? 'min-w-[44rem]' : 'min-w-[48rem]')}>
+                <table className={cn('w-full text-sm', taxExempt ? 'min-w-[58rem]' : 'min-w-[62rem]')}>
                   <thead>
                     <tr className="border-b text-left text-gray-500">
                       <th className="w-8 min-w-8 whitespace-nowrap pb-2 pr-0"></th>
@@ -2047,6 +2047,7 @@ export default function CreatePurchaseInvoicePage() {
                       <th className="min-w-[12rem] whitespace-nowrap pb-2 pr-2 font-medium">Item</th>
                       <th className="min-w-[6rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Quantity</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Unit Price</th>
+                      <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Sale Price</th>
                       {isDiscountEnabled && (
                         <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
                       )}
@@ -2054,6 +2055,7 @@ export default function CreatePurchaseInvoicePage() {
                         <th className="min-w-[5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Tax %</th>
                       )}
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium">Batch No</th>
+                      <th className="min-w-[9rem] whitespace-nowrap pb-2 px-1 font-medium">Expiry Date</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Amount</th>
                       <th className="w-12 min-w-12 pb-2 pl-1 font-medium"></th>
                     </tr>
@@ -2079,7 +2081,7 @@ export default function CreatePurchaseInvoicePage() {
                           return next
                         })
                       }
-                      const detailColSpan = (taxExempt ? 9 : 10) - (isDiscountEnabled ? 0 : 1)
+                      const detailColSpan = (taxExempt ? 11 : 12) - (isDiscountEnabled ? 0 : 1)
 
                       if (isNewProduct) {
                         return (
@@ -2144,6 +2146,19 @@ export default function CreatePurchaseInvoicePage() {
                               required
                             />
                           </td>
+                          <td className="px-1 py-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              inputMode="decimal"
+                              value={item.sale_price}
+                              onChange={(e) => updateItem(index, 'sale_price', limitDecimalInput(e.target.value, 2))}
+                              onBlur={() => updateItem(index, 'sale_price', parseMoney(item.sale_price))}
+                              className="h-8 w-full min-w-0 text-right"
+                              aria-label="Sale price"
+                            />
+                          </td>
                           {isDiscountEnabled && (
                             <td className="px-1 py-2">
                               <Input
@@ -2176,6 +2191,15 @@ export default function CreatePurchaseInvoicePage() {
                               required={needsBatch}
                             />
                           </td>
+                          <td className="px-1 py-2">
+                            <Input
+                              type="date"
+                              value={item.exp_date}
+                              onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
+                              className="h-8 w-full min-w-0"
+                              aria-label="Expiry date (optional)"
+                            />
+                          </td>
                           <td className="whitespace-nowrap px-1 py-2 text-right font-medium tabular-nums">
                             {formatCurrency(item.total)}
                           </td>
@@ -2200,15 +2224,6 @@ export default function CreatePurchaseInvoicePage() {
                                     value={item.hsn_code}
                                     onChange={(e) => updateItem(index, 'hsn_code', e.target.value)}
                                     className="h-8 w-full min-w-0 xl:w-32"
-                                  />
-                                </div>
-                                <div className="min-w-0 space-y-1">
-                                  <Label className="text-xs text-gray-500">Expiry Date</Label>
-                                  <Input
-                                    type="date"
-                                    value={item.exp_date}
-                                    onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
-                                    className="h-8 w-full min-w-0 xl:w-40"
                                   />
                                 </div>
                                 <div className="min-w-0 space-y-1">
@@ -2301,6 +2316,19 @@ export default function CreatePurchaseInvoicePage() {
                               className="h-8 w-full min-w-0 text-right"
                             />
                           </div>
+                          <div className="min-w-0 space-y-1">
+                            <Label className="text-xs text-gray-500">Sale Price</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              inputMode="decimal"
+                              value={item.sale_price}
+                              onChange={(e) => updateItem(index, 'sale_price', limitDecimalInput(e.target.value, 2))}
+                              onBlur={() => updateItem(index, 'sale_price', parseMoney(item.sale_price))}
+                              className="h-8 w-full min-w-0 text-right"
+                            />
+                          </div>
                           {isDiscountEnabled && (
                             <div className="min-w-0 space-y-1">
                               <Label className="text-xs text-gray-500">Discount %</Label>
@@ -2349,7 +2377,7 @@ export default function CreatePurchaseInvoicePage() {
                             />
                           </div>
                           <div className="min-w-0 space-y-1">
-                            <Label className="text-xs text-gray-500">Expiry Date</Label>
+                            <Label className="text-xs text-gray-500">Expiry Date (optional)</Label>
                             <Input
                               type="date"
                               value={item.exp_date}

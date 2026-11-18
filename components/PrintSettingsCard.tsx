@@ -431,7 +431,7 @@ export default function PrintSettingsCard() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <ThemeOption
                     label="A4 / PDF"
-                    description="Download full tax invoice as PDF (A4, Letter, or Legal)"
+                    description="Download full bill of supply as PDF (A4, Letter, or Legal)"
                     selected={settings.invoice_print_mode === 'a4'}
                     onSelect={() => update('invoice_print_mode', 'a4')}
                   />
@@ -464,7 +464,7 @@ export default function PrintSettingsCard() {
                 <p className="text-xs text-muted-foreground">
                   {settings.invoice_print_mode === 'thermal'
                     ? `POS & invoice bills print on ${thermalWidthLabel} thermal paper.`
-                    : 'POS & invoice actions download a full tax invoice PDF in the selected sheet size.'}
+                    : 'POS & invoice actions download a full bill of supply PDF in the selected sheet size.'}
                 </p>
               </div>
 

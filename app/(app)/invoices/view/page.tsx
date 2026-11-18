@@ -238,7 +238,7 @@ function InvoiceViewContent() {
             <CardContent className="p-8">
               <div className="flex justify-between items-start mb-8">
                 <div>
-                  <h1 className="app-page-title">TAX INVOICE</h1>
+                  <h1 className="app-page-title">BILL OF SUPPLY</h1>
                   <p className="text-gray-500 mt-1">{invoice.invoice_number}</p>
                   {invoice.pdf_template && (
                     <p className="text-xs text-muted-foreground mt-1">Layout: {invoice.pdf_template}</p>

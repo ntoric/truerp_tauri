@@ -214,7 +214,7 @@ export default function ThermalInvoicePreviewSample({ printSize, business }: Pro
         ) : null}
 
         <p className={`text-center font-bold tracking-wide ${isCompact ? 'text-[8px]' : 'text-[11px]'}`}>
-          TAX INVOICE
+          BILL OF SUPPLY
         </p>
         <p className={`mt-1 text-center font-bold uppercase ${isCompact ? 'text-[8px]' : 'text-[10px]'}`}>
           {b.name}

@@ -114,7 +114,7 @@ export default function GstInvoicePreviewSample({ settings, customization, busin
           </div>
           <div className="text-right">
             <p className="text-xs font-bold" style={{ color: theme === 'modern' ? '#fff' : primary }}>
-              TAX INVOICE
+              BILL OF SUPPLY
             </p>
             <p className="text-[9px] text-gray-500">ORIGINAL FOR RECIPIENT</p>
           </div>
