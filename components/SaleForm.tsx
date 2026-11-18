@@ -43,7 +43,8 @@ import CreateProductDialog, { type CreatedProduct } from '@/components/CreatePro
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
 import { looksLikeScaleBarcode, productsMatchingScanCode, resolveScaleBarcodeForPos, normalizeScannedBarcode } from '@/lib/weighingScaleBarcode'
-import { fetchProductBatches, formatBatchLabel, type ProductBatchStock } from '@/lib/productBatches'
+import { fetchBatchesForProducts, fetchProductBatches, type ProductBatchStock } from '@/lib/productBatches'
+import { BatchPicker } from '@/components/ui/BatchPicker'
 import {
   PAYMENT_METHODS,
   RECEIPT_PAYMENT_METHODS,
@@ -191,7 +192,11 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const [items, setItems] = useState<InvoiceItem[]>([
     { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 0, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false, batch_no: '', exp_date: '', enable_batching: false }
   ] as InvoiceItem[])
-  const [lineBatches, setLineBatches] = useState<Record<number, ProductBatchStock[]>>({})
+  // Batches per product (FEFO-ordered), keyed by product id so line removal/reorder can't desync them.
+  const [productBatches, setProductBatches] = useState<Record<string, ProductBatchStock[]>>({})
+  const batchRequestsRef = useRef<Record<string, Promise<ProductBatchStock[]>>>({})
+  // Batch chosen per product in the Select Product modal, applied when the product is added.
+  const [modalBatches, setModalBatches] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
@@ -462,10 +467,15 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       igst: 0,
       total: 0,
       sale_price_with_tax: isProductGstEnabled(product) ? (product.sale_price_with_tax ?? false) : false,
-      batch_no: '',
-      exp_date: '',
+      ...modalBatchFields(product.id),
       enable_batching: product.enable_batching ?? false,
     }
+  }
+
+  const modalBatchFields = (productId: string): Pick<InvoiceItem, 'batch_no' | 'exp_date'> => {
+    const batchNo = modalBatches[productId] || ''
+    const batch = batchNo ? (productBatches[productId] ?? []).find((b) => b.batch_no === batchNo) : undefined
+    return { batch_no: batchNo, exp_date: batch?.exp_date ? String(batch.exp_date).slice(0, 10) : '' }
   }
 
   const applyTaxToInvoiceItem = (item: InvoiceItem, interState: boolean): InvoiceItem => {
@@ -492,25 +502,77 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     return next
   }
 
+  const loadProductBatches = (productId: string, force = false): Promise<ProductBatchStock[]> => {
+    if (!productId) return Promise.resolve([])
+    const pending = batchRequestsRef.current[productId]
+    if (pending && !force) return pending
+    const req = fetchProductBatches(productId).then((batches) => {
+      setProductBatches((prev) => ({ ...prev, [productId]: batches }))
+      return batches
+    })
+    batchRequestsRef.current[productId] = req
+    return req
+  }
+
+  /** Batch-tracked products get their earliest-expiry (FEFO) batch preselected; the user can change or add one. */
   const applyBatchDefaults = (product: Product, lineIndex: number) => {
-    if (!product.enable_batching) return
-    void (async () => {
-      const batches = await fetchProductBatches(product.id)
+    void loadProductBatches(product.id).then((batches) => {
+      if (!product.enable_batching) return
+      const first = batches.find((b) => b.batch_no?.trim())
+      if (!first) return
       setItems((prev) => {
-        if (!prev[lineIndex]) return prev
-        setLineBatches((lb) => ({ ...lb, [lineIndex]: batches }))
-        if (!batches.length) return prev
+        const line = prev[lineIndex]
+        if (!line || line.product_id !== product.id || line.batch_no) return prev
         const copy = [...prev]
         copy[lineIndex] = {
-          ...copy[lineIndex],
-          batch_no: batches[0].batch_no || '',
-          exp_date: batches[0].exp_date ? String(batches[0].exp_date).slice(0, 10) : '',
+          ...line,
+          batch_no: first.batch_no,
+          exp_date: first.exp_date ? String(first.exp_date).slice(0, 10) : '',
           enable_batching: true,
         }
         return copy
       })
-    })()
+    })
   }
+
+  const setLineBatch = (index: number, batchNo: string, batch: ProductBatchStock | null) => {
+    setItems((prev) => {
+      if (!prev[index]) return prev
+      const next = [...prev]
+      next[index] = {
+        ...next[index],
+        batch_no: batchNo,
+        // Existing batch → its expiry; new batch → keep what the user entered; cleared → none.
+        exp_date: batch
+          ? batch.exp_date ? String(batch.exp_date).slice(0, 10) : ''
+          : batchNo ? next[index].exp_date : '',
+      }
+      return next
+    })
+  }
+
+  const lineShowsBatch = (item: InvoiceItem) => {
+    if (!item.product_id) return false
+    if (item.enable_batching || item.batch_no) return true
+    if (products.find((p) => p.id === item.product_id)?.enable_batching) return true
+    return (productBatches[item.product_id] ?? []).some((b) => b.batch_no?.trim())
+  }
+
+  const modalProductIds = showProductModal ? filteredProducts.map((p) => p.id).join(',') : ''
+  useEffect(() => {
+    const missing = modalProductIds.split(',').filter((id) => id && !batchRequestsRef.current[id])
+    if (!missing.length) return
+    const req = fetchBatchesForProducts(missing)
+    missing.forEach((id) => { batchRequestsRef.current[id] = req.then((g) => g[id] ?? []) })
+    void req.then((grouped) => setProductBatches((prev) => ({ ...prev, ...grouped })))
+  }, [modalProductIds])
+
+  const lineProductIds = items.map((it) => it.product_id).filter(Boolean).join(',')
+  useEffect(() => {
+    // Load batches for every product on the invoice (incl. lines loaded for edit/duplicate).
+    lineProductIds.split(',').filter(Boolean).forEach((id) => void loadProductBatches(id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineProductIds])
 
   const addProductsToInvoice = (products: Product[], options?: { closeModal?: boolean }) => {
     if (products.length === 0) return
@@ -526,9 +588,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       return [...prev, ...builtItems.map((item) => applyTaxToInvoiceItem(item, isInterState))]
     })
     products.forEach((product, offset) => {
-      if (product.enable_batching) {
-        applyBatchDefaults(product, startIndex + offset)
-      }
+      applyBatchDefaults(product, startIndex + offset)
     })
 
     if (options?.closeModal !== false) {
@@ -537,6 +597,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       setSelectedProductIds(new Set())
       setSelectedProductMap({})
       setProductAddQuantities({})
+      setModalBatches({})
     }
     setFocusTarget({ lineIndex: startIndex, field: 'quantity' })
   }
@@ -547,14 +608,13 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
 
     const newLineIndex = items.length
     setItems((prev) => [...prev, applyTaxToInvoiceItem(item, isInterState)])
-    if (product.enable_batching) {
-      applyBatchDefaults(product, newLineIndex)
-    }
+    applyBatchDefaults(product, newLineIndex)
     setShowProductModal(false)
     setProductSearch('')
     setSelectedProductIds(new Set())
     setSelectedProductMap({})
     setProductAddQuantities({})
+    setModalBatches({})
     setFocusTarget({ lineIndex: newLineIndex, field: 'quantity' })
   }
 
@@ -573,19 +633,20 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           tax_rate: productTaxRate(product),
           unit: product.unit,
           sale_price_with_tax: isProductGstEnabled(product) ? (product.sale_price_with_tax ?? false) : false,
+          ...(current.product_id !== product.id ? { batch_no: '', exp_date: '' } : {}),
         },
         isInterState
       )
       return next
     })
-    if (product.enable_batching) applyBatchDefaults(product, index)
+    applyBatchDefaults(product, index)
     setFocusTarget({ lineIndex: index, field: 'quantity' })
   }
 
   const handleItemNameChange = (index: number, productId: string) => {
     updateItem(index, 'product_id', productId)
     const product = products.find((p) => p.id === productId)
-    if (product?.enable_batching) applyBatchDefaults(product, index)
+    if (product) applyBatchDefaults(product, index)
     if (productId) setFocusTarget({ lineIndex: index, field: 'quantity' })
   }
 
@@ -622,6 +683,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     setSelectedProductIds(new Set())
     setSelectedProductMap({})
     setProductAddQuantities({})
+    setModalBatches({})
     notifySuccess(`Added custom item: ${trimmed}`)
     setFocusTarget({ lineIndex: newLineIndex, field: 'quantity' })
   }
@@ -687,6 +749,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     setSelectedProductIds(new Set())
     setSelectedProductMap({})
     setProductAddQuantities({})
+    setModalBatches({})
     setModalPage(1)
     setShowProductModal(true)
   }
@@ -696,6 +759,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     setSelectedProductIds(new Set())
     setSelectedProductMap({})
     setProductAddQuantities({})
+    setModalBatches({})
   }
 
   const applyScaleWeightToInvoiceLine = (index: number, unit: string) => {
@@ -872,6 +936,10 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     }
 
     if (field === 'product_id') {
+      if (items[index]?.product_id !== value) {
+        newItems[index].batch_no = ''
+        newItems[index].exp_date = ''
+      }
       const product = products.find(p => p.id === value)
       if (product) {
         newItems[index].description = product.name
@@ -1845,9 +1913,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   ) : (
                   <tbody>
                     {items.map((item, index) => {
-                      const needsBatch =
-                        Boolean(item.enable_batching) ||
-                        Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
+                      const needsBatch = lineShowsBatch(item)
                       const isExpanded = expandedRows.has(index)
                       const toggleExpand = () => {
                         setExpandedRows((prev) => {
@@ -1889,6 +1955,16 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                               onCreateNew={(query) => handleCreateItemForLine(index, query)}
                               className="w-full min-w-0"
                             />
+                            {needsBatch && (
+                              <BatchPicker
+                                batches={productBatches[item.product_id] ?? []}
+                                value={item.batch_no}
+                                loading={productBatches[item.product_id] === undefined}
+                                onOpen={() => void loadProductBatches(item.product_id, true)}
+                                onChange={(batchNo, batch) => setLineBatch(index, batchNo, batch)}
+                                className="mt-1 w-full max-w-[16rem]"
+                              />
+                            )}
                           </td>
                           <td className="px-1 py-2">
                             <div className="flex items-center justify-end gap-1">
@@ -1986,46 +2062,6 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                                 </div>
                                 {needsBatch && (
                                   <div className="space-y-1">
-                                    <Label className="text-xs text-gray-500">Batch (FEFO)</Label>
-                                    <select
-                                      value={item.batch_no}
-                                      onChange={(e) => {
-                                        const batches = lineBatches[index] || []
-                                        const selected = batches.find((b) => b.batch_no === e.target.value)
-                                        const next = [...items]
-                                        next[index] = {
-                                          ...next[index],
-                                          batch_no: e.target.value,
-                                          exp_date: selected?.exp_date
-                                            ? String(selected.exp_date).slice(0, 10)
-                                            : '',
-                                        }
-                                        setItems(next)
-                                      }}
-                                      onFocus={() => {
-                                        if (item.product_id && !lineBatches[index]) {
-                                          void fetchProductBatches(item.product_id).then((batches) => {
-                                            setLineBatches((lb) => ({ ...lb, [index]: batches }))
-                                          })
-                                        }
-                                      }}
-                                      className="flex h-8 w-40 rounded-md border border-input bg-background px-2 text-xs"
-                                    >
-                                      <option value="">Select batch</option>
-                                      {(lineBatches[index] || []).map((b) => (
-                                        <option key={`${b.id}-${b.batch_no}`} value={b.batch_no}>
-                                          {formatBatchLabel(b)}
-                                        </option>
-                                      ))}
-                                      {item.batch_no &&
-                                        !(lineBatches[index] || []).some((b) => b.batch_no === item.batch_no) && (
-                                          <option value={item.batch_no}>{item.batch_no}</option>
-                                        )}
-                                    </select>
-                                  </div>
-                                )}
-                                {needsBatch && (
-                                  <div className="space-y-1">
                                     <Label className="text-xs text-gray-500">Expiry Date</Label>
                                     <Input
                                       type="date"
@@ -2050,9 +2086,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
               {items.length > 0 && (
                 <div className="block md:hidden space-y-3">
                   {items.map((item, index) => {
-                    const needsBatch =
-                      Boolean(item.enable_batching) ||
-                      Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
+                    const needsBatch = lineShowsBatch(item)
                     return (
                       <div key={index} className="rounded-lg border p-3 space-y-3">
                         <div className="flex items-start justify-between gap-2">
@@ -2163,42 +2197,15 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                           {needsBatch && (
                             <>
                               <div className="space-y-1">
-                                <Label className="text-xs text-gray-500">Batch (FEFO)</Label>
-                                <select
+                                <Label className="text-xs text-gray-500">Batch</Label>
+                                <BatchPicker
+                                  batches={productBatches[item.product_id] ?? []}
                                   value={item.batch_no}
-                                  onChange={(e) => {
-                                    const batches = lineBatches[index] || []
-                                    const selected = batches.find((b) => b.batch_no === e.target.value)
-                                    const next = [...items]
-                                    next[index] = {
-                                      ...next[index],
-                                      batch_no: e.target.value,
-                                      exp_date: selected?.exp_date
-                                        ? String(selected.exp_date).slice(0, 10)
-                                        : '',
-                                    }
-                                    setItems(next)
-                                  }}
-                                  onFocus={() => {
-                                    if (item.product_id && !lineBatches[index]) {
-                                      void fetchProductBatches(item.product_id).then((batches) => {
-                                        setLineBatches((lb) => ({ ...lb, [index]: batches }))
-                                      })
-                                    }
-                                  }}
-                                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                                >
-                                  <option value="">Select batch</option>
-                                  {(lineBatches[index] || []).map((b) => (
-                                    <option key={`${b.id}-${b.batch_no}`} value={b.batch_no}>
-                                      {formatBatchLabel(b)}
-                                    </option>
-                                  ))}
-                                  {item.batch_no &&
-                                    !(lineBatches[index] || []).some((b) => b.batch_no === item.batch_no) && (
-                                      <option value={item.batch_no}>{item.batch_no}</option>
-                                    )}
-                                </select>
+                                  loading={productBatches[item.product_id] === undefined}
+                                  onOpen={() => void loadProductBatches(item.product_id, true)}
+                                  onChange={(batchNo, batch) => setLineBatch(index, batchNo, batch)}
+                                  className="h-8 w-full"
+                                />
                               </div>
                               <div className="space-y-1">
                                 <Label className="text-xs text-gray-500">Expiry Date</Label>
@@ -2635,6 +2642,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                         <th className="pb-2 font-medium">Item Code/SKU</th>
                         <th className="pb-2 font-medium">PLU</th>
                         <th className="pb-2 font-medium text-right">Stock</th>
+                        <th className="pb-2 pl-4 font-medium">Batch</th>
                         <th className="pb-2 font-medium text-right">Sale Price</th>
                         <th className="pb-2 font-medium text-right">Purchase Price</th>
                         <th className="pb-2 font-medium text-right">Qty</th>
@@ -2655,6 +2663,30 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                           <td className="py-2 text-gray-600">{product.sku || product.item_code || '-'}</td>
                           <td className="py-2 text-gray-600">{product.plu || '-'}</td>
                           <td className="py-2 text-right">{product.stock_qty} {product.unit}</td>
+                          <td className="py-2 pl-4">
+                            {(() => {
+                              const batches = productBatches[product.id]
+                              const named = (batches ?? []).filter((b) => b.batch_no?.trim())
+                              if (batches === undefined) return <span className="text-xs text-gray-400">…</span>
+                              if (!product.enable_batching && named.length === 0) return <span className="text-gray-400">-</span>
+                              return (
+                                <div className="space-y-0.5">
+                                  <BatchPicker
+                                    batches={batches}
+                                    value={modalBatches[product.id] || ''}
+                                    placeholder={product.enable_batching && named.length ? 'Auto (FEFO)' : 'Select / add'}
+                                    onChange={(batchNo) => setModalBatches((prev) => ({ ...prev, [product.id]: batchNo }))}
+                                    className="w-44"
+                                  />
+                                  {named.length > 0 && (
+                                    <div className="text-[11px] text-gray-500">
+                                      {named.length} batch{named.length > 1 ? 'es' : ''} in stock
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })()}
+                          </td>
                           <td className="py-2 text-right">{formatCurrency(product.sale_price)}</td>
                           <td className="py-2 text-right text-gray-500">{formatCurrency(product.purchase_price)}</td>
                           <td className="py-2 text-right">
@@ -2682,7 +2714,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       ))}
                       {modalLoading && (
                         <tr>
-                          <td colSpan={9} className="py-8 text-center text-gray-500">
+                          <td colSpan={10} className="py-8 text-center text-gray-500">
                             <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                             Loading items…
                           </td>
@@ -2690,7 +2722,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       )}
                       {!modalLoading && filteredProducts.length === 0 && (
                         <tr>
-                          <td colSpan={9} className="py-8 text-center">
+                          <td colSpan={10} className="py-8 text-center">
                             {productSearch.trim() ? (
                               <button
                                 type="button"
