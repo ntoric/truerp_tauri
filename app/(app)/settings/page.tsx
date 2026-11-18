@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,7 @@ import WeighingScaleSettingsCard from '@/components/WeighingScaleSettingsCard'
 import PrintSettingsCard from '@/components/PrintSettingsCard'
 import DesktopUpdatesCard from '@/components/DesktopUpdatesCard'
 import AppearanceSettingsCard from '@/components/AppearanceSettingsCard'
+import WhatsAppInvoiceToggleCard from '@/components/WhatsAppInvoiceToggleCard'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
@@ -103,6 +105,7 @@ interface InvoiceCustomFieldDef {
 export default function SettingsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { user: authUser } = useAuth()
   const { isPageEnabled } = usePageFeatures()
   const { confirm, confirmDialog } = useConfirmDialog()
   const remindersEnabled = isPageEnabled('/settings/reminders')
@@ -867,6 +870,7 @@ export default function SettingsPage() {
 
           {/* Invoice Settings Tab */}
           <TabsContent value="invoice">
+            {isSuperAdmin(authUser?.role) && (
             <Card className="mb-6 border-blue-100 bg-blue-50/40">
               <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -880,19 +884,8 @@ export default function SettingsPage() {
                 </Button>
               </CardContent>
             </Card>
-            <Card className="mb-6 border-green-100 bg-green-50/40">
-              <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-semibold text-gray-900">WhatsApp invoice message</p>
-                  <p className="text-sm text-muted-foreground">
-                    Send the purchase summary and invoice PDF to customers on WhatsApp (WhatsApp Cloud API) for this store.
-                  </p>
-                </div>
-                <Button asChild variant="outline">
-                  <Link href="/settings/whatsapp-invoice">Configure WhatsApp</Link>
-                </Button>
-              </CardContent>
-            </Card>
+            )}
+            {activeTab === 'invoice' && <WhatsAppInvoiceToggleCard />}
             <Card>
               <CardHeader className="flex flex-row items-center gap-2">
                 <FileText className="h-5 w-5 text-blue-600" />
@@ -1258,19 +1251,11 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <h3 className="font-semibold">Documentation</h3>
-                  <p className="text-sm text-gray-600">Access our comprehensive documentation to learn how to use all features effectively.</p>
-                  <Button variant="outline">View Documentation</Button>
-                </div>
-                <div className="space-y-2">
                   <h3 className="font-semibold">Contact Support</h3>
                   <p className="text-sm text-gray-600">Need help? Contact our support team for assistance.</p>
-                  <Button variant="outline">Contact Support</Button>
-                </div>
-                <div className="space-y-2">
-                  <h3 className="font-semibold">FAQ</h3>
-                  <p className="text-sm text-gray-600">Find answers to commonly asked questions.</p>
-                  <Button variant="outline">View FAQ</Button>
+                  <Button variant="outline" asChild>
+                    <Link href="/support">Contact Support</Link>
+                  </Button>
                 </div>
               </CardContent>
             </Card>
