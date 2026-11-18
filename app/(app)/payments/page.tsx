@@ -30,7 +30,7 @@ import { useFormErrors } from '@/hooks/useFormErrors'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
-import { PAYMENT_METHODS, formatPaymentMethod, isInitialInvestmentMethod } from '@/lib/paymentSplits'
+import { RECEIPT_PAYMENT_METHODS as PAYMENT_METHODS, formatPaymentMethod, isInitialInvestmentMethod } from '@/lib/paymentSplits'
 
 interface Payment {
   id: string

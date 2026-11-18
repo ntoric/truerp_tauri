@@ -51,6 +51,8 @@ import {
   Ticket,
   FlagBanner,
   SealPercent,
+  ShoppingCartSimple,
+  ListChecks,
 } from '@phosphor-icons/react'
 import { canManageUsers, isSuperAdmin } from '@/lib/roles'
 
@@ -144,6 +146,15 @@ export const navItems: NavItem[] = [
       { name: 'Delivery Challans', href: '/delivery-challans', icon: Truck },
       { name: 'Sales Return', href: '/sales-returns', icon: ArrowCounterClockwise },
       { name: 'Discount', href: '/discount', icon: SealPercent },
+    ],
+  },
+  {
+    name: 'B2B Shop',
+    icon: ShoppingCartSimple,
+    accent: '#0d9488',
+    children: [
+      { name: 'Shop Manager', href: '/b2b-shop', icon: Storefront },
+      { name: 'B2B Orders', href: '/b2b-orders', icon: ListChecks },
     ],
   },
   {

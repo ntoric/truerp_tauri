@@ -55,6 +55,8 @@ export const TOGGLEABLE_PAGES: ToggleablePage[] = [
   { key: '/support', label: 'Support', group: 'Other' },
   { key: '/support-requests', label: 'Support Requests', group: 'Security' },
   { key: '/customer-portal', label: 'Customer Portal', group: 'Other' },
+  { key: '/b2b-shop', label: 'B2B Shop Manager', group: 'B2B Shop' },
+  { key: '/b2b-orders', label: 'B2B Orders', group: 'B2B Shop' },
   { key: '/settings/reminders', label: 'Settings > Reminders', group: 'Settings' },
   { key: '/settings/ca-share', label: 'Settings > CA Share', group: 'Settings' },
 ]

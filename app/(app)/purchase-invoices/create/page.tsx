@@ -35,9 +35,12 @@ import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import {
   PAYMENT_METHODS,
+  RECEIPT_PAYMENT_METHODS,
+  UNPAID_METHOD,
   appendPaymentSplit,
   formatPaymentMethod,
   isInitialInvestmentMethod,
+  isUnpaidMethod,
   splitsFromInvoice,
   sumPaymentSplits,
 } from '@/lib/paymentSplits'
@@ -1309,18 +1312,34 @@ export default function CreatePurchaseInvoicePage() {
   const totalAmount = totalBeforeRound
   // An untouched single tender auto-follows the bill total; once the user
   // edits an amount or adds a tender, the paid amount is the split sum.
-  const effectiveAmountPaid = !amountPaidEdited && paymentSplits.length === 1
+  const isUnpaid = paymentSplits.length === 1 && isUnpaidMethod(paymentSplits[0]?.mode)
+  const effectiveAmountPaid = isUnpaid
+    ? 0
+    : !amountPaidEdited && paymentSplits.length === 1
     ? totalAmount
     : sumPaymentSplits(paymentSplits)
   const balance = totalAmount - effectiveAmountPaid
   const isFullyPaid = effectiveAmountPaid >= totalAmount
 
   const splitAmountValue = (index: number) => {
+    if (isUnpaid) return 0
     if (paymentSplits.length === 1 && !amountPaidEdited) return totalAmount
     return paymentSplits[index]?.amount || 0
   }
 
   const updateSplit = (index: number, patch: Partial<{ mode: string; amount: number; bank_account_id: string | null }>) => {
+    if (patch.mode !== undefined && isUnpaidMethod(patch.mode)) {
+      // Unpaid means nothing paid: collapse to a single zero split.
+      setAmountPaidEdited(true)
+      setPaymentSplits([{ mode: UNPAID_METHOD, amount: 0, bank_account_id: null }])
+      return
+    }
+    if (patch.mode !== undefined && isUnpaidMethod(paymentSplits[index]?.mode) && paymentSplits.length === 1) {
+      // Leaving Unpaid: default back to paying the full amount.
+      setAmountPaidEdited(false)
+      setPaymentSplits([{ mode: patch.mode, amount: totalAmount, bank_account_id: null }])
+      return
+    }
     if ('amount' in patch) setAmountPaidEdited(true)
     setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
@@ -1353,7 +1372,12 @@ export default function CreatePurchaseInvoicePage() {
   const markFullyPaid = () => {
     if (paymentSplits.length <= 1) {
       setAmountPaidEdited(false)
-      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'cash', amount: totalAmount, bank_account_id: paymentSplits[0]?.bank_account_id ?? null }])
+      const currentMode = paymentSplits[0]?.mode || 'cash'
+      setPaymentSplits([{
+        mode: isUnpaidMethod(currentMode) ? 'cash' : currentMode,
+        amount: totalAmount,
+        bank_account_id: paymentSplits[0]?.bank_account_id ?? null,
+      }])
       return
     }
     setAmountPaidEdited(true)
@@ -1423,8 +1447,9 @@ export default function CreatePurchaseInvoicePage() {
   const paymentSplitsPayload = () =>
     paymentSplits.map((split, index) => ({
       mode: split.mode || 'cash',
-      amount:
-        paymentSplits.length === 1 && !amountPaidEdited && index === 0
+      amount: isUnpaid
+        ? 0
+        : paymentSplits.length === 1 && !amountPaidEdited && index === 0
           ? totalAmount
           : Math.max(0, Number(split.amount) || 0),
       bank_account_id: split.bank_account_id || null,
@@ -2546,7 +2571,7 @@ export default function CreatePurchaseInvoicePage() {
               </CardContent>
               <CardHeader className="flex-row items-center justify-between space-y-0 pt-0">
                 <CardTitle>Payment Details</CardTitle>
-                {PAYMENT_METHODS.length > paymentSplits.length && (
+                {!isUnpaid && RECEIPT_PAYMENT_METHODS.length > paymentSplits.length && (
                   <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
                     <Plus className="h-4 w-4" />
                     Split Payment
@@ -2566,7 +2591,7 @@ export default function CreatePurchaseInvoicePage() {
                           onChange={(e) => updateSplit(index, { mode: e.target.value })}
                           className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
                         >
-                          {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
+                          {PAYMENT_METHODS.filter((method) => method.value === split.mode || (!usedModes.includes(method.value) && (method.value !== UNPAID_METHOD || paymentSplits.length === 1))).map((method) => (
                             <option key={method.value} value={method.value}>
                               {method.label}
                             </option>
@@ -2575,9 +2600,9 @@ export default function CreatePurchaseInvoicePage() {
                       </div>
                       <div className="min-w-0 space-y-2">
                         <Label>Paid From</Label>
-                        {initialInvestment ? (
+                        {initialInvestment || isUnpaidMethod(split.mode) ? (
                           <div className="flex h-8 min-w-0 items-center rounded-md border border-input bg-gray-50 px-2.5 text-sm text-muted-foreground">
-                            Owner&apos;s Equity
+                            {initialInvestment ? <>Owner&apos;s Equity</> : 'Not applicable — nothing paid'}
                           </div>
                         ) : bankAccountsLoading ? (
                           <Skeleton className="h-8" />
@@ -2611,6 +2636,7 @@ export default function CreatePurchaseInvoicePage() {
                             min="0"
                             step="0.01"
                             value={splitAmountValue(index)}
+                            disabled={isUnpaidMethod(split.mode)}
                             onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
                             className="w-full min-w-0"
                           />
@@ -2632,7 +2658,9 @@ export default function CreatePurchaseInvoicePage() {
                   )
                 })}
                 <p className="text-xs text-muted-foreground">
-                  {paymentSplits.length === 1
+                  {isUnpaid
+                    ? 'Bill will be saved as unpaid; the full amount stays payable to the supplier.'
+                    : paymentSplits.length === 1
                     ? isInitialInvestmentMethod(paymentSplits[0]?.mode)
                       ? `${formatCurrency(effectiveAmountPaid)} will be recorded as owner's capital (Initial Investment) and will not affect cash or bank balances.`
                       : `${formatCurrency(effectiveAmountPaid)} will be deducted from ${splitAccountLabel(paymentSplits[0] || { mode: 'cash', bank_account_id: null })}.`
