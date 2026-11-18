@@ -41,8 +41,11 @@ import { hydratePOSSnapshot, getCachedPrintSettings, getCachedBusiness } from '@
 import { buildPOSReceiptContent, receiptPaperWidthMm } from '@/lib/posReceipt'
 import {
   PAYMENT_METHODS,
+  RECEIPT_PAYMENT_METHODS,
+  UNPAID_METHOD,
   appendPaymentSplit,
   formatPaymentMethod,
+  isUnpaidMethod,
   materializePaymentSplits,
   clampPaymentSplitsToTotal,
   numericSplitAmount,
@@ -1229,7 +1232,10 @@ export default function POSPage() {
     )
   }
 
+  const isUnpaid = paymentSplits.length === 1 && isUnpaidMethod(paymentSplits[0]?.mode)
+
   const getReceivedNumeric = () => {
+    if (isUnpaid) return 0
     if (paymentSplits.length === 1 && !receivedEdited) return getRoundedTotal()
     return sumPaymentSplits(paymentSplits)
   }
@@ -1237,6 +1243,7 @@ export default function POSPage() {
   const getBalance = () => getRoundedTotal() - getReceivedNumeric()
 
   const splitAmountValue = (index: number) => {
+    if (isUnpaid) return '0'
     if (paymentSplits.length === 1 && !receivedEdited) {
       const total = getRoundedTotal()
       return total > 0 ? String(total) : ''
@@ -1245,6 +1252,18 @@ export default function POSPage() {
   }
 
   const updatePaymentSplit = (index: number, patch: Partial<{ mode: string; amount: string }>) => {
+    if (patch.mode !== undefined && isUnpaidMethod(patch.mode)) {
+      // Unpaid means nothing received: collapse to a single zero split.
+      setReceivedEdited(true)
+      setPaymentSplits([{ mode: UNPAID_METHOD, amount: '0' }])
+      return
+    }
+    if (patch.mode !== undefined && isUnpaid) {
+      // Leaving Unpaid: default back to receiving the full amount.
+      setReceivedEdited(false)
+      setPaymentSplits([{ mode: patch.mode, amount: '' }])
+      return
+    }
     if (patch.amount !== undefined) setReceivedEdited(true)
     setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
@@ -1285,7 +1304,8 @@ export default function POSPage() {
   const setFullyPaid = () => {
     if (paymentSplits.length <= 1) {
       setReceivedEdited(false)
-      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'upi', amount: '' }])
+      const currentMode = paymentSplits[0]?.mode || 'upi'
+      setPaymentSplits([{ mode: isUnpaidMethod(currentMode) ? 'upi' : currentMode, amount: '' }])
       return
     }
     setReceivedEdited(true)
@@ -1849,7 +1869,7 @@ export default function POSPage() {
     checkoutInFlightRef.current = true
 
     const roundedTotal = getRoundedTotal()
-    const checkoutSplits = clampPaymentSplitsToTotal(
+    const checkoutSplits = isUnpaid ? [] : clampPaymentSplitsToTotal(
       materializePaymentSplits(paymentSplits, {
         implicitFullAmount: roundedTotal,
         edited: receivedEdited,
@@ -3169,7 +3189,7 @@ export default function POSPage() {
                       value={split.mode}
                       onChange={(e) => updatePaymentSplit(index, { mode: e.target.value })}
                     >
-                      {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
+                      {PAYMENT_METHODS.filter((method) => method.value === split.mode || (!usedModes.includes(method.value) && (method.value !== UNPAID_METHOD || paymentSplits.length === 1))).map((method) => (
                         <option key={method.value} value={method.value}>
                           {method.label}
                         </option>
@@ -3181,6 +3201,7 @@ export default function POSPage() {
                       step="0.01"
                       placeholder="Received"
                       value={splitAmountValue(index)}
+                      disabled={isUnpaidMethod(split.mode)}
                       onChange={(e) => updatePaymentSplit(index, { amount: e.target.value })}
                       className="h-8 w-20 min-w-0 text-xs"
                     />
@@ -3206,7 +3227,7 @@ export default function POSPage() {
                         >
                           Full
                         </Button>
-                        {PAYMENT_METHODS.length > paymentSplits.length && (
+                        {!isUnpaid && RECEIPT_PAYMENT_METHODS.length > paymentSplits.length && (
                           <Button
                             type="button"
                             variant="outline"
@@ -3224,7 +3245,9 @@ export default function POSPage() {
                 )
               })}
               <p className="text-[10px] text-gray-500 leading-tight">
-                {paymentSplits.length === 1
+                {isUnpaid
+                  ? 'Sale will be saved as unpaid; full amount stays due from the customer.'
+                  : paymentSplits.length === 1
                   ? `Credited to: ${getDepositHint(paymentSplits[0]?.mode || 'upi', bankAccounts)}`
                   : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${getDepositHint(split.mode, bankAccounts)}`).join(' · ')}
               </p>

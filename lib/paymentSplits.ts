@@ -5,9 +5,19 @@ export const PAYMENT_METHODS = [
   { value: 'bank_transfer', label: 'Bank Transfer' },
   { value: 'cheque', label: 'Cheque' },
   { value: 'initial_investment', label: 'Initial Investment' },
+  { value: 'unpaid', label: 'Unpaid' },
 ] as const
 
 export const INITIAL_INVESTMENT_METHOD = 'initial_investment'
+export const UNPAID_METHOD = 'unpaid'
+
+// Methods that represent money actually changing hands — for payment-in /
+// payment-out records and their filters, where "Unpaid" makes no sense.
+export const RECEIPT_PAYMENT_METHODS = PAYMENT_METHODS.filter((item) => item.value !== UNPAID_METHOD)
+
+export function isUnpaidMethod(mode?: string | null): boolean {
+  return (mode || '').trim().toLowerCase() === UNPAID_METHOD
+}
 
 export type PaymentMethodValue = (typeof PAYMENT_METHODS)[number]['value']
 
@@ -114,7 +124,7 @@ export function splitsFromInvoice(invoice: {
 
 export function unusedPaymentMethods(usedModes: string[]): string[] {
   const used = new Set(usedModes.map((mode) => mode.toLowerCase()))
-  return PAYMENT_METHODS.map((item) => item.value).filter((value) => !used.has(value))
+  return RECEIPT_PAYMENT_METHODS.map((item) => item.value).filter((value) => !used.has(value))
 }
 
 export function nextPaymentMethod(usedModes: string[], fallback = 'cash'): string {

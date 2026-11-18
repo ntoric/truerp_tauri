@@ -35,7 +35,7 @@ function clearAuthAndRedirect() {
   if (typeof window === 'undefined') return
   const path = window.location.pathname
   if (path === '/login' || path === '/register' || path === '/forgot-password' || path.startsWith('/reset-password') || path === '/change-password-required') return
-  if (path.startsWith('/portal')) return
+  if (path.startsWith('/portal') || path.startsWith('/shop')) return
   window.location.href = `/login?next=${encodeURIComponent(path)}`
 }
 

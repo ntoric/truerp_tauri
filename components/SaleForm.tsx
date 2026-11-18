@@ -46,9 +46,12 @@ import { looksLikeScaleBarcode, productsMatchingScanCode, resolveScaleBarcodeFor
 import { fetchProductBatches, formatBatchLabel, type ProductBatchStock } from '@/lib/productBatches'
 import {
   PAYMENT_METHODS,
+  RECEIPT_PAYMENT_METHODS,
+  UNPAID_METHOD,
   appendPaymentSplit,
   formatPaymentMethod,
   isInitialInvestmentMethod,
+  isUnpaidMethod,
   splitsFromInvoice,
   sumPaymentSplits,
 } from '@/lib/paymentSplits'
@@ -1046,18 +1049,34 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   }
   const totalAmount = totalBeforeRound
   const paymentMode = paymentSplits[0]?.mode || 'cash'
-  const effectiveAmountPaid = !amountPaidEdited && paymentSplits.length === 1
+  const isUnpaid = paymentSplits.length === 1 && isUnpaidMethod(paymentSplits[0]?.mode)
+  const effectiveAmountPaid = isUnpaid
+    ? 0
+    : !amountPaidEdited && paymentSplits.length === 1
     ? totalAmount
     : sumPaymentSplits(paymentSplits)
   const balance = totalAmount - effectiveAmountPaid
   const isFullyPaid = effectiveAmountPaid >= totalAmount
 
   const splitAmountValue = (index: number) => {
+    if (isUnpaid) return 0
     if (paymentSplits.length === 1 && !amountPaidEdited) return totalAmount
     return paymentSplits[index]?.amount || 0
   }
 
   const updateSplit = (index: number, patch: Partial<{ mode: string; amount: number; bank_account_id: string | null }>) => {
+    if (patch.mode !== undefined && isUnpaidMethod(patch.mode)) {
+      // Unpaid means nothing received: collapse to a single zero split.
+      setAmountPaidEdited(true)
+      setPaymentSplits([{ mode: UNPAID_METHOD, amount: 0, bank_account_id: null }])
+      return
+    }
+    if (patch.mode !== undefined && isUnpaidMethod(paymentSplits[index]?.mode) && paymentSplits.length === 1) {
+      // Leaving Unpaid: default back to receiving the full amount.
+      setAmountPaidEdited(false)
+      setPaymentSplits([{ mode: patch.mode, amount: totalAmount, bank_account_id: null }])
+      return
+    }
     if (patch.amount !== undefined) setAmountPaidEdited(true)
     setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
@@ -1090,7 +1109,12 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const markFullyPaid = () => {
     if (paymentSplits.length <= 1) {
       setAmountPaidEdited(false)
-      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'cash', amount: totalAmount, bank_account_id: paymentSplits[0]?.bank_account_id ?? null }])
+      const currentMode = paymentSplits[0]?.mode || 'cash'
+      setPaymentSplits([{
+        mode: isUnpaidMethod(currentMode) ? 'cash' : currentMode,
+        amount: totalAmount,
+        bank_account_id: paymentSplits[0]?.bank_account_id ?? null,
+      }])
       return
     }
     setAmountPaidEdited(true)
@@ -1438,7 +1462,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             .map((split, index) => ({
               mode: split.mode,
               amount: parseMoney(
-                paymentSplits.length === 1 && !amountPaidEdited && index === 0
+                isUnpaid
+                  ? 0
+                  : paymentSplits.length === 1 && !amountPaidEdited && index === 0
                   ? Math.min(Math.max(0, totalAmount), totalAmount)
                   : split.amount
               ),
@@ -2423,7 +2449,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                 <>
                   <CardHeader className="flex-row items-center justify-between space-y-0 border-t">
                     <CardTitle>Payment Details</CardTitle>
-                    {PAYMENT_METHODS.length > paymentSplits.length && (
+                    {!isUnpaid && RECEIPT_PAYMENT_METHODS.length > paymentSplits.length && (
                       <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
                         <Plus className="h-4 w-4" />
                         Split Payment
@@ -2443,7 +2469,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                               onChange={(e) => updateSplit(index, { mode: e.target.value })}
                               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                             >
-                              {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
+                              {PAYMENT_METHODS.filter((method) => method.value === split.mode || (!usedModes.includes(method.value) && (method.value !== UNPAID_METHOD || paymentSplits.length === 1))).map((method) => (
                                 <option key={method.value} value={method.value}>
                                   {method.label}
                                 </option>
@@ -2452,9 +2478,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                           </div>
                           <div className="space-y-2">
                             <Label>Received Into</Label>
-                            {initialInvestment ? (
+                            {initialInvestment || isUnpaidMethod(split.mode) ? (
                               <div className="flex h-10 items-center rounded-md border border-input bg-gray-50 px-3 text-sm text-muted-foreground">
-                                Owner&apos;s Equity
+                                {initialInvestment ? <>Owner&apos;s Equity</> : 'Not applicable — nothing received'}
                               </div>
                             ) : bankAccountsLoading ? (
                               <Skeleton className="h-10" />
@@ -2488,6 +2514,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                                 min="0"
                                 step="0.01"
                                 value={splitAmountValue(index)}
+                                disabled={isUnpaidMethod(split.mode)}
                                 onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
                               />
                             </div>
@@ -2508,7 +2535,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       )
                     })}
                     <p className="text-xs text-muted-foreground">
-                      {paymentSplits.length === 1
+                      {isUnpaid
+                        ? 'Invoice will be saved as unpaid; the full amount stays outstanding against the party.'
+                        : paymentSplits.length === 1
                         ? isInitialInvestmentMethod(paymentMode)
                           ? 'Amount received is recorded against Owner\'s Equity and will not affect cash or bank balances.'
                           : `Amount received is credited to: ${splitAccountLabel(paymentSplits[0] || { mode: paymentMode, bank_account_id: null })} (configure under Cash & Bank → Payment method accounts)`
