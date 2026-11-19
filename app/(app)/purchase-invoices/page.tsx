@@ -129,6 +129,7 @@ export default function PurchaseInvoicesPage() {
   const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
 
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
+  const [labelItems, setLabelItems] = useState<NonNullable<PurchaseBill['items']>>([])
 
   const isThermalSelected = isThermalLabelSize(labelConfig.paperSize)
   const sheetLabelsPerPage = labelsPerSheet({ columns: labelConfig.cols, rows: labelConfig.rows })
@@ -562,6 +563,7 @@ export default function PurchaseInvoicesPage() {
         quantities[item.id] = Math.max(1, Math.round(Number(item.quantity) || 1))
       })
       setItemQuantities(quantities)
+      setLabelItems(bill.items)
       setLabelModal(billId)
     } catch (err) {
       console.error(err)
@@ -1073,7 +1075,7 @@ export default function PurchaseInvoicesPage() {
               <div>
                 <Label className="text-sm font-medium">Label Quantities (default: invoice quantity)</Label>
                 <div className="mt-2 space-y-2 max-h-48 overflow-y-auto border rounded-md p-2">
-                  {bills.find(b => b.id === labelModal)?.items?.map((item) => (
+                  {labelItems.map((item) => (
                     <div key={item.id} className="flex items-center justify-between text-sm">
                       <span className="flex-1">{item.description}</span>
                       <Input
