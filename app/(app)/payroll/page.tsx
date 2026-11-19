@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
@@ -171,7 +172,7 @@ export default function PayrollPage() {
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [payrolls, setPayrolls] = useState<Payroll[]>([])
   const [stats, setStats] = useState<PayrollStats | null>(null)
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [staffFilter, setStaffFilter] = useState('all')

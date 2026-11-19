@@ -295,7 +295,7 @@ export function buildDailyReportShareText(report: DailyReport, heading = 'Daily 
     '',
     'Note: Purchase expense = full bill total; Payment out = amount paid; AP = unpaid balance.',
     '',
-    'Generated from TruERP'
+    'Generated from TruERP by Gooseroot'
   )
 
   return lines.join('\n')
@@ -336,7 +336,7 @@ export function buildPeriodReportShareText(report: PeriodReport): string {
     `Product Profit: ${formatCurrency(report.product_profit ?? 0)}`,
     `Net Cash Flow: ${formatCurrency(report.net_cash_flow)}`,
     '',
-    'Generated from TruERP'
+    'Generated from TruERP by Gooseroot'
   )
 
   return lines.join('\n')

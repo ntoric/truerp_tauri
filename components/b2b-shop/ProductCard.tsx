@@ -1,9 +1,9 @@
 'use client'
 
-import { Package, ShoppingCart, Star } from 'lucide-react'
+import { Layers, Package, ShoppingCart, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatCurrency } from '@/lib/utils'
-import { formatQty, type PublicProduct } from '@/lib/b2bShop'
+import { bulkQtySuggestions, formatQty, type PublicProduct } from '@/lib/b2bShop'
 import QtyStepper from './QtyStepper'
 
 interface ProductCardProps {
@@ -15,6 +15,8 @@ interface ProductCardProps {
   onAdd: () => void
   onChangeQty: (qty: number) => void
   onRemove: () => void
+  /** Adds the product at `qty`, or updates it if already in the cart. Enables bulk chips. */
+  onSetQty?: (qty: number) => void
 }
 
 export function ProductImage({ src, name, className }: { src?: string; name: string; className?: string }) {
@@ -29,10 +31,12 @@ export function ProductImage({ src, name, className }: { src?: string; name: str
   )
 }
 
-export default function ProductCard({ product, showStock, cartQty, onOpen, onAdd, onChangeQty, onRemove }: ProductCardProps) {
+export default function ProductCard({ product, showStock, cartQty, onOpen, onAdd, onChangeQty, onRemove, onSetQty }: ProductCardProps) {
   const saving = product.mrp > product.price ? Math.round(((product.mrp - product.price) / product.mrp) * 100) : 0
   const orderable = product.in_stock && (product.max_qty === undefined || product.max_qty >= product.min_order_qty)
   const lowStock = showStock && product.stock_qty !== undefined && product.stock_qty > 0 && product.stock_qty <= product.min_order_qty * 3
+  const bulkQtys = onSetQty && orderable ? bulkQtySuggestions(product) : []
+  const unit = product.unit || 'unit'
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition hover:shadow-md">
@@ -97,6 +101,35 @@ export default function ProductCard({ product, showStock, cartQty, onOpen, onAdd
             )}
           </div>
         </div>
+
+        {bulkQtys.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={`Bulk quantities in ${unit}`}>
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
+              <Layers className="h-3 w-3" aria-hidden="true" />
+              Bulk
+            </span>
+            {bulkQtys.map((q) => {
+              const active = cartQty === q
+              return (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => onSetQty?.(q)}
+                  aria-pressed={active}
+                  title={`${formatQty(q)} ${unit} · ${formatCurrency(q * product.price)}`}
+                  className={cn(
+                    'rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums transition-colors',
+                    active
+                      ? 'border-primary bg-tint text-primary'
+                      : 'border-input text-slate-700 hover:border-primary hover:text-primary'
+                  )}
+                >
+                  {formatQty(q)} {unit}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {cartQty > 0 ? (
           <div className="flex items-center justify-between gap-2 pt-1">

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import { useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { useBankAccounts, type BankAccountOption } from '@/hooks/useBankAccounts'
@@ -297,7 +298,7 @@ export default function AccountingPage() {
   const [loadingTabs, setLoadingTabs] = useState<Partial<Record<AccountingTab, boolean>>>({})
   const [reloadKey, setReloadKey] = useState(0)
 
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
   const [showHelp, setShowHelp] = useState(false)
   const [accountDialogOpen, setAccountDialogOpen] = useState(false)
   const [journalDialogOpen, setJournalDialogOpen] = useState(false)
@@ -1261,7 +1262,7 @@ export default function AccountingPage() {
           <div id="accounting-stats" className="grid gap-3 md:grid-cols-4">
             {statsLoading && !stats
               ? Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="rounded-xl border border-[#e4e6ef] bg-white p-4">
+                  <div key={i} className="rounded-xl border border-border bg-white p-4">
                     <Skeleton className="h-3 w-20" />
                     <Skeleton className="mt-2 h-7 w-28" />
                   </div>

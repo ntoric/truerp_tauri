@@ -3,43 +3,82 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+    Gooseroot UI kit tokens (gooseroot-ui/tokens.json) mapped onto the
+    shadcn variable names the app already uses. Channels are "H S% L%".
+    Accent shades (--theme-50…950) are written inline on <html> by
+    lib/colorThemes.ts; the defaults below are the Crimson brand ramp.
+  */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --theme-50: 352 79% 96%;
+    --theme-100: 352 79% 93%;
+    --theme-200: 352 79% 85%;
+    --theme-300: 353 80% 75%;
+    --theme-400: 355 81% 62%;
+    --theme-500: 3 92% 49%;
+    --theme-600: 353 97% 42%;
+    --theme-700: 345 100% 36%;
+    --theme-800: 344 100% 28%;
+    --theme-900: 348 100% 18%;
+    --theme-950: 347 100% 15%;
+
+    --background: 240 5% 96%;          /* bg #F4F4F5 */
+    --foreground: 347 8% 23%;          /* text #3F3638 */
+    --heading: var(--theme-950);       /* heading — Deep Wine #4A0010 */
+    --card: 0 0% 100%;                 /* surface */
+    --card-foreground: 347 8% 23%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 350 74% 45%;
+    --popover-foreground: 347 8% 23%;
+    --surface-2: 0 0% 98%;             /* #FAFAFA */
+    --primary: var(--theme-600);
     --primary-foreground: 0 0% 100%;
-    --theme-50: 355 100% 97%;
-    --theme-100: 355 93% 94%;
-    --theme-200: 354 90% 88%;
-    --theme-300: 353 86% 78%;
-    --theme-400: 351 80% 64%;
-    --theme-500: 350 74% 53%;
-    --theme-600: 350 74% 45%;
-    --theme-700: 350 76% 38%;
-    --theme-800: 350 72% 31%;
-    --theme-900: 349 66% 25%;
-    --theme-950: 350 80% 14%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 350 74% 45%;
-    --radius: 0.375rem;
+    --secondary: 0 0% 98%;
+    --secondary-foreground: var(--theme-950);
+    --muted: 0 0% 98%;
+    --muted-foreground: 349 5% 41%;    /* muted #6F6466 */
+    --accent: var(--theme-50);         /* tint — hover on ghost items */
+    --accent-foreground: var(--theme-700);
+    --destructive: 348 78% 43%;        /* danger #C2183A */
+    --destructive-foreground: 0 0% 100%;
+    --success: 156 79% 27%;            /* #0E7A4E */
+    --success-tint: 151 50% 93%;       /* #E3F5EC */
+    --border: 330 5% 92%;              /* line #EBE9EA */
+    --input: 345 5% 85%;               /* line-strong #DAD6D7 */
+    --ring: var(--theme-600);
+
+    /* Brand gradient: Scarlet → Red → Crimson for the default theme */
+    --grad-start: var(--theme-500);
+    --grad-mid: var(--theme-600);
+    --grad-end: var(--theme-700);
+    /* Button / filled-control gradient (separate so Monochrome dark can invert it) */
+    --btn-start: var(--grad-mid);
+    --btn-end: var(--grad-end);
+
+    /* Wine-tinted depth */
+    --shadow-xs: 0 1px 2px hsl(var(--theme-900) / 0.06);
+    --shadow-sm: 0 1px 2px hsl(var(--theme-900) / 0.05), 0 8px 24px hsl(var(--theme-900) / 0.06);
+    --shadow-md: 0 2px 4px hsl(var(--theme-900) / 0.05), 0 18px 40px hsl(var(--theme-900) / 0.1);
+    --shadow-lg: 0 30px 70px hsl(var(--theme-900) / 0.18);
+    --shadow-accent: 0 12px 28px hsl(var(--theme-600) / 0.28);
+
+    /* Corner radii — Appearance → Corner style. "Default" is the kit
+       scale tightened for ERP density (inputs 10px, cards 20px). */
+    --radius: 0.625rem;
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r-lg: 10px;
+    --r-xl: 14px;
+    --r-2xl: 20px;
+    --r-3xl: 28px;
+
+    /* Appearance → Density */
+    --card-pad: 1rem;
+
     /* Charts (recharts props can't use Tailwind classes) */
-    --chart-grid: #eef0f5;
-    --chart-axis: #5b5c6b;
+    --chart-grid: #ebe9ea;
+    --chart-axis: #6f6466;
     --chart-tooltip-bg: #ffffff;
-    --chart-tooltip-border: #e4e6ef;
+    --chart-tooltip-border: #ebe9ea;
     /* Compact app chrome — comfortable on ~21" / 1080p displays */
     --app-header-h: 3.5rem;
     /* Bottom menubar — activated on <html> via DashboardLayout */
@@ -59,28 +98,38 @@
     }
   }
 
+  /* Gooseroot dark theme: near-black warm surfaces so the accent stands out. */
   .dark {
     color-scheme: dark;
-    --background: 224 45% 6%;
-    --foreground: 210 40% 96%;
-    --card: 222 38% 9.5%;
-    --card-foreground: 210 40% 96%;
-    --popover: 222 38% 9.5%;
-    --popover-foreground: 210 40% 96%;
-    --secondary: 218 26% 15%;
-    --secondary-foreground: 210 40% 96%;
-    --muted: 218 26% 15%;
-    --muted-foreground: 215 18% 62%;
-    --accent: 218 26% 16%;
-    --accent-foreground: 210 40% 96%;
-    --destructive: 0 62.8% 45%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 218 22% 20%;
-    --input: 218 22% 20%;
-    --chart-grid: #232a3d;
-    --chart-axis: #8b90a6;
-    --chart-tooltip-bg: #151a29;
-    --chart-tooltip-border: #2a3350;
+    --background: 300 5% 4%;           /* #0B0A0B */
+    --foreground: 353 17% 91%;         /* #ECE4E5 */
+    --heading: 0 0% 100%;
+    --card: 340 7% 8%;                 /* #161314 */
+    --card-foreground: 353 17% 91%;
+    --popover: 340 7% 8%;
+    --popover-foreground: 353 17% 91%;
+    --surface-2: 345 7% 11%;           /* #1D191A */
+    --secondary: 345 7% 11%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 345 7% 11%;
+    --muted-foreground: 351 8% 68%;    /* #B3A6A8 */
+    --accent: 345 8% 15%;
+    --accent-foreground: var(--theme-300);
+    --destructive: 350 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 157 60% 59%;            /* #58D6A6 */
+    --success-tint: 156 47% 11%;
+    --border: 350 7% 16%;              /* #2C2627 */
+    --input: 348 8% 25%;               /* #463C3E */
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.25);
+    --shadow-md: 0 2px 4px rgb(0 0 0 / 0.3), 0 18px 40px rgb(0 0 0 / 0.35);
+    --shadow-lg: 0 30px 70px rgb(0 0 0 / 0.5);
+    --shadow-accent: 0 12px 28px hsl(var(--theme-500) / 0.25);
+    --chart-grid: #2c2627;
+    --chart-axis: #b3a6a8;
+    --chart-tooltip-bg: #161314;
+    --chart-tooltip-border: #2c2627;
   }
 
   /*
@@ -91,26 +140,59 @@
   .dark .light-scope {
     color-scheme: light;
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 347 8% 23%;
+    --heading: var(--theme-950);
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 347 8% 23%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --chart-grid: #eef0f5;
-    --chart-axis: #5b5c6b;
+    --popover-foreground: 347 8% 23%;
+    --surface-2: 0 0% 98%;
+    --secondary: 0 0% 98%;
+    --secondary-foreground: var(--theme-950);
+    --muted: 0 0% 98%;
+    --muted-foreground: 349 5% 41%;
+    --accent: var(--theme-50);
+    --accent-foreground: var(--theme-700);
+    --destructive: 348 78% 43%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 330 5% 92%;
+    --input: 345 5% 85%;
+    --chart-grid: #ebe9ea;
+    --chart-axis: #6f6466;
     --chart-tooltip-bg: #ffffff;
-    --chart-tooltip-border: #e4e6ef;
+    --chart-tooltip-border: #ebe9ea;
   }
+
+  /* ---------- Appearance preferences (lib/appearancePrefs.ts) ---------- */
+
+  /* Text size — everything sized in rem follows the root font size. */
+  html[data-text-size='sm'] { font-size: 93.75%; }
+  html[data-text-size='lg'] { font-size: 106.25%; }
+  html[data-text-size='xl'] { font-size: 112.5%; }
+
+  /* Corner style */
+  html[data-corners='sharp'] {
+    --radius: 0.25rem;
+    --r-sm: 2px;
+    --r-md: 3px;
+    --r-lg: 4px;
+    --r-xl: 5px;
+    --r-2xl: 6px;
+    --r-3xl: 8px;
+  }
+  html[data-corners='round'] {
+    --radius: 0.875rem;
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 14px;
+    --r-xl: 20px;
+    --r-2xl: 28px;
+    --r-3xl: 36px;
+  }
+
+  /* Density */
+  html[data-density='compact'] { --card-pad: 0.75rem; }
+  html[data-density='spacious'] { --card-pad: 1.5rem; }
 }
 
 @layer base {
@@ -155,8 +237,8 @@ select:focus,
 select:focus-visible,
 [role="combobox"]:focus,
 [role="combobox"]:focus-visible {
-  border-color: hsl(var(--primary) / 0.5) !important;
-  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.12), 0 1px 2px rgba(16, 24, 40, 0.04) !important;
+  border-color: hsl(var(--primary)) !important;
+  box-shadow: 0 0 0 4px hsl(var(--theme-500) / 0.12) !important;
 }
 
 /* Native checkboxes/radios (row selection in raw tables) follow the theme colour */
@@ -276,7 +358,7 @@ aside button:focus-visible {
     under the app header.
   */
   .app-page-subheader {
-    @apply sticky top-[var(--app-header-h)] z-20 -mx-3 -mt-3 mb-1.5 flex min-h-[3.5rem] flex-wrap items-center justify-between gap-x-2 gap-y-1 overflow-visible border-b border-slate-200/70 bg-[#f6f7fb]/90 px-3 py-1.5 backdrop-blur-md sm:-mx-4 sm:-mt-4 sm:px-4 lg:-mx-5 lg:-mt-5 lg:px-5;
+    @apply sticky top-[var(--app-header-h)] z-20 -mx-3 -mt-3 mb-1.5 flex min-h-[3.5rem] flex-wrap items-center justify-between gap-x-2 gap-y-1 overflow-visible border-b border-slate-200/70 bg-background/90 px-3 py-1.5 backdrop-blur-md sm:-mx-4 sm:-mt-4 sm:px-4 lg:-mx-5 lg:-mt-5 lg:px-5;
   }
 
   .dark .app-page-subheader {
@@ -334,27 +416,27 @@ aside button:focus-visible {
 
   .table-scroll thead th,
   .table-scroll thead td {
-    background-color: #f8fafc;
+    background-color: hsl(var(--surface-2));
     box-shadow: inset 0 -1px 0 hsl(var(--border));
   }
 
   .dark .table-scroll thead th,
   .dark .table-scroll thead td {
-    background-color: hsl(219 24% 12%);
+    background-color: hsl(345 7% 10%);
   }
 
   .table-scroll thead.bg-gray-50 th,
   .table-scroll thead.bg-slate-50 th,
   .table-scroll thead.bg-gray-50 td,
   .table-scroll thead.bg-slate-50 td {
-    background-color: rgb(249 250 251);
+    background-color: hsl(var(--surface-2));
   }
 
   .dark .table-scroll thead.bg-gray-50 th,
   .dark .table-scroll thead.bg-slate-50 th,
   .dark .table-scroll thead.bg-gray-50 td,
   .dark .table-scroll thead.bg-slate-50 td {
-    background-color: hsl(219 24% 12%);
+    background-color: hsl(345 7% 10%);
   }
 
   .table-scroll tfoot {
@@ -410,41 +492,15 @@ aside button:focus-visible {
 }
 
 @layer utilities {
-  /* Side menu: scrollbar hidden until hover */
+  /* Side menu: scrollable, but the scrollbar is never shown (wheel / trackpad / touch still scroll). */
   .sidebar-scroll {
     scrollbar-width: none;
+    -ms-overflow-style: none;
   }
   .sidebar-scroll::-webkit-scrollbar {
+    display: none;
     width: 0;
     height: 0;
-  }
-  .sidebar-scroll:hover {
-    scrollbar-width: thin;
-    scrollbar-color: rgb(203 213 225) transparent;
-  }
-  .sidebar-scroll:hover::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
-  }
-  .sidebar-scroll:hover::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .sidebar-scroll:hover::-webkit-scrollbar-thumb {
-    background-color: rgb(203 213 225);
-    border-radius: 9999px;
-  }
-  .sidebar-scroll:hover::-webkit-scrollbar-thumb:hover {
-    background-color: rgb(148 163 184);
-  }
-
-  .dark .sidebar-scroll:hover {
-    scrollbar-color: hsl(217 20% 35%) transparent;
-  }
-  .dark .sidebar-scroll:hover::-webkit-scrollbar-thumb {
-    background-color: hsl(217 20% 35%);
-  }
-  .dark .sidebar-scroll:hover::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(216 18% 45%);
   }
 }
 
@@ -514,14 +570,14 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
   token classes like bg-muted/text-foreground for hand-tuned dark styling).
   Inert inside .light-scope (invoice/print previews).
 */
-.dark .data-\[placeholder\]\:text-slate-400[data-placeholder]:not(.light-scope, .light-scope *) { color: hsl(216 15% 55%); }
+.dark .data-\[placeholder\]\:text-slate-400[data-placeholder]:not(.light-scope, .light-scope *) { color: hsl(351 6% 58%); }
 .dark .data-\[state\=active\]\:border-blue-600[data-state="active"]:not(.light-scope, .light-scope *) { border-color: hsl(var(--theme-500)); }
 .dark .data-\[state\=active\]\:text-blue-700[data-state="active"]:not(.light-scope, .light-scope *) { color: hsl(var(--theme-300)); }
 .dark .data-\[state\=checked\]\:text-slate-900[data-state="checked"]:not(.light-scope, .light-scope *) { color: hsl(var(--foreground)); }
-.dark .data-\[state\=open\]\:bg-slate-100[data-state="open"]:not(.light-scope, .light-scope *) { background-color: hsl(219 24% 17% / 1); }
+.dark .data-\[state\=open\]\:bg-slate-100[data-state="open"]:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 15% / 1); }
 .dark .data-\[state\=open\]\:text-slate-800[data-state="open"]:not(.light-scope, .light-scope *) { color: hsl(var(--foreground)); }
-.dark .data-\[state\=unchecked\]\:bg-slate-200[data-state="unchecked"]:not(.light-scope, .light-scope *) { background-color: hsl(218 22% 22% / 1); }
-.dark .disabled\:bg-slate-50:disabled:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 1); }
+.dark .data-\[state\=unchecked\]\:bg-slate-200[data-state="unchecked"]:not(.light-scope, .light-scope *) { background-color: hsl(348 7% 19% / 1); }
+.dark .disabled\:bg-slate-50:disabled:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 1); }
 .dark .focus\:border-blue-400:focus:not(.light-scope, .light-scope *) { border-color: hsl(var(--theme-500)); }
 .dark .focus\:ring-blue-400:focus:not(.light-scope, .light-scope *) { --tw-ring-color: hsl(var(--theme-500)); }
 .dark .focus\:ring-blue-500:focus:not(.light-scope, .light-scope *) { --tw-ring-color: hsl(var(--theme-500)); }
@@ -531,21 +587,21 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .hover\:bg-blue-100:hover:not(.light-scope, .light-scope *) { background-color: hsl(var(--theme-500) / 0.24); }
 .dark .hover\:bg-blue-50\/40:hover:not(.light-scope, .light-scope *) { background-color: hsl(var(--theme-500) / 0.06); }
 .dark .hover\:bg-blue-50:hover:not(.light-scope, .light-scope *) { background-color: hsl(var(--theme-500) / 0.15); }
-.dark .hover\:bg-gray-100:hover:not(.light-scope, .light-scope *) { background-color: hsl(219 24% 17% / 1); }
-.dark .hover\:bg-gray-200:hover:not(.light-scope, .light-scope *) { background-color: hsl(218 22% 22% / 1); }
-.dark .hover\:bg-gray-50:hover:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 1); }
+.dark .hover\:bg-gray-100:hover:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 15% / 1); }
+.dark .hover\:bg-gray-200:hover:not(.light-scope, .light-scope *) { background-color: hsl(348 7% 19% / 1); }
+.dark .hover\:bg-gray-50:hover:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 1); }
 .dark .hover\:bg-green-100:hover:not(.light-scope, .light-scope *) { background-color: rgb(34 197 94 / 0.22); }
 .dark .hover\:bg-green-50:hover:not(.light-scope, .light-scope *) { background-color: rgb(34 197 94 / 0.14); }
-.dark .hover\:bg-neutral-100:hover:not(.light-scope, .light-scope *) { background-color: hsl(219 24% 17% / 1); }
+.dark .hover\:bg-neutral-100:hover:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 15% / 1); }
 .dark .hover\:bg-purple-100:hover:not(.light-scope, .light-scope *) { background-color: rgb(168 85 247 / 0.22); }
 .dark .hover\:bg-red-100:hover:not(.light-scope, .light-scope *) { background-color: rgb(239 68 68 / 0.22); }
 .dark .hover\:bg-red-50:hover:not(.light-scope, .light-scope *) { background-color: rgb(239 68 68 / 0.14); }
-.dark .hover\:bg-slate-100:hover:not(.light-scope, .light-scope *) { background-color: hsl(219 24% 17% / 1); }
-.dark .hover\:bg-slate-200\/80:hover:not(.light-scope, .light-scope *) { background-color: hsl(218 22% 22% / 0.8); }
-.dark .hover\:bg-slate-300\/80:hover:not(.light-scope, .light-scope *) { background-color: hsl(217 20% 28% / 0.8); }
-.dark .hover\:bg-slate-300:hover:not(.light-scope, .light-scope *) { background-color: hsl(217 20% 28% / 1); }
-.dark .hover\:bg-slate-50\/80:hover:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 0.8); }
-.dark .hover\:bg-slate-50:hover:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 1); }
+.dark .hover\:bg-slate-100:hover:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 15% / 1); }
+.dark .hover\:bg-slate-200\/80:hover:not(.light-scope, .light-scope *) { background-color: hsl(348 7% 19% / 0.8); }
+.dark .hover\:bg-slate-300\/80:hover:not(.light-scope, .light-scope *) { background-color: hsl(348 7% 25% / 0.8); }
+.dark .hover\:bg-slate-300:hover:not(.light-scope, .light-scope *) { background-color: hsl(348 7% 25% / 1); }
+.dark .hover\:bg-slate-50\/80:hover:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 0.8); }
+.dark .hover\:bg-slate-50:hover:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 1); }
 .dark .hover\:bg-white\/80:hover:not(.light-scope, .light-scope *) { background-color: hsl(var(--card) / 0.8); }
 .dark .hover\:bg-white:hover:not(.light-scope, .light-scope *) { background-color: hsl(var(--card) / 1); }
 .dark .hover\:bg-yellow-100:hover:not(.light-scope, .light-scope *) { background-color: rgb(234 179 8 / 0.22); }
@@ -553,7 +609,7 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .hover\:border-blue-400:hover:not(.light-scope, .light-scope *) { border-color: hsl(var(--theme-500)); }
 .dark .hover\:border-gray-300:hover:not(.light-scope, .light-scope *) { border-color: hsl(var(--border)); }
 .dark .hover\:border-slate-300:hover:not(.light-scope, .light-scope *) { border-color: hsl(var(--border)); }
-.dark .hover\:border-slate-400:hover:not(.light-scope, .light-scope *) { border-color: hsl(216 20% 34%); }
+.dark .hover\:border-slate-400:hover:not(.light-scope, .light-scope *) { border-color: hsl(348 6% 32%); }
 .dark .hover\:text-amber-900:hover:not(.light-scope, .light-scope *) { color: #fef3c7; }
 .dark .hover\:text-blue-600:hover:not(.light-scope, .light-scope *) { color: hsl(var(--theme-400)); }
 .dark .hover\:text-blue-700:hover:not(.light-scope, .light-scope *) { color: hsl(var(--theme-300)); }
@@ -568,7 +624,7 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .hover\:text-slate-700:hover:not(.light-scope, .light-scope *) { color: hsl(var(--foreground)); }
 .dark .hover\:text-slate-800:hover:not(.light-scope, .light-scope *) { color: hsl(var(--foreground)); }
 .dark .hover\:text-slate-900:hover:not(.light-scope, .light-scope *) { color: hsl(var(--foreground)); }
-.dark .placeholder\:text-slate-400::placeholder:not(.light-scope, .light-scope *) { color: hsl(216 15% 55%); }
+.dark .placeholder\:text-slate-400::placeholder:not(.light-scope, .light-scope *) { color: hsl(351 6% 58%); }
 .dark .bg-amber-100:not(.light-scope, .light-scope *) { background-color: rgb(245 158 11 / 0.22); }
 .dark .bg-amber-50\/40:not(.light-scope, .light-scope *) { background-color: rgb(245 158 11 / 0.06); }
 .dark .bg-amber-50\/50:not(.light-scope, .light-scope *) { background-color: rgb(245 158 11 / 0.07); }
@@ -584,15 +640,15 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .bg-cyan-100:not(.light-scope, .light-scope *) { background-color: rgb(6 182 212 / 0.22); }
 .dark .bg-emerald-100:not(.light-scope, .light-scope *) { background-color: rgb(16 185 129 / 0.22); }
 .dark .bg-emerald-50:not(.light-scope, .light-scope *) { background-color: rgb(16 185 129 / 0.14); }
-.dark .bg-gray-100:not(.light-scope, .light-scope *) { background-color: hsl(219 24% 17% / 1); }
-.dark .bg-gray-200:not(.light-scope, .light-scope *) { background-color: hsl(218 22% 22% / 1); }
-.dark .bg-gray-50\/50:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 0.5); }
-.dark .bg-gray-50\/60:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 0.6); }
-.dark .bg-gray-50:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 1); }
+.dark .bg-gray-100:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 15% / 1); }
+.dark .bg-gray-200:not(.light-scope, .light-scope *) { background-color: hsl(348 7% 19% / 1); }
+.dark .bg-gray-50\/50:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 0.5); }
+.dark .bg-gray-50\/60:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 0.6); }
+.dark .bg-gray-50:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 1); }
 .dark .bg-green-100:not(.light-scope, .light-scope *) { background-color: rgb(34 197 94 / 0.22); }
 .dark .bg-green-50:not(.light-scope, .light-scope *) { background-color: rgb(34 197 94 / 0.14); }
 .dark .bg-indigo-100:not(.light-scope, .light-scope *) { background-color: rgb(99 102 241 / 0.22); }
-.dark .bg-neutral-100:not(.light-scope, .light-scope *) { background-color: hsl(219 24% 17% / 1); }
+.dark .bg-neutral-100:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 15% / 1); }
 .dark .bg-orange-100:not(.light-scope, .light-scope *) { background-color: rgb(249 115 22 / 0.22); }
 .dark .bg-orange-50\/40:not(.light-scope, .light-scope *) { background-color: rgb(249 115 22 / 0.06); }
 .dark .bg-pink-100:not(.light-scope, .light-scope *) { background-color: rgb(236 72 153 / 0.22); }
@@ -605,16 +661,16 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .bg-rose-50:not(.light-scope, .light-scope *) { background-color: rgb(244 63 94 / 0.14); }
 .dark .bg-sky-100:not(.light-scope, .light-scope *) { background-color: rgb(14 165 233 / 0.22); }
 .dark .bg-sky-50:not(.light-scope, .light-scope *) { background-color: rgb(14 165 233 / 0.14); }
-.dark .bg-slate-100\/80:not(.light-scope, .light-scope *) { background-color: hsl(219 24% 17% / 0.8); }
-.dark .bg-slate-100\/90:not(.light-scope, .light-scope *) { background-color: hsl(219 24% 17% / 0.9); }
-.dark .bg-slate-100:not(.light-scope, .light-scope *) { background-color: hsl(219 24% 17% / 1); }
-.dark .bg-slate-200\/90:not(.light-scope, .light-scope *) { background-color: hsl(218 22% 22% / 0.9); }
-.dark .bg-slate-200:not(.light-scope, .light-scope *) { background-color: hsl(218 22% 22% / 1); }
-.dark .bg-slate-300:not(.light-scope, .light-scope *) { background-color: hsl(217 20% 28% / 1); }
-.dark .bg-slate-50\/50:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 0.5); }
-.dark .bg-slate-50\/60:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 0.6); }
-.dark .bg-slate-50\/80:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 0.8); }
-.dark .bg-slate-50:not(.light-scope, .light-scope *) { background-color: hsl(220 26% 14% / 1); }
+.dark .bg-slate-100\/80:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 15% / 0.8); }
+.dark .bg-slate-100\/90:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 15% / 0.9); }
+.dark .bg-slate-100:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 15% / 1); }
+.dark .bg-slate-200\/90:not(.light-scope, .light-scope *) { background-color: hsl(348 7% 19% / 0.9); }
+.dark .bg-slate-200:not(.light-scope, .light-scope *) { background-color: hsl(348 7% 19% / 1); }
+.dark .bg-slate-300:not(.light-scope, .light-scope *) { background-color: hsl(348 7% 25% / 1); }
+.dark .bg-slate-50\/50:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 0.5); }
+.dark .bg-slate-50\/60:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 0.6); }
+.dark .bg-slate-50\/80:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 0.8); }
+.dark .bg-slate-50:not(.light-scope, .light-scope *) { background-color: hsl(345 7% 11% / 1); }
 .dark .bg-teal-100:not(.light-scope, .light-scope *) { background-color: rgb(20 184 166 / 0.22); }
 .dark .bg-teal-50:not(.light-scope, .light-scope *) { background-color: rgb(20 184 166 / 0.14); }
 .dark .bg-violet-100:not(.light-scope, .light-scope *) { background-color: rgb(139 92 246 / 0.22); }
@@ -644,9 +700,9 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .border-gray-200\/70:not(.light-scope, .light-scope *) { border-color: hsl(var(--border)); }
 .dark .border-gray-200:not(.light-scope, .light-scope *) { border-color: hsl(var(--border)); }
 .dark .border-gray-300:not(.light-scope, .light-scope *) { border-color: hsl(var(--border)); }
-.dark .border-gray-400:not(.light-scope, .light-scope *) { border-color: hsl(216 20% 34%); }
-.dark .border-gray-800:not(.light-scope, .light-scope *) { border-color: hsl(215 22% 45%); }
-.dark .border-gray-900:not(.light-scope, .light-scope *) { border-color: hsl(215 22% 45%); }
+.dark .border-gray-400:not(.light-scope, .light-scope *) { border-color: hsl(348 6% 32%); }
+.dark .border-gray-800:not(.light-scope, .light-scope *) { border-color: hsl(348 6% 42%); }
+.dark .border-gray-900:not(.light-scope, .light-scope *) { border-color: hsl(348 6% 42%); }
 .dark .border-green-200:not(.light-scope, .light-scope *) { border-color: rgb(34 197 94 / 0.35); }
 .dark .border-orange-200:not(.light-scope, .light-scope *) { border-color: rgb(249 115 22 / 0.35); }
 .dark .border-purple-200:not(.light-scope, .light-scope *) { border-color: rgb(168 85 247 / 0.35); }
@@ -657,12 +713,12 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .border-slate-200\/80:not(.light-scope, .light-scope *) { border-color: hsl(var(--border)); }
 .dark .border-slate-200:not(.light-scope, .light-scope *) { border-color: hsl(var(--border)); }
 .dark .border-slate-300:not(.light-scope, .light-scope *) { border-color: hsl(var(--border)); }
-.dark .border-zinc-700:not(.light-scope, .light-scope *) { border-color: hsl(215 22% 45%); }
+.dark .border-zinc-700:not(.light-scope, .light-scope *) { border-color: hsl(348 6% 42%); }
 .dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]):not(.light-scope, .light-scope *) { border-color: hsl(var(--border)); }
 .dark .fill-amber-500:not(.light-scope, .light-scope *) { fill: #fbbf24; }
 .dark .from-blue-50\/80:not(.light-scope, .light-scope *) { --tw-gradient-from: hsl(var(--theme-500) / 0.14) var(--tw-gradient-from-position); }
 .dark .from-blue-50:not(.light-scope, .light-scope *) { --tw-gradient-from: hsl(var(--theme-500) / 0.18) var(--tw-gradient-from-position); }
-.dark .from-slate-50:not(.light-scope, .light-scope *) { --tw-gradient-from: hsl(220 26% 14% / 1) var(--tw-gradient-from-position); }
+.dark .from-slate-50:not(.light-scope, .light-scope *) { --tw-gradient-from: hsl(345 7% 11% / 1) var(--tw-gradient-from-position); }
 .dark .from-white:not(.light-scope, .light-scope *) { --tw-gradient-from: hsl(var(--card) / 1) var(--tw-gradient-from-position); }
 .dark .ring-amber-100:not(.light-scope, .light-scope *) { --tw-ring-color: rgb(245 158 11 / 0.35); }
 .dark .ring-amber-200\/70:not(.light-scope, .light-scope *) { --tw-ring-color: rgb(245 158 11 / 0.35); }
@@ -701,8 +757,8 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .text-emerald-900:not(.light-scope, .light-scope *) { color: #d1fae5; }
 .dark .text-emerald-950:not(.light-scope, .light-scope *) { color: #d1fae5; }
 .dark .text-gray-100:not(.light-scope, .light-scope *) { color: hsl(var(--foreground)); }
-.dark .text-gray-300:not(.light-scope, .light-scope *) { color: hsl(216 15% 55%); }
-.dark .text-gray-400:not(.light-scope, .light-scope *) { color: hsl(216 15% 55%); }
+.dark .text-gray-300:not(.light-scope, .light-scope *) { color: hsl(351 6% 58%); }
+.dark .text-gray-400:not(.light-scope, .light-scope *) { color: hsl(351 6% 58%); }
 .dark .text-gray-500:not(.light-scope, .light-scope *) { color: hsl(var(--muted-foreground)); }
 .dark .text-gray-600:not(.light-scope, .light-scope *) { color: hsl(var(--muted-foreground)); }
 .dark .text-gray-700:not(.light-scope, .light-scope *) { color: hsl(var(--foreground)); }
@@ -728,8 +784,8 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .text-sky-600:not(.light-scope, .light-scope *) { color: #38bdf8; }
 .dark .text-sky-700:not(.light-scope, .light-scope *) { color: #7dd3fc; }
 .dark .text-sky-800:not(.light-scope, .light-scope *) { color: #bae6fd; }
-.dark .text-slate-300:not(.light-scope, .light-scope *) { color: hsl(216 15% 55%); }
-.dark .text-slate-400:not(.light-scope, .light-scope *) { color: hsl(216 15% 55%); }
+.dark .text-slate-300:not(.light-scope, .light-scope *) { color: hsl(351 6% 58%); }
+.dark .text-slate-400:not(.light-scope, .light-scope *) { color: hsl(351 6% 58%); }
 .dark .text-slate-500:not(.light-scope, .light-scope *) { color: hsl(var(--muted-foreground)); }
 .dark .text-slate-600:not(.light-scope, .light-scope *) { color: hsl(var(--muted-foreground)); }
 .dark .text-slate-700:not(.light-scope, .light-scope *) { color: hsl(var(--foreground)); }
@@ -742,11 +798,11 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .text-yellow-700:not(.light-scope, .light-scope *) { color: #fde047; }
 .dark .text-yellow-800:not(.light-scope, .light-scope *) { color: #fef08a; }
 .dark .to-blue-50:not(.light-scope, .light-scope *) { --tw-gradient-to: hsl(var(--theme-500) / 0.18) var(--tw-gradient-to-position); }
-.dark .to-gray-50:not(.light-scope, .light-scope *) { --tw-gradient-to: hsl(220 26% 14% / 1) var(--tw-gradient-to-position); }
+.dark .to-gray-50:not(.light-scope, .light-scope *) { --tw-gradient-to: hsl(345 7% 11% / 1) var(--tw-gradient-to-position); }
 .dark .to-indigo-100:not(.light-scope, .light-scope *) { --tw-gradient-to: rgb(99 102 241 / 0.18) var(--tw-gradient-to-position); }
 .dark .to-white:not(.light-scope, .light-scope *) { --tw-gradient-to: hsl(var(--card) / 1) var(--tw-gradient-to-position); }
 .dark .hover\:text-\[\#20212b\]:hover:not(.light-scope, .light-scope *) { color: hsl(var(--foreground)); }
-.dark .placeholder\:text-\[\#92939e\]::placeholder:not(.light-scope, .light-scope *) { color: hsl(216 14% 56%); }
+.dark .placeholder\:text-\[\#92939e\]::placeholder:not(.light-scope, .light-scope *) { color: hsl(351 6% 58%); }
 .dark .bg-\[\#f6f7fb\]\/85:not(.light-scope, .light-scope *) { background-color: hsl(var(--background) / 0.85); }
 .dark .bg-\[\#f6f7fb\]:not(.light-scope, .light-scope *) { background-color: hsl(var(--background)); }
 .dark .border-\[\#e4e6ef\]:not(.light-scope, .light-scope *) { border-color: hsl(var(--border)); }
@@ -755,3 +811,117 @@ html.has-bottom-menubar .fixed.inset-0.z-50 > .max-h-\[80vh\] {
 .dark .text-\[\#5b5c6b\]:not(.light-scope, .light-scope *) { color: hsl(var(--muted-foreground)); }
 .dark .text-\[\#737480\]:not(.light-scope, .light-scope *) { color: hsl(var(--muted-foreground)); }
 .dark .text-\[\#c81e3a\]:not(.light-scope, .light-scope *) { color: hsl(var(--theme-400)); }
+
+/* ==========================================================
+   Gooseroot UI kit — app-level rules and Appearance preferences.
+   Unlayered so they beat Tailwind utilities on the same elements.
+   ========================================================== */
+
+/* Tint fills are near-white in light; use an accent wash in dark. */
+.dark .bg-tint:not(.light-scope, .light-scope *) { background-color: hsl(var(--theme-500) / 0.15); }
+
+/* Page titles: bold with tight tracking, in the heading colour. */
+.app-page-title {
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: hsl(var(--heading));
+}
+
+/* Density — page gutter and table rows. Comfortable keeps the classes' own spacing. */
+html[data-density='compact'] .app-main { padding: 0.5rem; }
+html[data-density='spacious'] .app-main { padding: 1.75rem; }
+@media (max-width: 639px) {
+  html[data-density='spacious'] .app-main { padding: 1rem; }
+}
+html[data-density='compact'] .table-scroll :is(td, th) { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+html[data-density='spacious'] .table-scroll td { padding-top: 0.875rem; padding-bottom: 0.875rem; }
+html[data-density='compact'] .app-page-subheader { min-height: 3rem; }
+/* Subheader cancels .app-main padding with negative margins — keep them in sync. */
+html[data-density='compact'] .app-page-subheader { margin: -0.5rem -0.5rem 0.375rem; padding-inline: 0.5rem; }
+html[data-density='spacious'] .app-page-subheader { margin: -1.75rem -1.75rem 0.75rem; padding-inline: 1.75rem; }
+@media (max-width: 639px) {
+  html[data-density='spacious'] .app-page-subheader { margin: -1rem -1rem 0.5rem; padding-inline: 1rem; }
+}
+
+/* Content width — boxed keeps pages readable on very large screens. */
+/* 1200px so the cap is visible on common 1440–1680px laptops, not just 4K. */
+html[data-content-width='boxed'] .app-main {
+  max-width: 1200px;
+  margin-inline: auto;
+}
+
+/* Striped table rows */
+html[data-striped='true'] .table-scroll tbody tr:nth-child(even) {
+  background-color: hsl(var(--surface-2));
+}
+html[data-striped='true'] .table-scroll tbody tr:nth-child(even):hover {
+  background-color: hsl(var(--theme-500) / 0.05);
+}
+html.dark[data-striped='true'] .table-scroll tbody tr:nth-child(even) {
+  background-color: rgb(255 255 255 / 0.025);
+}
+
+/* Reduce motion — honour both the preference and the OS setting. */
+html[data-reduce-motion='true'] *,
+html[data-reduce-motion='true'] *::before,
+html[data-reduce-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==========================================================
+   Monochrome accent — neutral surfaces with a black (light) or
+   white (dark) accent. !important on the accent tokens because
+   lib/colorThemes.ts writes --primary/--ring inline on <html>.
+   Status colours (success / warning / danger) stay coloured.
+   ========================================================== */
+html[data-color-theme='monochrome'] {
+  --background: 0 0% 96%;
+  --foreground: 0 0% 20%;
+  --muted-foreground: 0 0% 40%;
+  --border: 0 0% 91%;
+  --input: 0 0% 84%;
+  --accent-foreground: 0 0% 8%;
+  --shadow-accent: 0 12px 28px rgb(0 0 0 / 0.22);
+}
+html.dark[data-color-theme='monochrome'] {
+  --background: 0 0% 4%;
+  --foreground: 0 0% 90%;
+  --card: 0 0% 8%;
+  --popover: 0 0% 8%;
+  --card-foreground: 0 0% 90%;
+  --popover-foreground: 0 0% 90%;
+  --surface-2: 0 0% 11%;
+  --secondary: 0 0% 11%;
+  --muted: 0 0% 11%;
+  --muted-foreground: 0 0% 66%;
+  --accent: 0 0% 15%;
+  --accent-foreground: 0 0% 100%;
+  --border: 0 0% 16%;
+  --input: 0 0% 26%;
+  --primary: 0 0% 96% !important;
+  --primary-foreground: 0 0% 8% !important;
+  --ring: 0 0% 96% !important;
+  /* Rail and hero stay dark grey (white text); buttons go white. */
+  --grad-start: 0 0% 24%;
+  --grad-mid: 0 0% 16%;
+  --grad-end: 0 0% 11%;
+  --btn-start: 0 0% 100%;
+  --btn-end: 0 0% 86%;
+  --shadow-accent: 0 12px 28px rgb(255 255 255 / 0.12);
+}
+/* Accent-coloured text (text-blue-*, links) reads as white, not mid grey. */
+html.dark[data-color-theme='monochrome'] :is(.text-blue-600, .text-blue-700, .text-primary):not(.light-scope, .light-scope *) {
+  color: hsl(0 0% 96%);
+}
+/* Switch thumb would be white-on-white when checked. */
+html.dark[data-color-theme='monochrome'] button[role='switch'][data-state='checked'] > span {
+  background-color: hsl(0 0% 8%);
+}

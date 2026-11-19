@@ -149,7 +149,7 @@ export default function ForgotPasswordPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-blue-600">Step {stepNumber} of 3</p>
       )}
       <h2 id="login-heading" className="mt-2 text-[28px] font-semibold leading-tight tracking-tight">{stepTitle}</h2>
-      <p className="mb-8 mt-2 text-sm leading-6 text-[#5b5c6b]">{stepDescription}</p>
+      <p className="mb-8 mt-2 text-sm leading-6 text-muted-foreground">{stepDescription}</p>
 
       {step === 'done' ? (
         <div className="space-y-4">
@@ -169,7 +169,7 @@ export default function ForgotPasswordPage() {
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-xs font-semibold text-[#5b5c6b]">Email</Label>
+            <Label htmlFor="email" className="text-xs font-semibold text-muted-foreground">Email</Label>
             <Input
               id="email"
               type="email"
@@ -181,7 +181,7 @@ export default function ForgotPasswordPage() {
                 clearFieldError('email')
                 setEmail(e.target.value)
               }}
-              className={cn('border-[#e4e6ef] bg-white', fieldErrors.email && 'border-red-500')}
+              className={cn('border-border bg-white', fieldErrors.email && 'border-red-500')}
               required
             />
             <FieldError message={fieldErrors.email} />
@@ -205,7 +205,7 @@ export default function ForgotPasswordPage() {
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="otp" className="text-xs font-semibold text-[#5b5c6b]">Verification code</Label>
+            <Label htmlFor="otp" className="text-xs font-semibold text-muted-foreground">Verification code</Label>
             <Input
               id="otp"
               type="text"
@@ -219,7 +219,7 @@ export default function ForgotPasswordPage() {
                 clearFieldError('otp')
                 setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))
               }}
-              className={cn('border-[#e4e6ef] bg-white', fieldErrors.otp && 'border-red-500', 'tracking-widest text-center text-lg')}
+              className={cn('border-border bg-white', fieldErrors.otp && 'border-red-500', 'tracking-widest text-center text-lg')}
               required
             />
             <FieldError message={fieldErrors.otp} />
@@ -252,7 +252,7 @@ export default function ForgotPasswordPage() {
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="password" className="text-xs font-semibold text-[#5b5c6b]">New password</Label>
+            <Label htmlFor="password" className="text-xs font-semibold text-muted-foreground">New password</Label>
             <Input
               id="password"
               type="password"
@@ -264,14 +264,14 @@ export default function ForgotPasswordPage() {
                 clearFieldError('password')
                 setPassword(e.target.value)
               }}
-              className={cn('border-[#e4e6ef] bg-white', fieldErrors.password && 'border-red-500')}
+              className={cn('border-border bg-white', fieldErrors.password && 'border-red-500')}
               required
               minLength={6}
             />
             <FieldError message={fieldErrors.password} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword" className="text-xs font-semibold text-[#5b5c6b]">Confirm new password</Label>
+            <Label htmlFor="confirmPassword" className="text-xs font-semibold text-muted-foreground">Confirm new password</Label>
             <Input
               id="confirmPassword"
               type="password"
@@ -283,7 +283,7 @@ export default function ForgotPasswordPage() {
                 clearFieldError('confirmPassword')
                 setConfirmPassword(e.target.value)
               }}
-              className={cn('border-[#e4e6ef] bg-white', fieldErrors.confirmPassword && 'border-red-500')}
+              className={cn('border-border bg-white', fieldErrors.confirmPassword && 'border-red-500')}
               required
               minLength={6}
             />

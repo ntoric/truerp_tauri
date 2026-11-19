@@ -202,6 +202,6 @@ export function buildPartyLedgerShareText(ledger: PartyLedger): string {
     const debit = e.debit > 0 ? formatCurrency(e.debit) : '—'
     lines.push(`${date} · ${e.voucher} · ${e.ref_number} · ${credit} · ${debit} · ${formatCurrency(e.balance)}`)
   }
-  lines.push('', 'Generated from TruERP')
+  lines.push('', 'Generated from TruERP by Gooseroot')
   return lines.join('\n')
 }

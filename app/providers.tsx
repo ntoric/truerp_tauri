@@ -4,6 +4,7 @@ import { type ReactNode, useEffect } from 'react'
 import { AuthProvider } from '@/hooks/useAuth'
 import { ColorThemeProvider } from '@/hooks/useColorTheme'
 import { ThemeModeProvider } from '@/hooks/useThemeMode'
+import { AppearanceProvider } from '@/hooks/useAppearance'
 import { StoreProvider } from '@/hooks/useStore'
 import { PageFeaturesProvider } from '@/hooks/usePageFeatures'
 import { DiscountProvider } from '@/hooks/useDiscount'
@@ -44,6 +45,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <AuthProvider>
       <ThemeModeProvider>
         <ColorThemeProvider>
+        <AppearanceProvider>
         <StoreProvider>
           <PageFeaturesProvider>
             <DiscountProvider>
@@ -55,6 +57,7 @@ export function Providers({ children }: { children: ReactNode }) {
             </DiscountProvider>
           </PageFeaturesProvider>
         </StoreProvider>
+        </AppearanceProvider>
       </ColorThemeProvider>
       </ThemeModeProvider>
     </AuthProvider>

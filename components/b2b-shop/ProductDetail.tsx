@@ -279,6 +279,7 @@ export default function ProductDetail({
                 onAdd={() => onSetCartQty(r, r.min_order_qty || 1)}
                 onChangeQty={(q) => onSetCartQty(r, q)}
                 onRemove={() => onRemove(r.id)}
+                onSetQty={(q) => onSetCartQty(r, q)}
               />
             ))}
           </div>

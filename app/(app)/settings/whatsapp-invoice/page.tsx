@@ -248,33 +248,16 @@ export default function WhatsAppInvoiceSettingsPage() {
   };
 
   const templateSwitch = (
-    <div
-      role="tablist"
-      aria-label="Template to edit"
-      className="inline-flex rounded-md border p-0.5 text-xs"
-    >
-      {(
-        [
-          ["main", "Main"],
-          ["no_loyalty", "Without loyalty"],
-        ] as const
-      ).map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          role="tab"
-          aria-selected={variant === key}
-          onClick={() => setVariant(key)}
-          className={`rounded px-2.5 py-1 font-medium transition-colors ${
-            variant === key
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+    <Tabs value={variant} onValueChange={(v) => setVariant(v as typeof variant)}>
+      <TabsList aria-label="Template to edit" className="min-h-0">
+        <TabsTrigger value="main" className="px-3 py-1.5 text-xs">
+          Main
+        </TabsTrigger>
+        <TabsTrigger value="no_loyalty" className="px-3 py-1.5 text-xs">
+          Without loyalty
+        </TabsTrigger>
+      </TabsList>
+    </Tabs>
   );
 
   return (

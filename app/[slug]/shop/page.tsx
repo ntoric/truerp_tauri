@@ -13,6 +13,7 @@ import ProductCard from '@/components/b2b-shop/ProductCard'
 import ProductDetail from '@/components/b2b-shop/ProductDetail'
 import CartPanel from '@/components/b2b-shop/CartPanel'
 import CheckoutDialog from '@/components/b2b-shop/CheckoutDialog'
+import BuyerSwitcher from '@/components/b2b-shop/BuyerSwitcher'
 import TrackOrderDialog from '@/components/b2b-shop/TrackOrderDialog'
 
 const PER_PAGE = 48
@@ -226,6 +227,7 @@ function Storefront() {
               />
             </div>
           </div>
+          <BuyerSwitcher shop={shop} />
           <Button
             variant="outline"
             size="sm"
@@ -321,6 +323,7 @@ function Storefront() {
                     onAdd={() => addToCart(p)}
                     onChangeQty={(q) => setQty(p.id, q)}
                     onRemove={() => removeFromCart(p.id)}
+                    onSetQty={(q) => setCartQty(p, q)}
                   />
                 ))}
               </div>

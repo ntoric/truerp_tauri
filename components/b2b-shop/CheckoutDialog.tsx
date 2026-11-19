@@ -11,7 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { cn, formatCurrency } from '@/lib/utils'
 import { INDIAN_STATES } from '@/lib/indianStates'
-import { formatQty, loadBuyer, saveBuyer, shopApi, type BuyerMatch, type CartLine, type PublicShop } from '@/lib/b2bShop'
+import {
+  activeBuyer,
+  formatQty,
+  loadBuyerBook,
+  saveBuyer,
+  setActiveBuyer,
+  shopApi,
+  type BuyerMatch,
+  type CartLine,
+  type PublicShop,
+} from '@/lib/b2bShop'
 
 type Mode = 'existing' | 'new'
 
@@ -59,15 +69,19 @@ export default function CheckoutDialog({ open, onOpenChange, shop, lines, onPlac
   const addressRequired = shop.require_delivery_address !== false
   const total = useMemo(() => lines.reduce((s, l) => s + l.quantity * l.product.price, 0), [lines])
 
-  // Restore a remembered buyer each time the dialog opens.
+  // Start from the business picked in the shop header each time the dialog opens.
   useEffect(() => {
     if (!open) return
     setError('')
-    const remembered = loadBuyer(shop.slug)
-    if (remembered) {
+    const active = activeBuyer(loadBuyerBook(shop.slug))
+    if (active?.kind === 'existing') {
       setMode('existing')
-      setSelected({ id: remembered.party_id, name: remembered.name, city: remembered.city, phone_hint: '', has_phone: true })
-      setVerifyPhone(remembered.phone)
+      setSelected({ id: active.party_id, name: active.name, city: active.city, phone_hint: '', has_phone: true })
+      setVerifyPhone(active.phone)
+    } else if (active?.kind === 'draft' && shop.allow_new_buyers) {
+      setMode('new')
+      setSelected(null)
+      setBusiness({ ...emptyBusiness, ...active.profile })
     } else if (!selected && !shop.allow_new_buyers) {
       setMode('existing')
     }
@@ -165,11 +179,12 @@ export default function CheckoutDialog({ open, onOpenChange, shop, lines, onPlac
     setUseFileAddress(true)
   }
 
+  // Deselect only; the business stays saved in the header's list.
   const forgetSelection = () => {
     setSelected(null)
     setVerifyPhone('')
     setQuery('')
-    saveBuyer(shop.slug, null)
+    setActiveBuyer(shop.slug, null)
   }
 
   return (
@@ -471,7 +486,7 @@ function Field({ label, className, children }: { label: string; className?: stri
   )
 }
 
-function StateSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function StateSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <Select value={value || undefined} onValueChange={onChange}>
       <SelectTrigger>
