@@ -45,6 +45,7 @@ import {
   type A4LabelSheetPresetKey,
 } from '@/lib/a4LabelSheets'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import BrandLoader from '@/components/BrandLoader'
 
 const THERMAL_LABEL_DIMENSIONS: Record<BarcodeLabelSize, { width: number; height: number }> = {
   '1inch': { width: 25.4, height: 15 },
@@ -823,7 +824,7 @@ export default function PurchaseInvoicesPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <div>

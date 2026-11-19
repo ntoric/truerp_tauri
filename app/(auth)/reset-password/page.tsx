@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
@@ -13,7 +14,7 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white px-4">
-      <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <BrandLoader />
     </div>
   )
 }

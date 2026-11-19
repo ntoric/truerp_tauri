@@ -15,6 +15,7 @@ import CartPanel from '@/components/b2b-shop/CartPanel'
 import CheckoutDialog from '@/components/b2b-shop/CheckoutDialog'
 import BuyerSwitcher from '@/components/b2b-shop/BuyerSwitcher'
 import TrackOrderDialog from '@/components/b2b-shop/TrackOrderDialog'
+import BrandLoader from '@/components/BrandLoader'
 
 const PER_PAGE = 48
 
@@ -51,7 +52,7 @@ function ShopLogo({ src }: { src?: string }) {
 function FullPageSpinner() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50">
-      <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <BrandLoader />
     </div>
   )
 }

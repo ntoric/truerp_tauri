@@ -24,6 +24,7 @@ import { notifyError, notifySuccess } from '@/lib/notify'
 import { sendInvoiceOnWhatsApp } from '@/lib/whatsappInvoice'
 import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
+import BrandLoader from '@/components/BrandLoader'
 
 interface InvoiceItem {
   id: string
@@ -442,7 +443,7 @@ function InvoiceViewContent() {
 
 export default function ViewInvoicePage() {
   return (
-    <Suspense fallback={<div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>}>
+    <Suspense fallback={<div className="flex h-96 items-center justify-center"><BrandLoader /></div>}>
       <InvoiceViewContent />
     </Suspense>
   )

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { portalFetch } from '@/lib/portalApi'
+import BrandLoader from '@/components/BrandLoader'
 
 export default function PortalStatementPDFPage() {
   const params = useParams()
@@ -30,7 +31,7 @@ export default function PortalStatementPDFPage() {
   if (!htmlContent) {
     return (
       <div className="flex h-[100dvh] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+        <BrandLoader />
       </div>
     )
   }

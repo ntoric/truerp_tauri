@@ -27,6 +27,7 @@ import {
   Warehouse,
   X,
 } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 const PAGE_SIZE = 50
 
@@ -666,7 +667,7 @@ export default function StockMovementPage() {
           <CardContent>
             {loading && !data ? (
               <div className="flex h-48 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : rows.length === 0 ? (
               <p className="py-10 text-center text-sm text-gray-500">No stock movements match these filters.</p>

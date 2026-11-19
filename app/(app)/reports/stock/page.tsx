@@ -41,6 +41,7 @@ import {
   Warehouse,
   TrendingUp,
 } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 type StockPreset =
   | 'today'
@@ -307,7 +308,7 @@ export default function StockReportPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-48 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : report ? (
               <>

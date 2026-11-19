@@ -34,6 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { RECEIPT_PAYMENT_METHODS as PAYMENT_METHODS, formatPaymentMethod, isInitialInvestmentMethod } from '@/lib/paymentSplits'
+import BrandLoader from '@/components/BrandLoader'
 
 interface PaymentOut {
   id: string
@@ -1061,7 +1062,7 @@ export default function PaymentOutsPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <div className="table-scroll">

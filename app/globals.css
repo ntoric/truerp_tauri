@@ -925,3 +925,18 @@ html.dark[data-color-theme='monochrome'] :is(.text-blue-600, .text-blue-700, .te
 html.dark[data-color-theme='monochrome'] button[role='switch'][data-state='checked'] > span {
   background-color: hsl(0 0% 8%);
 }
+
+/* ---------- Gooseroot Lens loader (components/BrandLoader.tsx) ---------- */
+.gr-lens { display: inline-block; flex-shrink: 0; overflow: visible; }
+.gr-lens .ra, .gr-lens .rb { fill: none; stroke-width: 161; stroke-dasharray: 100; animation: gr-lens-draw 2.6s cubic-bezier(.6, 0, .3, 1) infinite; }
+.gr-lens .ga { animation: gr-lens-a 2.6s cubic-bezier(.7, 0, .25, 1) infinite; }
+.gr-lens .gb { animation: gr-lens-b 2.6s cubic-bezier(.7, 0, .25, 1) infinite; }
+.gr-lens .leaf { transform-box: view-box; transform-origin: 225px 0; animation: gr-lens-leaf 2.6s cubic-bezier(.3, 1.4, .5, 1) infinite; }
+@keyframes gr-lens-draw { 0% { stroke-dashoffset: 100; } 30%, 82% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 100; } }
+@keyframes gr-lens-a { 0%, 22% { transform: translateX(-130px); } 46%, 82% { transform: none; } 100% { transform: translateX(-130px); } }
+@keyframes gr-lens-b { 0%, 22% { transform: translateX(130px); } 46%, 82% { transform: none; } 100% { transform: translateX(130px); } }
+@keyframes gr-lens-leaf { 0%, 44% { transform: scale(0); } 56%, 76% { transform: scale(1); } 84%, 100% { transform: scale(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .gr-lens .ra, .gr-lens .rb, .gr-lens .ga, .gr-lens .gb, .gr-lens .leaf { animation: none; }
+  .gr-lens .ra, .gr-lens .rb { stroke-dashoffset: 0; }
+}

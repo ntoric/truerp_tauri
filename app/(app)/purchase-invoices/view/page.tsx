@@ -14,6 +14,7 @@ import { ArrowLeft, Download, Edit, Loader2, ExternalLink, FileText, AlertCircle
 import { notifyError } from '@/lib/notify'
 import { downloadPurchaseBillPdf } from '@/lib/printDocument'
 import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
+import BrandLoader from '@/components/BrandLoader'
 
 interface PurchaseBillItem {
   id: string
@@ -361,7 +362,7 @@ function PurchaseBillViewContent() {
 
 export default function ViewPurchaseBillPage() {
   return (
-    <Suspense fallback={<div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>}>
+    <Suspense fallback={<div className="flex h-96 items-center justify-center"><BrandLoader /></div>}>
       <PurchaseBillViewContent />
     </Suspense>
   )

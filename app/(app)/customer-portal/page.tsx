@@ -18,6 +18,7 @@ import { ExternalLink, Globe, Loader2, Save, Users, LifeBuoy } from 'lucide-reac
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import BrandLoader from '@/components/BrandLoader'
 
 interface PortalSettings {
   is_enabled: boolean
@@ -171,7 +172,7 @@ export default function CustomerPortalAdminPage() {
     return (
       <DashboardLayout>
         <div className="flex justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <BrandLoader />
         </div>
       </DashboardLayout>
     )

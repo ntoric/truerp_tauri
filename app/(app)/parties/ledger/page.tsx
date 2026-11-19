@@ -44,6 +44,7 @@ import {
   Wallet,
   AlertTriangle,
 } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 const FAVOURITE_KEY = 'party-ledger'
 
@@ -325,7 +326,7 @@ export default function PartyLedgerPage() {
           <CardContent className="p-0">
             {loading ? (
               <div className="flex h-64 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : !ledger ? (
               <div className="flex h-64 items-center justify-center text-sm text-gray-500">

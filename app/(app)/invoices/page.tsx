@@ -33,6 +33,7 @@ import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
+import BrandLoader from '@/components/BrandLoader'
 
 interface Invoice {
   id: string
@@ -645,7 +646,7 @@ export default function InvoicesPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <>
@@ -832,7 +833,7 @@ export default function InvoicesPage() {
 
               {previewLoading ? (
                 <div className="flex h-64 items-center justify-center">
-                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                  <BrandLoader />
                 </div>
               ) : previewData ? (
                 <div className="space-y-6 p-6">

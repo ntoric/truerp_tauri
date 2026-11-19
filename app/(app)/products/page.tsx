@@ -58,6 +58,7 @@ import {
 } from '@/lib/weighingScale'
 import { lookupProductsByPlu, fetchNextProductPlu } from '@/lib/itemCode'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import BrandLoader from '@/components/BrandLoader'
 
 interface Category {
   id: string
@@ -1375,7 +1376,7 @@ export default function ProductsPage() {
                 </DialogHeader>
                 {loadingDraft ? (
                   <div className="flex justify-center py-8">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                    <BrandLoader />
                   </div>
                 ) : drafts.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">No drafts saved</div>

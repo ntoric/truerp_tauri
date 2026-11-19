@@ -25,6 +25,7 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
 import EstimateConvertDialog, { type ConvertibleEstimate } from '@/components/EstimateConvertDialog'
+import BrandLoader from '@/components/BrandLoader'
 
 interface Estimate extends ConvertibleEstimate {
   party?: { name: string }
@@ -199,7 +200,7 @@ export default function EstimatesPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <div className="table-scroll">

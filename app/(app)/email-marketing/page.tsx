@@ -22,6 +22,7 @@ import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import dynamic from 'next/dynamic'
+import BrandLoader from '@/components/BrandLoader'
 
 // CKEditor uses browser-only APIs (window, document), so it must be loaded
 // client-side only via next/dynamic with ssr disabled.
@@ -388,7 +389,7 @@ export default function EmailMarketingPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <div className="table-scroll">

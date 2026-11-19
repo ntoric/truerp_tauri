@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { getAuthToken } from '@/lib/authToken'
+import BrandLoader from '@/components/BrandLoader'
 
 export default function Home() {
   const { user, loading } = useAuth()
@@ -19,7 +20,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+      <BrandLoader />
     </div>
   )
 }

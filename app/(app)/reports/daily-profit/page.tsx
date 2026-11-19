@@ -43,6 +43,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import BrandLoader from '@/components/BrandLoader'
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -390,7 +391,7 @@ export default function DailyProfitReportPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-48 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : report ? (
               <>

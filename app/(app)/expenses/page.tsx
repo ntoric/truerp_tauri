@@ -18,7 +18,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
-import { Plus, Search, Tags, Printer as ThermalPrinter, MoreVertical, Trash2, Download, Eye, X, Loader2, Pencil } from 'lucide-react'
+import { Plus, Search, Tags, Printer as ThermalPrinter, MoreVertical, Trash2, Download, Eye, X, Pencil } from 'lucide-react'
 import ThermalPrintModal from '@/components/ThermalPrintModal'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
@@ -26,6 +26,7 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import BrandLoader from '@/components/BrandLoader'
 
 interface ExpenseItem {
   id: string
@@ -366,7 +367,7 @@ export default function ExpensesPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <>
@@ -537,7 +538,7 @@ export default function ExpensesPage() {
 
               {previewLoading ? (
                 <div className="flex h-64 items-center justify-center">
-                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                  <BrandLoader />
                 </div>
               ) : previewData ? (
                 <div className="space-y-6 p-6">

@@ -38,6 +38,7 @@ import {
   Star,
   Store,
 } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 const PAGE_SIZE = 25
 
@@ -221,7 +222,7 @@ export default function B2BShopManagerPage() {
     return (
       <DashboardLayout>
         <div className="flex justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <BrandLoader />
         </div>
       </DashboardLayout>
     )

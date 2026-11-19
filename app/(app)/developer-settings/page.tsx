@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { getServerTime, type ServerTimeInfo } from '@/lib/dailyReport'
 import { downloadBlob } from '@/lib/accountingExport'
+import BrandLoader from '@/components/BrandLoader'
 
 // -----------------------------------------------------------------------------
 // Data Migration types & config
@@ -1108,7 +1109,7 @@ export default function DeveloperSettingsPage() {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <BrandLoader />
         </div>
       </DashboardLayout>
     )

@@ -18,6 +18,7 @@ import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import BrandLoader from '@/components/BrandLoader'
 
 interface WhatsAppCampaign {
   id: string
@@ -407,7 +408,7 @@ export default function WhatsAppMarketingPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <div className="table-scroll">

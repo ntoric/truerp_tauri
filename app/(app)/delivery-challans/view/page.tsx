@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ArrowLeft, Pencil } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 interface DeliveryChallanItem {
   id: string
@@ -223,7 +224,7 @@ export default function ViewDeliveryChallanPage() {
     <Suspense
       fallback={
         <div className="flex h-96 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+          <BrandLoader />
         </div>
       }
     >

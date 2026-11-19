@@ -49,6 +49,7 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 const PARTY_TYPE_OPTIONS: { value: PartyBalanceType; label: string }[] = [
   { value: 'all', label: 'All parties' },
@@ -203,7 +204,7 @@ function PartyBalanceEmailCard() {
       <CardContent className="space-y-4">
         {loading ? (
           <div className="flex h-24 items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+            <BrandLoader size={40} />
           </div>
         ) : (
           <>
@@ -451,7 +452,7 @@ export default function PartyBalanceReportPage() {
           <CardContent>
             {loading && !report ? (
               <div className="flex h-48 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : report ? (
               <>

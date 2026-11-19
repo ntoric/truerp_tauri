@@ -61,6 +61,7 @@ import {
   REPORT_PERIOD_OPTIONS,
   type ReportPeriod,
 } from '@/lib/reportPeriod'
+import BrandLoader from '@/components/BrandLoader'
 
 type Period = ReportPeriod
 
@@ -548,7 +549,7 @@ export default function ReportsPage() {
 
   const spinner = (
     <div className="flex h-48 items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+      <BrandLoader />
     </div>
   )
 

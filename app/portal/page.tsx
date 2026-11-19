@@ -29,6 +29,7 @@ import {
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import BrandLoader from '@/components/BrandLoader'
 
 interface PortalProfile {
   customer: {
@@ -170,7 +171,7 @@ export default function CustomerPortalHomePage() {
   if (loading || !profile) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <BrandLoader />
       </div>
     )
   }

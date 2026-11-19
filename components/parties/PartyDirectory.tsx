@@ -36,6 +36,7 @@ import { notifyError, notifySuccess } from '@/lib/notify'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import BrandLoader from '@/components/BrandLoader'
 
 export type PartyDirectoryType = 'customer' | 'vendor'
 
@@ -845,7 +846,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <>

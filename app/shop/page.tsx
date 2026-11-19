@@ -3,6 +3,7 @@
 import { Suspense, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 // Legacy storefront links (/shop?slug=<slug>&product=<id>) redirect to the
 // shop URL (/<slug>/shop?product=<id>).
@@ -41,7 +42,7 @@ function Redirect() {
 function Spinner() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50">
-      <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <BrandLoader />
     </div>
   )
 }

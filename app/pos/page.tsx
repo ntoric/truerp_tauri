@@ -66,6 +66,7 @@ import {
   describeAutoDiscount,
   normalizeSaleDiscountSettings,
 } from '@/lib/saleDiscount'
+import BrandLoader from '@/components/BrandLoader'
 
 interface Product {
   id: string
@@ -2076,7 +2077,7 @@ export default function POSPage() {
   if (!mounted) {
     return (
       <div className="h-[100dvh] flex items-center justify-center bg-gray-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+        <BrandLoader />
       </div>
     )
   }

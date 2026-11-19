@@ -80,6 +80,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
+import BrandLoader from '@/components/BrandLoader'
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -740,7 +741,7 @@ function ReportEmailSettingsCard() {
       <CardContent className="space-y-4">
         {loading ? (
           <div className="flex h-24 items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+            <BrandLoader size={40} />
           </div>
         ) : (
           <>
@@ -1159,7 +1160,7 @@ export default function DailyReportPage() {
               <CardContent>
                 {loading ? (
                   <div className="flex h-48 items-center justify-center">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                    <BrandLoader />
                   </div>
                 ) : report ? (
                   <ReportSummaryBody report={report} profitLabel="Daily profit" />
@@ -1358,7 +1359,7 @@ export default function DailyReportPage() {
               <CardContent>
                 {periodLoading ? (
                   <div className="flex h-48 items-center justify-center">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                    <BrandLoader />
                   </div>
                 ) : periodReport ? (
                   <ReportSummaryBody report={periodReport} profitLabel="Period profit" />

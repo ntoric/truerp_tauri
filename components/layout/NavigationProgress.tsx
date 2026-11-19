@@ -1,11 +1,8 @@
 'use client'
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
-
-/** Leaf cut-out where the two Lens rings overlap (from gooseroot-ui). */
-const LENS_LEAF =
-  'M225.0 -181.37254478007415 A289 289 0 0 1 225.0 181.37254478007415 A289 289 0 0 1 225.0 -181.37254478007415 Z'
+import BrandLoader from '@/components/BrandLoader'
 
 /** Wait this long before showing the overlay so fast navigations don't flash. */
 const SHOW_DELAY_MS = 150
@@ -26,7 +23,6 @@ export default function NavigationProgress() {
   const prevRoute = useRef(routeKey)
   const timers = useRef<number[]>([])
   const shownAt = useRef<number | null>(null)
-  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '')
 
   const clearTimers = () => {
     timers.current.forEach((id) => window.clearTimeout(id))
@@ -92,9 +88,6 @@ export default function NavigationProgress() {
 
   if (!visible) return null
 
-  const gradId = `lens-g-${uid}`
-  const maskId = `lens-m-${uid}`
-
   return (
     <div
       role="status"
@@ -102,27 +95,7 @@ export default function NavigationProgress() {
       aria-label="Loading"
       className="brand-loader-overlay fixed inset-0 z-[60] flex items-center justify-center bg-background/70 backdrop-blur-sm"
     >
-      {/* Gooseroot Lens loader, tinted with the user's accent theme ramp. */}
-      <svg className="gr-lens" viewBox="-309 -309 1068 618" aria-hidden="true">
-        <defs>
-          <linearGradient id={gradId} gradientUnits="userSpaceOnUse" x1="-309" y1="0" x2="759" y2="0">
-            <stop offset="0" style={{ stopColor: 'hsl(var(--theme-500))' }} />
-            <stop offset="1" style={{ stopColor: 'hsl(var(--theme-700))' }} />
-          </linearGradient>
-          <mask id={maskId} maskUnits="userSpaceOnUse" x="-500" y="-500" width="1500" height="1000">
-            <rect x="-500" y="-500" width="1500" height="1000" fill="#fff" />
-            <path className="leaf" d={LENS_LEAF} fill="#000" stroke="#000" strokeWidth={44} strokeLinejoin="round" />
-          </mask>
-        </defs>
-        <g mask={`url(#${maskId})`} stroke={`url(#${gradId})`}>
-          <g className="ga">
-            <path className="ra" pathLength={100} d="M0 -208.5 A208.5 208.5 0 1 1 0 208.5 A208.5 208.5 0 1 1 0 -208.5" />
-          </g>
-          <g className="gb">
-            <path className="rb" pathLength={100} d="M450 208.5 A208.5 208.5 0 1 1 450 -208.5 A208.5 208.5 0 1 1 450 208.5" />
-          </g>
-        </g>
-      </svg>
+      <BrandLoader size={120} />
       <style jsx>{`
         .brand-loader-overlay {
           animation: brand-loader-fade 180ms ease-out;
@@ -130,62 +103,6 @@ export default function NavigationProgress() {
         @keyframes brand-loader-fade {
           from { opacity: 0; }
           to { opacity: 1; }
-        }
-        .gr-lens {
-          width: 120px;
-          height: calc(120px * 0.58);
-          overflow: visible;
-        }
-        .gr-lens .ra,
-        .gr-lens .rb {
-          fill: none;
-          stroke-width: 161;
-          stroke-dasharray: 100;
-          animation: gr-lens-draw 2.6s cubic-bezier(0.6, 0, 0.3, 1) infinite;
-        }
-        .gr-lens .ga {
-          animation: gr-lens-a 2.6s cubic-bezier(0.7, 0, 0.25, 1) infinite;
-        }
-        .gr-lens .gb {
-          animation: gr-lens-b 2.6s cubic-bezier(0.7, 0, 0.25, 1) infinite;
-        }
-        .gr-lens .leaf {
-          transform-box: view-box;
-          transform-origin: 225px 0;
-          animation: gr-lens-leaf 2.6s cubic-bezier(0.3, 1.4, 0.5, 1) infinite;
-        }
-        @keyframes gr-lens-draw {
-          0% { stroke-dashoffset: 100; }
-          30%, 82% { stroke-dashoffset: 0; }
-          100% { stroke-dashoffset: 100; }
-        }
-        @keyframes gr-lens-a {
-          0%, 22% { transform: translateX(-130px); }
-          46%, 82% { transform: none; }
-          100% { transform: translateX(-130px); }
-        }
-        @keyframes gr-lens-b {
-          0%, 22% { transform: translateX(130px); }
-          46%, 82% { transform: none; }
-          100% { transform: translateX(130px); }
-        }
-        @keyframes gr-lens-leaf {
-          0%, 44% { transform: scale(0); }
-          56%, 76% { transform: scale(1); }
-          84%, 100% { transform: scale(0); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .gr-lens .ra,
-          .gr-lens .rb,
-          .gr-lens .ga,
-          .gr-lens .gb,
-          .gr-lens .leaf {
-            animation: none;
-          }
-          .gr-lens .ra,
-          .gr-lens .rb {
-            stroke-dashoffset: 0;
-          }
         }
       `}</style>
     </div>

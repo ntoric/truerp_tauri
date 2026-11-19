@@ -26,6 +26,7 @@ import {
   defaultBankAccountSelection,
 } from '@/hooks/useBankAccounts'
 import { ArrowLeft, CalendarDays, HandCoins, Plus, Sparkles, Trash2, Wallet } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 interface Staff {
   id: string
@@ -865,7 +866,7 @@ export default function StaffDetailPage() {
           <CardContent className="p-0">
             {attendanceLoading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <Table>

@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 // Old storefront links (/shop/<slug>?product=<id>) redirect to the
 // shop URL (/<slug>/shop?product=<id>).
@@ -20,7 +21,7 @@ export default function LegacyShopSlugRedirect() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50">
-      <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <BrandLoader />
     </div>
   )
 }

@@ -22,6 +22,7 @@ import {
 } from '@/lib/invoiceTemplateSettings'
 import { ArrowLeft, Check, ChevronDown, ChevronUp, Info, Loader2, Save } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
+import BrandLoader from '@/components/BrandLoader'
 
 function SettingsSection({
   title,
@@ -193,7 +194,7 @@ export default function InvoiceTemplateSettingsEditor({ backHref = '/settings' }
   if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <BrandLoader />
       </div>
     )
   }

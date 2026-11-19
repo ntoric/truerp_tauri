@@ -19,6 +19,7 @@ import { Plus, Search, MoreVertical, Edit, Trash2, CheckCircle } from 'lucide-re
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import BrandLoader from '@/components/BrandLoader'
 
 interface SalesReturn {
   id: string
@@ -202,7 +203,7 @@ export default function SalesReturnsPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <>
