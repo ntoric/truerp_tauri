@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import Link from 'next/link'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -94,7 +95,7 @@ export default function PurchaseInvoicesPage() {
   const canMigrate = isSuperAdmin(user?.role)
   const [bills, setBills] = useState<PurchaseBill[]>([])
   const [stats, setStats] = useState<PurchaseBillStats>({ total_purchase: 0, paid: 0, unpaid: 0 })
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')

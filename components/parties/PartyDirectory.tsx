@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
+import { BrandAvatar } from '@/components/ui/brand-avatar'
 import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -86,7 +88,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [stats, setStats] = useState<PartyStats>({ total_parties: 0, to_collect: 0, to_pay: 0 })
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -886,7 +888,21 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
                         <td className="py-3">
                           <Checkbox checked={selectedParties.has(p.id)} onCheckedChange={() => handleSelectParty(p.id)} />
                         </td>
-                        <td className="py-3 font-medium text-gray-900">{p.name}</td>
+                        <td className="py-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <BrandAvatar
+                              name={p.name}
+                              tone={p.party_type === 'vendor' ? 'wine' : 'brand'}
+                              title={p.party_type === 'vendor' ? 'Vendor' : 'Customer'}
+                            />
+                            <div className="min-w-0">
+                              <p className="max-w-[16rem] truncate font-medium text-gray-900">{p.name}</p>
+                              {(p.email || p.city) && (
+                                <p className="max-w-[16rem] truncate text-xs text-gray-500">{p.email || p.city}</p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
                         <td className="py-3 text-gray-600">{p.category || '-'}</td>
                         <td className="py-3">
                           {p.phone && (

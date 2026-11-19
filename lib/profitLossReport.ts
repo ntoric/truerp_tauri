@@ -132,7 +132,7 @@ export function buildProfitLossShareText(report: ProfitLossReport): string {
     `Expenses: ${report.expenses.count} txn · ${formatCurrency(report.expenses.total_amount)}`,
     `Net Profit: ${formatCurrency(report.net_profit)}`,
     '',
-    'Generated from TruERP'
+    'Generated from TruERP by Gooseroot'
   )
 
   return lines.join('\n')

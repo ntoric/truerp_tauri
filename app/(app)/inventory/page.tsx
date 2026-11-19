@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import { useRouter } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -306,7 +307,7 @@ export default function InventoryPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [approvingEntryId, setApprovingEntryId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
   const [entriesPage, setEntriesPage] = useState(1)
   const [entriesTotal, setEntriesTotal] = useState(0)
   const [stocksPage, setStocksPage] = useState(1)

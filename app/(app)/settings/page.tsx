@@ -28,7 +28,7 @@ import { hasDesktopUpdater } from '@/lib/desktopBridge'
 import WeighingScaleSettingsCard from '@/components/WeighingScaleSettingsCard'
 import PrintSettingsCard from '@/components/PrintSettingsCard'
 import DesktopUpdatesCard from '@/components/DesktopUpdatesCard'
-import AppearanceSettingsCard from '@/components/AppearanceSettingsCard'
+import AppearanceSettings from '@/components/appearance/AppearanceSettings'
 import WhatsAppInvoiceToggleCard from '@/components/WhatsAppInvoiceToggleCard'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -865,7 +865,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="appearance">
-            <AppearanceSettingsCard />
+            <AppearanceSettings />
           </TabsContent>
 
           {/* Invoice Settings Tab */}

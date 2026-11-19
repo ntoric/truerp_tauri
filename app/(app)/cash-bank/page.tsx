@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
@@ -178,7 +179,7 @@ export default function CashBankPage() {
   const [mappingAccounts, setMappingAccounts] = useState<Record<string, string>>({})
   const [savingMappings, setSavingMappings] = useState(false)
   const [activeTab, setActiveTab] = useState<'accounts' | 'transactions' | 'settings'>('accounts')
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
 
   useEffect(() => {
     const next: Record<string, string> = {}

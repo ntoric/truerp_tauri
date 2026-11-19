@@ -5,21 +5,32 @@ export type ThemeShade = (typeof THEME_SHADES)[number]
 export type ThemeScale = Record<ThemeShade, string>
 
 export const COLOR_THEME_IDS = [
-  'runerail',
-  'blue',
-  'sky',
-  'teal',
-  'emerald',
-  'violet',
-  'purple',
+  'crimson',
   'rose',
-  'orange',
+  'tangerine',
   'amber',
-  'slate',
+  'emerald',
+  'teal',
+  'ocean',
+  'indigo',
+  'plum',
+  'graphite',
+  'monochrome',
   'custom',
 ] as const
 
 export type ColorThemeId = (typeof COLOR_THEME_IDS)[number]
+
+/** Ids from earlier releases, mapped to the closest current preset. */
+const LEGACY_THEME_IDS: Record<string, ColorThemeId> = {
+  runerail: 'crimson',
+  blue: 'ocean',
+  sky: 'ocean',
+  violet: 'indigo',
+  purple: 'plum',
+  orange: 'tangerine',
+  slate: 'graphite',
+}
 
 export interface ColorThemeDefinition {
   id: Exclude<ColorThemeId, 'custom'>
@@ -35,218 +46,224 @@ export interface StoredColorTheme {
   vars: Record<string, string>
 }
 
-export const DEFAULT_COLOR_THEME_ID: ColorThemeId = 'runerail'
-export const DEFAULT_CUSTOM_HEX = '#c81e3a'
+export const DEFAULT_COLOR_THEME_ID: ColorThemeId = 'crimson'
+export const DEFAULT_CUSTOM_HEX = '#1a64d1'
 
-/** HSL channels as "H S% L%" — matches shadcn CSS variable convention. */
+/**
+ * HSL channels as "H S% L%" — matches the shadcn CSS variable convention.
+ * Crimson is the Gooseroot brand ramp: 500 Scarlet #F0140A, 600 Red #D4031A,
+ * 700 Crimson #B8002E, 900 Deep Wine #5C0012, 950 heading wine #4A0010.
+ */
 export const COLOR_THEMES: ColorThemeDefinition[] = [
   {
-    id: 'runerail',
-    label: 'RuneRail',
+    id: 'crimson',
+    label: 'Crimson',
     description: 'Brand default',
-    swatch: '#c81e3a',
+    swatch: '#d4031a',
     scale: {
-      50: '355 100% 97%',
-      100: '355 93% 94%',
-      200: '354 90% 88%',
-      300: '353 86% 78%',
-      400: '351 80% 64%',
-      500: '350 74% 53%',
-      600: '350 74% 45%',
-      700: '350 76% 38%',
-      800: '350 72% 31%',
-      900: '349 66% 25%',
-      950: '350 80% 14%',
-    },
-  },
-  {
-    id: 'blue',
-    label: 'Blue',
-    description: 'Classic',
-    swatch: '#2563eb',
-    scale: {
-      50: '214 100% 97%',
-      100: '214 95% 93%',
-      200: '213 97% 87%',
-      300: '212 96% 78%',
-      400: '213 94% 68%',
-      500: '217 91% 60%',
-      600: '221 83% 53%',
-      700: '224 76% 48%',
-      800: '226 71% 40%',
-      900: '224 64% 33%',
-      950: '226 57% 21%',
-    },
-  },
-  {
-    id: 'sky',
-    label: 'Sky',
-    description: 'Cool',
-    swatch: '#0284c7',
-    scale: {
-      50: '204 100% 97%',
-      100: '204 94% 94%',
-      200: '201 94% 86%',
-      300: '199 95% 74%',
-      400: '198 93% 60%',
-      500: '199 89% 48%',
-      600: '200 98% 39%',
-      700: '201 96% 32%',
-      800: '201 90% 27%',
-      900: '202 80% 24%',
-      950: '204 80% 16%',
-    },
-  },
-  {
-    id: 'teal',
-    label: 'Teal',
-    description: 'Fresh',
-    swatch: '#0d9488',
-    scale: {
-      50: '166 76% 97%',
-      100: '167 85% 89%',
-      200: '168 84% 78%',
-      300: '171 77% 64%',
-      400: '172 66% 50%',
-      500: '173 80% 40%',
-      600: '175 84% 32%',
-      700: '175 77% 26%',
-      800: '176 69% 22%',
-      900: '176 61% 19%',
-      950: '179 84% 10%',
-    },
-  },
-  {
-    id: 'emerald',
-    label: 'Emerald',
-    description: 'Growth',
-    swatch: '#059669',
-    scale: {
-      50: '152 81% 96%',
-      100: '149 80% 90%',
-      200: '152 76% 80%',
-      300: '156 72% 67%',
-      400: '158 64% 52%',
-      500: '160 84% 39%',
-      600: '161 94% 30%',
-      700: '163 94% 24%',
-      800: '163 88% 20%',
-      900: '164 86% 16%',
-      950: '166 91% 9%',
-    },
-  },
-  {
-    id: 'violet',
-    label: 'Violet',
-    description: 'Bold',
-    swatch: '#7c3aed',
-    scale: {
-      50: '250 100% 98%',
-      100: '251 91% 95%',
-      200: '251 95% 92%',
-      300: '252 95% 85%',
-      400: '255 92% 76%',
-      500: '258 90% 66%',
-      600: '262 83% 58%',
-      700: '263 70% 50%',
-      800: '263 69% 42%',
-      900: '264 67% 35%',
-      950: '261 73% 23%',
-    },
-  },
-  {
-    id: 'purple',
-    label: 'Purple',
-    description: 'Rich',
-    swatch: '#9333ea',
-    scale: {
-      50: '270 100% 98%',
-      100: '269 100% 95%',
-      200: '269 100% 92%',
-      300: '269 97% 85%',
-      400: '270 95% 75%',
-      500: '271 91% 65%',
-      600: '271 81% 56%',
-      700: '272 72% 47%',
-      800: '273 67% 39%',
-      900: '274 66% 32%',
-      950: '274 87% 21%',
+      50: '352 79% 96%',
+      100: '352 79% 93%',
+      200: '352 79% 85%',
+      300: '353 80% 75%',
+      400: '355 81% 62%',
+      500: '3 92% 49%',
+      600: '353 97% 42%',
+      700: '345 100% 36%',
+      800: '344 100% 28%',
+      900: '348 100% 18%',
+      950: '347 100% 15%',
     },
   },
   {
     id: 'rose',
     label: 'Rose',
     description: 'Warm',
-    swatch: '#e11d48',
+    swatch: '#be2a60',
     scale: {
-      50: '356 100% 97%',
-      100: '356 100% 95%',
-      200: '353 96% 90%',
-      300: '353 96% 82%',
-      400: '351 95% 71%',
-      500: '350 89% 60%',
-      600: '347 77% 50%',
-      700: '345 83% 41%',
-      800: '343 80% 35%',
-      900: '342 75% 30%',
-      950: '343 88% 16%',
+      50: '337 76% 97%',
+      100: '338 77% 93%',
+      200: '337 75% 86%',
+      300: '337 74% 76%',
+      400: '339 70% 64%',
+      500: '338 66% 53%',
+      600: '338 64% 45%',
+      700: '338 67% 37%',
+      800: '337 66% 30%',
+      900: '336 66% 22%',
+      950: '335 73% 14%',
     },
   },
   {
-    id: 'orange',
-    label: 'Orange',
-    description: 'Energy',
-    swatch: '#ea580c',
+    id: 'tangerine',
+    label: 'Tangerine',
+    description: 'Energetic',
+    swatch: '#cc4a10',
     scale: {
-      50: '33 100% 96%',
-      100: '34 100% 92%',
-      200: '32 98% 83%',
-      300: '31 97% 72%',
-      400: '27 96% 61%',
-      500: '25 95% 53%',
-      600: '21 90% 48%',
-      700: '17 88% 40%',
-      800: '15 79% 34%',
-      900: '15 75% 28%',
-      950: '13 81% 14%',
+      50: '22 100% 96%',
+      100: '22 100% 91%',
+      200: '22 98% 82%',
+      300: '20 96% 71%',
+      400: '19 91% 60%',
+      500: '19 83% 50%',
+      600: '19 85% 43%',
+      700: '17 83% 36%',
+      800: '15 76% 29%',
+      900: '14 71% 22%',
+      950: '15 77% 14%',
     },
   },
   {
     id: 'amber',
     label: 'Amber',
-    description: 'Bright',
-    swatch: '#d97706',
+    description: 'Golden',
+    swatch: '#a66914',
     scale: {
-      50: '48 100% 96%',
-      100: '48 96% 89%',
-      200: '48 97% 77%',
-      300: '46 97% 65%',
-      400: '43 96% 56%',
-      500: '38 92% 50%',
-      600: '32 95% 44%',
-      700: '26 90% 37%',
-      800: '23 83% 31%',
-      900: '22 78% 26%',
-      950: '21 92% 14%',
+      50: '41 83% 95%',
+      100: '43 83% 88%',
+      200: '42 82% 76%',
+      300: '41 80% 63%',
+      400: '38 72% 52%',
+      500: '37 76% 44%',
+      600: '35 78% 36%',
+      700: '33 75% 30%',
+      800: '32 69% 24%',
+      900: '31 64% 18%',
+      950: '32 71% 11%',
     },
   },
   {
-    id: 'slate',
-    label: 'Slate',
-    description: 'Neutral',
-    swatch: '#475569',
+    id: 'emerald',
+    label: 'Emerald',
+    description: 'Growth',
+    swatch: '#1b724f',
     scale: {
-      50: '210 40% 98%',
-      100: '210 40% 96%',
-      200: '214 32% 91%',
-      300: '213 27% 84%',
-      400: '215 20% 65%',
-      500: '215 16% 47%',
-      600: '215 19% 35%',
-      700: '215 25% 27%',
-      800: '217 33% 17%',
-      900: '222 47% 11%',
-      950: '229 84% 5%',
+      50: '150 46% 95%',
+      100: '151 48% 88%',
+      200: '152 46% 76%',
+      300: '154 43% 61%',
+      400: '155 45% 45%',
+      500: '156 58% 34%',
+      600: '156 62% 28%',
+      700: '157 60% 22%',
+      800: '157 57% 18%',
+      900: '156 54% 14%',
+      950: '156 63% 8%',
+    },
+  },
+  {
+    id: 'teal',
+    label: 'Teal',
+    description: 'Fresh',
+    swatch: '#1f6b77',
+    scale: {
+      50: '185 48% 95%',
+      100: '186 50% 87%',
+      200: '186 49% 75%',
+      300: '186 46% 60%',
+      400: '187 47% 45%',
+      500: '188 56% 36%',
+      600: '188 59% 29%',
+      700: '189 56% 24%',
+      800: '189 53% 20%',
+      900: '189 51% 15%',
+      950: '189 58% 9%',
+    },
+  },
+  {
+    id: 'ocean',
+    label: 'Ocean',
+    description: 'Calm',
+    swatch: '#2a54bd',
+    scale: {
+      50: '216 79% 96%',
+      100: '217 80% 92%',
+      200: '218 78% 84%',
+      300: '219 75% 73%',
+      400: '220 70% 62%',
+      500: '222 63% 53%',
+      600: '223 64% 45%',
+      700: '224 62% 37%',
+      800: '223 58% 30%',
+      900: '223 56% 23%',
+      950: '223 57% 15%',
+    },
+  },
+  {
+    id: 'indigo',
+    label: 'Indigo',
+    description: 'Deep',
+    swatch: '#4c3fc4',
+    scale: {
+      50: '240 76% 97%',
+      100: '240 77% 93%',
+      200: '241 74% 86%',
+      300: '242 73% 77%',
+      400: '244 69% 67%',
+      500: '245 63% 59%',
+      600: '246 53% 51%',
+      700: '247 52% 42%',
+      800: '247 49% 34%',
+      900: '246 46% 25%',
+      950: '246 48% 16%',
+    },
+  },
+  {
+    id: 'plum',
+    label: 'Plum',
+    description: 'Rich',
+    swatch: '#7e30b6',
+    scale: {
+      50: '277 68% 96%',
+      100: '277 71% 92%',
+      200: '278 69% 84%',
+      300: '277 67% 73%',
+      400: '277 63% 62%',
+      500: '276 58% 53%',
+      600: '275 58% 45%',
+      700: '275 56% 37%',
+      800: '274 53% 30%',
+      900: '275 52% 22%',
+      950: '275 58% 14%',
+    },
+  },
+  {
+    id: 'graphite',
+    label: 'Graphite',
+    description: 'Neutral',
+    swatch: '#3a3a3f',
+    scale: {
+      50: '240 5% 96%',
+      100: '240 5% 92%',
+      200: '240 5% 84%',
+      300: '240 5% 70%',
+      400: '240 3% 55%',
+      500: '240 3% 43%',
+      600: '240 4% 24%',
+      700: '240 4% 18%',
+      800: '240 3% 14%',
+      900: '240 3% 11%',
+      950: '240 4% 8%',
+    },
+  },
+  {
+    // Pure greys. In dark mode globals.css flips the accent to white
+    // (see [data-color-theme='monochrome']), since black would vanish.
+    id: 'monochrome',
+    label: 'Monochrome',
+    description: 'Black & white',
+    swatch: '#1f1f1f',
+    scale: {
+      50: '0 0% 96%',
+      100: '0 0% 92%',
+      200: '0 0% 85%',
+      300: '0 0% 72%',
+      400: '0 0% 56%',
+      500: '0 0% 28%',
+      600: '0 0% 12%',
+      700: '0 0% 6%',
+      800: '0 0% 5%',
+      900: '0 0% 4%',
+      950: '0 0% 4%',
     },
   },
 ]
@@ -257,11 +274,18 @@ export function isColorThemeId(value: string | null | undefined): value is Color
   return !!value && (COLOR_THEME_IDS as readonly string[]).includes(value)
 }
 
+/** Resolves current and legacy ids; returns null for anything unknown. */
+export function normalizeColorThemeId(value: string | null | undefined): ColorThemeId | null {
+  if (!value) return null
+  if (isColorThemeId(value)) return value
+  return LEGACY_THEME_IDS[value] ?? null
+}
+
 export function normalizeHex(hex: string): string {
   const value = hex.trim()
   const short = /^#([0-9a-fA-F]{3})$/.exec(value)
   if (short) {
-    const [r, g, b] = short[1]
+    const [r, g, b] = short[1].split('')
     return `#${r}${r}${g}${g}${b}${b}`.toLowerCase()
   }
   if (/^#[0-9a-fA-F]{6}$/.test(value)) return value.toLowerCase()
@@ -306,8 +330,9 @@ export function scaleFromHex(hex: string): ThemeScale {
     600: hslString(h, sat, l),
     700: hslString(h, Math.min(sat + 4, 100), Math.max(l - 8, 22)),
     800: hslString(h, Math.min(sat + 2, 100), Math.max(l - 16, 18)),
-    900: hslString(h, sat, Math.max(l - 22, 14)),
-    950: hslString(h, Math.min(sat + 6, 100), Math.max(l - 32, 8)),
+    // 900/950 double as ink + heading colours, so keep them dark for any input.
+    900: hslString(h, sat, Math.min(24, Math.max(l - 22, 14))),
+    950: hslString(h, Math.min(sat + 6, 100), Math.min(16, Math.max(l - 32, 8))),
   }
 }
 
@@ -360,12 +385,15 @@ export function readStoredColorTheme(): StoredColorTheme | null {
   try {
     const raw = localStorage.getItem(COLOR_THEME_STORAGE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<StoredColorTheme>
-    if (!isColorThemeId(parsed.id)) return null
+    const parsed = JSON.parse(raw) as Partial<StoredColorTheme> & { id?: string }
+    const id = normalizeColorThemeId(parsed.id)
+    if (!id) return null
+    const customHex = normalizeHex(parsed.customHex || DEFAULT_CUSTOM_HEX)
     return {
-      id: parsed.id,
-      customHex: normalizeHex(parsed.customHex || DEFAULT_CUSTOM_HEX),
-      vars: parsed.vars && typeof parsed.vars === 'object' ? parsed.vars : themeToCssVars(resolveThemeScale(parsed.id, parsed.customHex)),
+      id,
+      customHex,
+      // Recompute so palette updates (and migrated legacy ids) take effect.
+      vars: themeToCssVars(resolveThemeScale(id, customHex)),
     }
   } catch {
     return null

@@ -138,7 +138,7 @@ export function buildBillwiseProfitShareText(report: BillwiseProfitReport): stri
       `${bill.invoice_number} · ${bill.date} · ${bill.party_name || '-'} · ${formatCurrency(bill.profit)}`
     )
   }
-  lines.push('', 'Generated from TruERP')
+  lines.push('', 'Generated from TruERP by Gooseroot')
 
   return lines.join('\n')
 }

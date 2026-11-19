@@ -691,7 +691,7 @@ export default function ReportsPage() {
         </div>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ReportTabId)}>
-          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-muted/50 p-1">
+          <TabsList className="w-full">
             {REPORT_TABS.map((tab) => (
               <TabsTrigger key={tab.id} value={tab.id} className="text-xs sm:text-sm">
                 {tab.label}

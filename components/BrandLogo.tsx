@@ -24,8 +24,8 @@ export default function BrandLogo({
         className={cn('h-10 w-10 shrink-0 object-contain', iconClassName)}
       />
       {showWordmark && (
-        <span aria-hidden="true" className={cn('whitespace-nowrap text-2xl font-bold tracking-tight text-[#111111]', wordmarkClassName)}>
-          Tru<span className="text-[#c81e3a]">ERP</span>
+        <span aria-hidden="true" className={cn('whitespace-nowrap text-2xl font-bold tracking-tight text-heading', wordmarkClassName)}>
+          Tru<span className="text-primary">ERP</span>
         </span>
       )}
     </span>

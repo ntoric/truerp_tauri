@@ -467,7 +467,7 @@ export default function StaffDetailPage() {
             value={
               <>
                 {formatCurrency(staff.salary)}
-                <span className="text-sm font-normal text-[#5b5c6b]">
+                <span className="text-sm font-normal text-muted-foreground">
                   /{staff.salary_type === 'monthly' ? 'mo' : staff.salary_type === 'daily' ? 'day' : 'hr'}
                 </span>
               </>

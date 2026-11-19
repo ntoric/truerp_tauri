@@ -234,7 +234,7 @@ function BrandSection() {
     <div className="grid gap-4 lg:grid-cols-2">
       <SectionCard
         title="Logo"
-        description="TruERP wordmark — 'Tru' in near-black, 'ERP' in brand RuneRail red."
+        description="TruERP by Gooseroot — 'Tru' in Deep Wine, 'ERP' in Gooseroot Red."
       >
         <div className="space-y-4">
           <div className="flex items-center justify-center rounded-xl border border-border/70 bg-white p-8">
@@ -267,12 +267,12 @@ function BrandSection() {
 
       <div className="space-y-4">
         <SectionCard
-          title="Brand color — RuneRail"
+          title="Brand color — Gooseroot"
           description="Default identity color. Powers the primary token, focus rings, gradients and the sidebar dock."
         >
           <div className="overflow-hidden rounded-xl border border-border/70">
-            <div className="flex h-28 items-end bg-[#c81e3a] p-4">
-              <span className="text-lg font-bold text-white">RuneRail Red</span>
+            <div className="flex h-28 items-end bg-primary p-4">
+              <span className="text-lg font-bold text-white">Gooseroot Red</span>
             </div>
             <div className="flex items-center justify-between p-3 text-xs">
               <code className="font-mono">#c81e3a</code>

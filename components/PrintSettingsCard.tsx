@@ -396,28 +396,24 @@ export default function PrintSettingsCard() {
 
         <form onSubmit={handleSave} className="space-y-6">
           <Tabs value={printTab} onValueChange={(v) => setPrintTab(v as typeof printTab)}>
-            <TabsList className="mb-4 h-auto w-full justify-start gap-6 rounded-none border-b bg-transparent p-0">
+            <TabsList variant="line" className="mb-4 w-full">
               <TabsTrigger
                 value="mode"
-                className="rounded-none border-b-2 border-transparent px-1 pb-2 data-[state=active]:border-blue-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
               >
                 Invoice Printer
               </TabsTrigger>
               <TabsTrigger
                 value="thermal"
-                className="rounded-none border-b-2 border-transparent px-1 pb-2 data-[state=active]:border-blue-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
               >
                 Thermal
               </TabsTrigger>
               <TabsTrigger
                 value="document"
-                className="rounded-none border-b-2 border-transparent px-1 pb-2 data-[state=active]:border-blue-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
               >
                 A4 / PDF
               </TabsTrigger>
               <TabsTrigger
                 value="barcode"
-                className="rounded-none border-b-2 border-transparent px-1 pb-2 data-[state=active]:border-blue-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
               >
                 Barcode
               </TabsTrigger>

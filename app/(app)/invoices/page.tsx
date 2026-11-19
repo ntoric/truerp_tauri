@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import Link from 'next/link'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { isSuperAdmin } from '@/lib/roles'
@@ -141,7 +142,7 @@ export default function InvoicesPage() {
   const canDelete = isSuperAdmin(user?.role)
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [stats, setStats] = useState<InvoiceStats>({ total_sales: 0, paid: 0, unpaid: 0, cancelled: 0 })
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')

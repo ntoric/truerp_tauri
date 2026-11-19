@@ -7,7 +7,7 @@ import {
   COLOR_THEMES,
   DEFAULT_COLOR_THEME_ID,
   DEFAULT_CUSTOM_HEX,
-  isColorThemeId,
+  normalizeColorThemeId,
   normalizeHex,
   persistColorTheme,
   readStoredColorTheme,
@@ -48,11 +48,12 @@ export function ColorThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const stored = readStoredColorTheme()
-    if (stored) {
-      setThemeId(stored.id)
-      setCustomHex(stored.customHex)
-      persistColorTheme(stored.id, stored.customHex)
-    }
+    // Always apply: the bootstrap script may have painted stale vars from an older palette.
+    const initialId = stored?.id ?? DEFAULT_COLOR_THEME_ID
+    const initialHex = stored?.customHex ?? DEFAULT_CUSTOM_HEX
+    setThemeId(initialId)
+    setCustomHex(initialHex)
+    persistColorTheme(initialId, initialHex)
 
     if (!getAuthToken()) return
     let cancelled = false
@@ -63,14 +64,17 @@ export function ColorThemeProvider({ children }: { children: ReactNode }) {
       })
       .then((data) => {
         if (cancelled || !data) return
-        if (!isColorThemeId(data.color_theme)) {
+        const serverId = normalizeColorThemeId(data.color_theme)
+        if (!serverId) {
           if (stored) void persistAppearanceToServer(stored.id, stored.customHex)
           return
         }
         const hex = normalizeHex(data.custom_hex || DEFAULT_CUSTOM_HEX)
-        setThemeId(data.color_theme)
+        setThemeId(serverId)
         setCustomHex(hex)
-        persistColorTheme(data.color_theme, hex)
+        persistColorTheme(serverId, hex)
+        // Upgrade legacy ids (e.g. 'runerail') on the server copy.
+        if (serverId !== data.color_theme) void persistAppearanceToServer(serverId, hex)
       })
       .catch(() => {
         // Keep the locally stored theme.

@@ -3,18 +3,18 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold tracking-[0.02em] ring-1 ring-inset transition-colors outline-none focus:outline-none focus-visible:ring-0",
+  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-xs font-medium ring-1 ring-inset transition-colors outline-none focus:outline-none focus-visible:ring-0",
   {
     variants: {
       variant: {
         default:
-          "bg-[linear-gradient(135deg,hsl(var(--theme-500))_0%,hsl(var(--theme-700))_100%)] text-white ring-white/25 shadow-[0_2px_6px_-2px_hsl(var(--theme-600)/0.55),inset_0_1px_0_rgba(255,255,255,0.25)]",
+          "bg-button-gradient text-primary-foreground ring-transparent",
         secondary:
-          "bg-slate-100/80 text-slate-600 ring-slate-900/[0.08] shadow-[0_1px_2px_rgba(16,24,40,0.05)]",
+          "bg-surface-2 text-muted-foreground ring-border",
         destructive:
-          "bg-blue-50 text-blue-700 ring-blue-600/20 shadow-[0_1px_2px_rgba(16,24,40,0.04)]",
+          "bg-[hsl(var(--destructive)/0.08)] text-destructive ring-transparent",
         outline:
-          "bg-white text-slate-600 ring-slate-200 shadow-[0_1px_2px_rgba(16,24,40,0.04)]",
+          "bg-transparent text-heading ring-input",
       },
     },
     defaultVariants: {
@@ -45,8 +45,8 @@ export type StatusBadgeTone =
   | 'teal'
 
 const STATUS_BADGE_TONES: Record<StatusBadgeTone, { chip: string; dot: string }> = {
-  neutral: { chip: 'bg-slate-100/80 text-slate-600 ring-slate-900/[0.08]', dot: 'bg-slate-400' },
-  brand: { chip: 'bg-blue-50 text-blue-700 ring-blue-600/20', dot: 'bg-blue-500' },
+  neutral: { chip: 'bg-surface-2 text-muted-foreground ring-border', dot: 'bg-slate-400' },
+  brand: { chip: 'bg-tint text-blue-700 ring-transparent', dot: 'bg-blue-500' },
   info: { chip: 'bg-sky-50 text-sky-700 ring-sky-600/20', dot: 'bg-sky-500' },
   success: { chip: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20', dot: 'bg-emerald-500' },
   warning: { chip: 'bg-amber-50 text-amber-800 ring-amber-600/25', dot: 'bg-amber-500' },
@@ -98,7 +98,7 @@ function StatusBadge({ tone, status, className, children, ...props }: StatusBadg
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-semibold uppercase tracking-[0.04em] ring-1 ring-inset',
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-[3px] text-[11px] font-medium capitalize ring-1 ring-inset',
         styles.chip,
         className
       )}

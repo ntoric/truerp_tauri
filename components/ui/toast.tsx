@@ -33,7 +33,7 @@ ToastViewport.displayName = ToastPrimitives.Viewport.displayName
 const toastVariants = cva(
   [
     "group pointer-events-auto relative flex w-full items-start gap-2.5 overflow-hidden rounded-xl",
-    "border border-white/70 bg-white/85 p-3.5 pr-9 text-foreground",
+    "border border-border bg-card/95 p-3.5 pr-9 text-foreground",
     "shadow-[0_1px_1px_rgba(0,0,0,0.06),0_4px_8px_rgba(0,0,0,0.08),0_12px_28px_rgba(0,0,0,0.14),0_24px_48px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.75)]",
     "ring-1 ring-black/5",
     "before:absolute before:inset-y-0 before:left-0 before:w-1 before:content-['']",
@@ -48,11 +48,11 @@ const toastVariants = cva(
   {
     variants: {
       variant: {
-        default: "before:bg-sky-500",
+        default: "before:bg-primary",
         info: "before:bg-sky-500",
-        success: "before:bg-emerald-500",
+        success: "before:bg-success",
         warning: "before:bg-amber-500",
-        destructive: "before:bg-red-500",
+        destructive: "before:bg-destructive",
       },
     },
     defaultVariants: {
@@ -70,11 +70,11 @@ const toastIconMap = {
 } as const
 
 const toastIconClassMap = {
-  default: "text-sky-600 dark:text-sky-400",
+  default: "text-primary",
   info: "text-sky-600 dark:text-sky-400",
-  success: "text-emerald-600 dark:text-emerald-400",
+  success: "text-success",
   warning: "text-amber-600 dark:text-amber-400",
-  destructive: "text-red-600 dark:text-red-400",
+  destructive: "text-destructive",
 } as const
 
 type ToastVariant = NonNullable<VariantProps<typeof toastVariants>["variant"]>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
@@ -179,7 +180,7 @@ export default function LoyaltyPage() {
     max_redeem_percent: 25,
   })
   const [stats, setStats] = useState<LoyaltyStats | null>(null)
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
   const [customers, setCustomers] = useState<LoyaltyCustomer[]>([])
   const [transactions, setTransactions] = useState<LoyaltyTransaction[]>([])
   const [loading, setLoading] = useState(true)

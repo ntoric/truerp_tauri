@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { cn } from '@/lib/utils'
@@ -65,45 +65,56 @@ export default function LoginPage() {
     }
   }
 
+  const inputClass = (invalid?: string) =>
+    cn(
+      'h-11 rounded-md border-input bg-card pl-[42px] pr-3.5 text-base text-heading placeholder:text-muted-foreground/80 focus-visible:border-primary focus-visible:shadow-[0_0_0_4px_hsl(var(--theme-50))] md:text-sm',
+      invalid && 'border-red-500',
+    )
+
   return (
     <AuthSplitLayout
       headline={<>Your business.<br />Your workspace.</>}
       benefits={['Bill with confidence', 'Keep your inventory in sync', 'See your business clearly']}
     >
-      <h2 id="login-heading" className="text-[28px] font-semibold leading-tight tracking-tight">Welcome back</h2>
-      <p className="mb-8 mt-2 text-sm leading-6 text-[#5b5c6b]">Sign in to manage your business with TruERP.</p>
-      <form onSubmit={handleSubmit} className="space-y-5" aria-busy={loading}>
+      <h2 id="login-heading" className="text-2xl font-bold leading-tight tracking-tight text-heading">Welcome back</h2>
+      <p className="mb-7 mt-1.5 text-sm leading-6 text-muted-foreground">Sign in to your TruERP workspace.</p>
+      <form onSubmit={handleSubmit} className="space-y-[18px]" aria-busy={loading}>
         {error && (
-          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-800">
-            {error}
+          <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm leading-5 text-destructive">
+            <AlertCircle className="mt-px h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>{error}</span>
           </div>
         )}
-        <div className="space-y-2">
-          <Label htmlFor="email" className="text-xs font-semibold text-[#5b5c6b]">Email</Label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="username"
-            placeholder="you@company.com"
-            value={email}
-            disabled={loading}
-            aria-describedby={fieldErrors.email ? 'email-error' : undefined}
-            onChange={(e) => {
-              clearFieldError('email')
-              setEmail(e.target.value)
-            }}
-            className={cn('h-12 rounded-lg border-[#e4e6ef] bg-white px-3.5 text-base text-[#20212b] placeholder:text-[#92939e] md:text-sm', fieldErrors.email && 'border-red-500')}
-            required
-          />
-          <div id="email-error"><FieldError message={fieldErrors.email} /></div>
-        </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <Label htmlFor="password" className="text-xs font-semibold text-[#5b5c6b]">Password</Label>
-            <Link href="/forgot-password" className="rounded-sm text-xs font-medium text-blue-600 underline-offset-4 hover:underline">Forgot password?</Link>
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-[13px] font-medium text-heading">Work email</Label>
+          <div className="relative flex items-center">
+            <Mail className="pointer-events-none absolute left-3.5 h-[18px] w-[18px] text-muted-foreground" aria-hidden="true" />
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="username"
+              placeholder="you@company.com"
+              value={email}
+              disabled={loading}
+              aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+              onChange={(e) => {
+                clearFieldError('email')
+                setEmail(e.target.value)
+              }}
+              className={inputClass(fieldErrors.email)}
+              required
+            />
           </div>
-          <div className="relative">
+          <div id="email-error"><FieldError message={fieldErrors.email} className="text-xs text-destructive" /></div>
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="password" className="text-[13px] font-medium text-heading">Password</Label>
+            <Link href="/forgot-password" className="rounded-sm text-[13px] font-medium text-[hsl(var(--primary))] transition-colors hover:text-[hsl(var(--theme-700))]">Forgot password?</Link>
+          </div>
+          <div className="relative flex items-center">
+            <Lock className="pointer-events-none absolute left-3.5 h-[18px] w-[18px] text-muted-foreground" aria-hidden="true" />
             <Input
               id="password"
               name="password"
@@ -117,7 +128,7 @@ export default function LoginPage() {
                 clearFieldError('password')
                 setPassword(e.target.value)
               }}
-              className={cn('h-12 rounded-lg border-[#e4e6ef] bg-white pl-3.5 pr-12 text-base text-[#20212b] placeholder:text-[#92939e] md:text-sm', fieldErrors.password && 'border-red-500')}
+              className={cn(inputClass(fieldErrors.password), 'pr-12')}
               required
             />
             <button
@@ -126,43 +137,54 @@ export default function LoginPage() {
               aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-controls="password"
               disabled={loading}
-              className="absolute inset-y-1 right-1 flex w-10 items-center justify-center rounded-md text-[#737480] transition-colors hover:bg-neutral-100 hover:text-[#20212b] disabled:opacity-50"
+              className="absolute inset-y-1 right-1 flex w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-tint hover:text-primary disabled:opacity-50"
             >
               {showPassword ? <EyeOff className="h-[18px] w-[18px]" aria-hidden="true" /> : <Eye className="h-[18px] w-[18px]" aria-hidden="true" />}
             </button>
           </div>
-          <div id="password-error"><FieldError message={fieldErrors.password} /></div>
+          <div id="password-error"><FieldError message={fieldErrors.password} className="text-xs text-destructive" /></div>
         </div>
         {needs2fa && (
-          <div className="space-y-2">
-            <Label htmlFor="totp" className="text-xs font-semibold text-[#5b5c6b]">Authenticator code</Label>
-            <Input
-              id="totp"
-              name="totp"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              autoFocus
-              placeholder="123456"
-              value={totpCode}
-              disabled={loading}
-              aria-describedby={fieldErrors.totpCode ? 'totp-error' : 'totp-help'}
-              onChange={(e) => {
-                clearFieldError('totpCode')
-                setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))
-              }}
-              className={cn('h-12 rounded-lg border-[#e4e6ef] bg-white px-3.5 text-base tracking-[0.25em] text-[#20212b] placeholder:text-[#92939e]', fieldErrors.totpCode && 'border-red-500')}
-              maxLength={6}
-              required
-            />
-            <p id="totp-help" className="text-xs leading-5 text-[#5b5c6b]">Enter the 6-digit code from your authenticator app.</p>
-            <div id="totp-error"><FieldError message={fieldErrors.totpCode} /></div>
+          <div className="space-y-1.5">
+            <Label htmlFor="totp" className="text-[13px] font-medium text-heading">Authenticator code</Label>
+            <div className="relative flex items-center">
+              <ShieldCheck className="pointer-events-none absolute left-3.5 h-[18px] w-[18px] text-muted-foreground" aria-hidden="true" />
+              <Input
+                id="totp"
+                name="totp"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                placeholder="123456"
+                value={totpCode}
+                disabled={loading}
+                aria-describedby={fieldErrors.totpCode ? 'totp-error' : 'totp-help'}
+                onChange={(e) => {
+                  clearFieldError('totpCode')
+                  setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                }}
+                className={cn(inputClass(fieldErrors.totpCode), 'tracking-[0.25em]')}
+                maxLength={6}
+                required
+              />
+            </div>
+            <p id="totp-help" className="text-xs leading-5 text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
+            <div id="totp-error"><FieldError message={fieldErrors.totpCode} className="text-xs text-destructive" /></div>
           </div>
         )}
-        <Button type="submit" className="h-12 w-full gap-2 rounded-lg bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700" disabled={loading}>
+        <Button
+          type="submit"
+          className="!mt-6 h-[52px] w-full gap-2 rounded-lg bg-button-gradient text-[15px] font-semibold text-white transition-[transform,box-shadow] duration-200 hover:-translate-y-px hover:bg-button-gradient hover:shadow-gr-accent disabled:translate-y-0 disabled:shadow-none"
+          disabled={loading}
+        >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
           {loading ? 'Signing in…' : needs2fa ? 'Verify and sign in' : 'Sign in'}
+          {!loading && <ArrowRight className="h-[18px] w-[18px]" aria-hidden="true" />}
         </Button>
       </form>
+      <p className="mt-6 text-center text-xs text-muted-foreground">
+        Need an account? Ask your workspace admin to invite you.
+      </p>
     </AuthSplitLayout>
   )
 }

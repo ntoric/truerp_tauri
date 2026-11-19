@@ -152,7 +152,7 @@ export function buildDailyProfitShareText(report: DailyProfitReport): string {
   for (const row of top) {
     lines.push(`${row.date} · net ${formatCurrency(row.net_profit)} · sales ${formatCurrency(row.sales)}`)
   }
-  lines.push('', 'Generated from TruERP')
+  lines.push('', 'Generated from TruERP by Gooseroot')
 
   return lines.join('\n')
 }
