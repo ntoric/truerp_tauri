@@ -53,6 +53,7 @@ import {
   SealPercent,
   ShoppingCartSimple,
   ListChecks,
+  ArrowsLeftRight,
 } from '@phosphor-icons/react'
 import { canManageUsers, isSuperAdmin } from '@/lib/roles'
 
@@ -124,6 +125,7 @@ export const navItems: NavItem[] = [
       { name: 'Products', href: '/products', icon: Package },
       { name: 'Product Categories', href: '/categories', icon: Tag },
       { name: 'Stock', href: '/inventory', icon: Warehouse },
+      { name: 'Stock Movement', href: '/inventory/movements', icon: ArrowsLeftRight },
     ],
   },
   { name: 'Warehouses', href: '/warehouses', icon: Buildings, accent: '#64748b' },
@@ -272,7 +274,7 @@ export function isNavChildActive(pathname: string, href?: string): boolean {
   if (!href) return false
   if (pathname === href) return true
   // Index pages whose sub-routes are separate menu entries match exactly.
-  if (href === '/reports' || href === '/parties') return false
+  if (href === '/reports' || href === '/parties' || href === '/inventory') return false
   return pathname.startsWith(`${href}/`)
 }
 

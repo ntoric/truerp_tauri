@@ -11,6 +11,7 @@ export const TOGGLEABLE_PAGES: ToggleablePage[] = [
   { key: '/categories', label: 'Product Categories', group: 'Inventory' },
   { key: '/products', label: 'Products', group: 'Inventory' },
   { key: '/inventory', label: 'Stock', group: 'Inventory' },
+  { key: '/inventory/movements', label: 'Stock Movement', group: 'Inventory' },
   { key: '/warehouses', label: 'Warehouses', group: 'Core' },
   { key: '/purchase-invoices', label: 'Purchase Invoices', group: 'Purchases' },
   { key: '/purchase-returns', label: 'Purchase Return', group: 'Purchases' },

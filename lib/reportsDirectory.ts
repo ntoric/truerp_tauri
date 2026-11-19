@@ -98,6 +98,7 @@ export const REPORT_GROUPS: ReportGroup[] = [
     entries: [
       { key: 'product-report', name: 'Item Report (Product Wise Sales)', href: '/reports?tab=products', tags: ['item', 'summary'] },
       { key: 'stock-report', name: 'Stock Report', href: '/reports/stock', tags: ['item', 'summary'] },
+      { key: 'stock-movement', name: 'Stock Movement', href: '/inventory/movements', tags: ['item'] },
       { key: 'inventory-report', name: 'Inventory Valuation', href: '/reports?tab=inventory', tags: ['item', 'summary'] },
       { key: 'low-stock', name: 'Low Stock', href: '/inventory', tags: ['item'] },
       { key: 'item-categories', name: 'Item Categories', href: '/categories', tags: ['item', 'category'] },
