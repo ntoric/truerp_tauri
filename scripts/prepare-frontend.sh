@@ -103,7 +103,11 @@ case "${NEXT_PUBLIC_API_URL}" in
     ;;
 esac
 echo "    NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}"
-export NEXT_PUBLIC_API_URL
+if [[ -z "${NEXT_PUBLIC_SITE_URL:-}" ]]; then
+  echo "warning: NEXT_PUBLIC_SITE_URL is not set; B2B shop / portal links will use 127.0.0.1." >&2
+fi
+echo "    NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-}"
+export NEXT_PUBLIC_API_URL NEXT_PUBLIC_SITE_URL
 npm run build
 
 STANDALONE="${STAGING}/.next/standalone"

@@ -8,7 +8,8 @@ name: Desktop Release
 # Trigger: push a semver tag, e.g. git tag v1.2.3 && git push origin v1.2.3
 #
 # Required repository secrets:
-#   NEXT_PUBLIC_API_URL          Cloud API base, e.g. https://truerp-backend.ntoric.com/api/v1
+#   NEXT_PUBLIC_API_URL          Cloud API base, e.g. https://backend.truerp.co.in/api/v1
+#   NEXT_PUBLIC_SITE_URL         Public web origin for shop/portal links, e.g. https://truerp.co.in
 #   TAURI_SIGNING_PRIVATE_KEY    Contents of the Tauri updater private key (minisign)
 # Optional:
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
@@ -133,9 +134,14 @@ jobs:
       - name: Prepare Next.js standalone UI
         env:
           NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
         run: |
           if [[ -z "${NEXT_PUBLIC_API_URL}" ]]; then
             echo "Missing secret NEXT_PUBLIC_API_URL" >&2
+            exit 1
+          fi
+          if [[ -z "${NEXT_PUBLIC_SITE_URL}" ]]; then
+            echo "Missing secret NEXT_PUBLIC_SITE_URL (shop/portal links would point at 127.0.0.1)" >&2
             exit 1
           fi
           ./scripts/prepare-frontend.sh

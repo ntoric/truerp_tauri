@@ -18,7 +18,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import PaginationControls from '@/components/ui/pagination-controls'
-import { cn, formatCurrency } from '@/lib/utils'
+import { cn, formatCurrency, publicSiteUrl } from '@/lib/utils'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { formatQty, type B2BCatalogRow, type B2BShopSettings } from '@/lib/b2bShop'
 import { ProductImage } from '@/components/b2b-shop/ProductCard'
@@ -71,7 +71,7 @@ export default function B2BShopManagerPage() {
   const [createOpen, setCreateOpen] = useState(false)
 
   const shopUrl =
-    settings && typeof window !== 'undefined' ? `${window.location.origin}/${encodeURIComponent(settings.slug)}/shop` : ''
+    settings && typeof window !== 'undefined' ? `${publicSiteUrl()}/${encodeURIComponent(settings.slug)}/shop` : ''
 
   const loadSettings = useCallback(async () => {
     const res = await apiFetch('/b2b-shop/settings')
