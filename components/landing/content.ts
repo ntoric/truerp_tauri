@@ -190,6 +190,19 @@ export const SUPPORT_CHANNELS = [
   },
 ].filter(Boolean) as { icon: typeof Phone; label: string; value: string; href: string }[]
 
+export const MOBILE_APP = {
+  stores: [
+    { id: 'play', name: 'Google Play' },
+    { id: 'apple', name: 'App Store' },
+  ],
+  features: [
+    { icon: Receipt, title: 'Bill on the go', body: 'Create GST invoices and quotations from your phone and share them on WhatsApp.' },
+    { icon: FileBarChart, title: 'Sales at a glance', body: 'Today’s sales, collections and profit for every store, right on your home screen.' },
+    { icon: Users, title: 'Dues & reminders', body: 'See who owes you and send payment reminders in a tap.' },
+    { icon: Boxes, title: 'Stock in your pocket', body: 'Check stock levels and low-stock alerts across godowns, and scan barcodes with the camera.' },
+  ],
+}
+
 export const STEPS = [
   { n: '01', title: 'Contact our team', body: 'Tell us about your business. We create your workspace with your GSTIN, store details and invoice template.', when: 'Right away' },
   { n: '02', title: 'Bring your data', body: 'Import parties, items with HSN codes and opening balances from Tally, Vyapar, Busy or Excel.', when: 'Within hours' },
@@ -226,6 +239,7 @@ export const PLANS: Plan[] = [
       'HR & payroll: attendance, salaries & advances',
       'GSTR-1 / 3B, HSN & profit reports',
       'Web + macOS / Windows desktop app',
+      'Android & iOS apps (coming soon)',
       'Cloud hosting & daily backups',
     ],
     cta: 'Contact support',

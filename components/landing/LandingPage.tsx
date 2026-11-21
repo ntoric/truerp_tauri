@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, Check, ChevronDown, Headset, Menu, MonitorSmartphone } from 'lucide-react'
+import { ArrowRight, BellRing, Check, ChevronDown, Headset, Menu, MonitorSmartphone } from 'lucide-react'
 import './landing.css'
 import { BrowserFrame } from './BrowserFrame'
 import ProductShowcase from './ProductShowcase'
@@ -8,6 +8,7 @@ import {
   FAQS,
   FEATURES,
   INDUSTRIES,
+  MOBILE_APP,
   NAV,
   PAYMENT_MODES,
   PLANS,
@@ -28,6 +29,25 @@ function Logo() {
         Tru<b>ERP</b>
       </span>
     </span>
+  )
+}
+
+function GooglePlayLogo() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#4285F4" d="M3 2 13 12 3 22Z" />
+      <path fill="#34A853" d="M3 2 16.5 9.5 13 12Z" />
+      <path fill="#EA4335" d="M3 22 13 12 16.5 14.5Z" />
+      <path fill="#FBBC04" d="M16.5 9.5 21 12 16.5 14.5 13 12Z" />
+    </svg>
+  )
+}
+
+function AppleLogo() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701" />
+    </svg>
   )
 }
 
@@ -292,6 +312,85 @@ export default function LandingPage() {
                   </p>
                   <p className="lp-caption">One account, every device</p>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Mobile apps (coming soon) ── */}
+        <section id="mobile" className="lp-container lp-mobile-section">
+          <div className="lp-shell lp-split lp-mobile">
+            <div>
+              <span className="lp-badge lp-badge--red">
+                <BellRing strokeWidth={STROKE} style={{ width: 14, height: 14 }} />
+                Coming soon
+              </span>
+              <h2 className="lp-h1" style={{ marginTop: 16 }}>
+                TruERP on Android &amp; iOS
+              </h2>
+              <p className="lp-lead" style={{ marginTop: 14 }}>
+                Your shop, in your pocket. Native mobile apps are on the way, signed in to the same account as your web and
+                desktop counters.
+              </p>
+              <div className="lp-platform">
+                {MOBILE_APP.features.map(({ icon: Icon, title, body }) => (
+                  <div key={title}>
+                    <span className="lp-well lp-well--sm">
+                      <Icon strokeWidth={STROKE} />
+                    </span>
+                    <h3 className="lp-h3">{title}</h3>
+                    <p className="lp-body">{body}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="lp-mobile__stores">
+                {MOBILE_APP.stores.map(({ id, name }) => (
+                  <span key={id} className="lp-mobile__store" aria-disabled="true">
+                    {id === 'play' ? <GooglePlayLogo /> : <AppleLogo />}
+                    <span>
+                      <small>Coming soon on</small>
+                      <strong>{name}</strong>
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="lp-phone" aria-hidden="true">
+              <div className="lp-phone__screen">
+                <div className="lp-phone__notch" />
+                <p className="lp-phone__hello">Today · Main store</p>
+                <div className="lp-phone__hero">
+                  <small>Sales today</small>
+                  <strong>₹48,250</strong>
+                  <span>▲ 12% vs yesterday</span>
+                </div>
+                <div className="lp-phone__tiles">
+                  <div>
+                    <small>Collected</small>
+                    <strong>₹41,900</strong>
+                  </div>
+                  <div>
+                    <small>Dues</small>
+                    <strong>₹6,350</strong>
+                  </div>
+                </div>
+                <p className="lp-phone__label">Recent bills</p>
+                <ul className="lp-phone__list">
+                  {[
+                    ['INV-1042', 'Sharma Traders', '₹12,480'],
+                    ['INV-1041', 'Walk-in customer', '₹860'],
+                    ['INV-1040', 'Green Mart', '₹5,215'],
+                  ].map(([no, party, amt]) => (
+                    <li key={no}>
+                      <span>
+                        <b>{party}</b>
+                        <small>{no}</small>
+                      </span>
+                      <strong>{amt}</strong>
+                    </li>
+                  ))}
+                </ul>
+                <div className="lp-phone__cta">+ New bill</div>
               </div>
             </div>
           </div>
