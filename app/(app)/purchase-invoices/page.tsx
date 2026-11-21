@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SearchableSelect, type SearchableSelectOption } from '@/components/ui/searchable-select'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadBlob, downloadCsv, rowsToCsv } from '@/lib/accountingExport'
 import { runWithExportProgress } from '@/lib/exportProgress'
@@ -109,6 +110,8 @@ export default function PurchaseInvoicesPage() {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filter, setFilter] = useState('')
+  const [partyId, setPartyId] = useState('')
+  const [partyOptions, setPartyOptions] = useState<SearchableSelectOption[]>([])
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
@@ -148,11 +151,28 @@ export default function PurchaseInvoicesPage() {
 
   useEffect(() => {
     fetchBills()
-  }, [filter, dateFrom, dateTo, debouncedSearch, page])
+  }, [filter, partyId, dateFrom, dateTo, debouncedSearch, page])
 
   useEffect(() => {
     fetchStats()
-  }, [filter, dateFrom, dateTo])
+  }, [filter, partyId, dateFrom, dateTo])
+
+  // Party list for the "filter by party" dropdown.
+  useEffect(() => {
+    apiFetch('/parties')
+      .then(async (res) => {
+        if (!res.ok) return
+        const data = await res.json()
+        const list: { id: string; name: string }[] = Array.isArray(data) ? data : []
+        setPartyOptions(
+          list
+            .filter((p) => p?.id)
+            .map((p) => ({ value: p.id, label: p.name || 'Unnamed party' }))
+            .sort((a, b) => a.label.localeCompare(b.label)),
+        )
+      })
+      .catch((err) => console.error(err))
+  }, [])
 
   // Bulk download cap is configurable in Developer Settings (super admin only);
   // everyone else uses the default and the backend enforces the limit anyway.
@@ -179,6 +199,7 @@ export default function PurchaseInvoicesPage() {
   const buildBillParams = (targetPage: number, perPage: number) => {
     const params = new URLSearchParams()
     if (filter) params.append('status', filter)
+    if (partyId) params.append('party_id', partyId)
     if (dateFrom) params.append('from_date', dateFrom)
     if (dateTo) params.append('to_date', dateTo)
     if (debouncedSearch) params.append('search', debouncedSearch)
@@ -214,6 +235,7 @@ export default function PurchaseInvoicesPage() {
     try {
       let url = '/purchase/bills/stats'
       const params = new URLSearchParams()
+      if (partyId) params.append('party_id', partyId)
       if (dateFrom) params.append('from_date', dateFrom)
       if (dateTo) params.append('to_date', dateTo)
       if (params.toString()) url += `?${params.toString()}`
@@ -795,6 +817,16 @@ export default function PurchaseInvoicesPage() {
                 <option value="unpaid">Unpaid</option>
                 <option value="partial">Partial</option>
               </select>
+              <SearchableSelect
+                value={partyId}
+                onValueChange={(v) => { setPartyId(v); resetPageAndSelection() }}
+                options={partyOptions}
+                placeholder="All Parties"
+                searchPlaceholder="Search parties..."
+                emptyMessage="No parties found"
+                clearable
+                className="h-10 w-56"
+              />
               <Input
                 type="date"
                 className="h-10 w-auto"
