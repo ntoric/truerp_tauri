@@ -16,7 +16,15 @@ import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertC
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
-import { computeLoyaltyDiscount, estimatePointsEarned } from '@/lib/loyalty'
+import {
+  computeLoyaltyDiscount,
+  estimateLoyaltyEarnedOnSale,
+  formatLoyaltyValue,
+  isCashLoyalty,
+  loyaltyAvailable,
+  loyaltyRedeemPayload,
+  parseLoyaltyRedeemInput,
+} from '@/lib/loyalty'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
 import { Gift, Loader2, UserPlus } from 'lucide-react'
 import { useWeighingScale } from '@/hooks/useWeighingScale'
@@ -92,6 +100,7 @@ interface Party {
   phone: string
   gstin: string
   loyalty_points?: number
+  loyalty_cash?: number
   local_only?: boolean
 }
 
@@ -1075,7 +1084,7 @@ export default function POSPage() {
     if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
     const { discount } = computeLoyaltyDiscount(
       loyaltySettings,
-      activeTab.selectedParty.loyalty_points ?? 0,
+      loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
       Math.max(0, getCartTotal() - saleDiscount + getAdditionalCharges()),
       loyaltyPointsToRedeem
     )
@@ -1085,6 +1094,23 @@ export default function POSPage() {
   const getExactTotal = () => {
     const saleDiscount = getSaleDiscount()
     return getCartTotal() - saleDiscount + getAdditionalCharges() - getLoyaltyDiscount(saleDiscount)
+  }
+
+  /** Reward the current cart earns (bill or margin basis), in the active loyalty unit. */
+  const getLoyaltyEarnEstimate = (saleDiscount = getSaleDiscount()) => {
+    if (!loyaltySettings?.is_enabled) return 0
+    const loyaltyDisc = getLoyaltyDiscount(saleDiscount)
+    return estimateLoyaltyEarnedOnSale(
+      loyaltySettings,
+      Math.max(0, getCartTotal() - saleDiscount + getAdditionalCharges() - loyaltyDisc),
+      activeTab.cart.map((item) => ({
+        has_product: true,
+        quantity: item.quantity,
+        unit_price: productSaleUnitPrice(item.product),
+        unit_cost: Number(item.product.purchase_price || 0),
+      })),
+      saleDiscount + loyaltyDisc
+    )
   }
 
   const getRoundedTotal = () => Math.max(0, Math.round(getExactTotal()))
@@ -1116,7 +1142,7 @@ export default function POSPage() {
       if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
-        activeTab.selectedParty.loyalty_points ?? 0,
+        loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
         Math.max(0, cartTotal - nextSale + addCharges),
         loyaltyPointsToRedeem
       )
@@ -1141,7 +1167,7 @@ export default function POSPage() {
       if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
-        activeTab.selectedParty.loyalty_points ?? 0,
+        loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
         Math.max(0, cartTotal - nextSale + addCharges),
         loyaltyPointsToRedeem
       )
@@ -1171,7 +1197,7 @@ export default function POSPage() {
       if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
-        activeTab.selectedParty.loyalty_points ?? 0,
+        loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
         Math.max(0, cartTotal - nextSale + addCharges),
         loyaltyPointsToRedeem
       )
@@ -1193,7 +1219,7 @@ export default function POSPage() {
     const billTotal = Math.max(0, cartTotal - saleDiscount + addCharges)
     const { discount: nextDiscount } = computeLoyaltyDiscount(
       loyaltySettings,
-      activeTab.selectedParty?.loyalty_points ?? 0,
+      loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
       billTotal,
       nextPoints
     )
@@ -1218,7 +1244,7 @@ export default function POSPage() {
       if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
-        activeTab.selectedParty.loyalty_points ?? 0,
+        loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
         Math.max(0, cartTotal - saleDiscount + nextAddCharges),
         loyaltyPointsToRedeem
       )
@@ -1883,12 +1909,16 @@ export default function POSPage() {
     const saleDiscount = getSaleDiscount()
     const chargeItems = sanitizeAdditionalChargeItems(activeTab.additionalChargeItems || [])
     const loyaltyDiscountValue = getLoyaltyDiscount(saleDiscount)
-    const loyaltyEarned = loyaltySettings?.is_enabled
-      ? estimatePointsEarned(loyaltySettings, Math.max(0, getCartTotal() - saleDiscount + getAdditionalCharges() - loyaltyDiscountValue))
-      : 0
+    const loyaltyIsCash = isCashLoyalty(loyaltySettings)
+    const loyaltyEarned = getLoyaltyEarnEstimate(saleDiscount)
     const loyaltyBalanceAfter =
       loyaltySettings?.is_enabled && activeTab.selectedParty
-        ? Math.max(0, (activeTab.selectedParty.loyalty_points ?? 0) - loyaltyPointsToRedeem + loyaltyEarned)
+        ? Math.max(
+            0,
+            Math.round(
+              (loyaltyAvailable(loyaltySettings, activeTab.selectedParty) - loyaltyPointsToRedeem + loyaltyEarned) * 100
+            ) / 100
+          )
         : undefined
     const cartSnapshot = [...activeTab.cart]
     const partySnapshot = activeTab.selectedParty
@@ -1920,7 +1950,7 @@ export default function POSPage() {
         ...(saleDiscount > 0 ? { invoice_discount: saleDiscount } : {}),
         ...(getAdditionalCharges() > 0 ? { additional_charges: getAdditionalCharges() } : {}),
         ...(chargeItems.length > 0 ? { additional_charge_items: chargeItems } : {}),
-        ...(loyaltyPointsToRedeem > 0 ? { loyalty_points_redeemed: loyaltyPointsToRedeem } : {}),
+        ...loyaltyRedeemPayload(loyaltySettings, loyaltyPointsToRedeem),
         items: cartSnapshot.map((item) => ({
           product_id: item.product.id,
           description: item.product.name,
@@ -2008,6 +2038,7 @@ export default function POSPage() {
               ...(loyaltyBalanceAfter !== undefined
                 ? { loyalty_points_balance: loyaltyBalanceAfter }
                 : {}),
+              ...(loyaltyIsCash ? { loyalty_is_cash: true } : {}),
             },
             printSize
           )
@@ -2568,7 +2599,7 @@ export default function POSPage() {
                   <p className="text-xs font-medium text-gray-900">{p.name}</p>
                   <p className="text-xs text-gray-500">
                     {p.phone || '—'}
-                    {loyaltySettings?.is_enabled ? ` · ${(p.loyalty_points ?? 0).toLocaleString()} pts` : ''}
+                    {loyaltySettings?.is_enabled ? ` · ${formatLoyaltyValue(loyaltySettings, loyaltyAvailable(loyaltySettings, p))}` : ''}
                   </p>
                 </button>
               ))}
@@ -2984,7 +3015,9 @@ export default function POSPage() {
                   {getLoyaltyDiscount() > 0 && (
                     <div className="flex justify-between text-xs">
                       <span className="text-green-700">
-                        Points Discount{loyaltyPointsToRedeem > 0 ? ` (${loyaltyPointsToRedeem.toLocaleString()} pts)` : ''}
+                        {isCashLoyalty(loyaltySettings)
+                          ? 'Cashback Used'
+                          : `Points Discount${loyaltyPointsToRedeem > 0 ? ` (${loyaltyPointsToRedeem.toLocaleString()} pts)` : ''}`}
                       </span>
                       <span className="font-medium text-green-700">−{formatCurrency(getLoyaltyDiscount())}</span>
                     </div>
@@ -3121,7 +3154,7 @@ export default function POSPage() {
                       <div className="flex items-center justify-between gap-1 text-[10px] font-medium text-amber-900">
                         <span className="flex items-center gap-1">
                           <Gift className="h-3 w-3" />
-                          {(activeTab.selectedParty.loyalty_points ?? 0).toLocaleString()} pts
+                          {formatLoyaltyValue(loyaltySettings, loyaltyAvailable(loyaltySettings, activeTab.selectedParty))}
                         </span>
                         {redeemPtsOpen ? (
                           <button
@@ -3136,7 +3169,7 @@ export default function POSPage() {
                             <X className="h-3 w-3" />
                           </button>
                         ) : (
-                          (activeTab.selectedParty.loyalty_points ?? 0) > 0 && (
+                          loyaltyAvailable(loyaltySettings, activeTab.selectedParty) > 0 && (
                             <Button
                               variant="outline"
                               size="sm"
@@ -3153,11 +3186,12 @@ export default function POSPage() {
                           type="number"
                           autoFocus
                           min={0}
-                          max={activeTab.selectedParty.loyalty_points ?? 0}
-                          placeholder="Redeem pts"
+                          step={isCashLoyalty(loyaltySettings) ? 0.01 : 1}
+                          max={loyaltyAvailable(loyaltySettings, activeTab.selectedParty)}
+                          placeholder={isCashLoyalty(loyaltySettings) ? 'Redeem ₹' : 'Redeem pts'}
                           className="h-7 text-xs"
                           value={loyaltyPointsToRedeem || ''}
-                          onChange={(e) => applyPosLoyaltyChange(parseInt(e.target.value, 10) || 0)}
+                          onChange={(e) => applyPosLoyaltyChange(parseLoyaltyRedeemInput(loyaltySettings, e.target.value))}
                         />
                       )}
                       {getLoyaltyDiscount() > 0 && (
@@ -3165,9 +3199,10 @@ export default function POSPage() {
                           −{formatCurrency(getLoyaltyDiscount())} loyalty discount
                         </p>
                       )}
-                      {estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() + getAdditionalCharges() - getLoyaltyDiscount()) > 0 && (
+                      {getLoyaltyEarnEstimate() > 0 && (
                         <p className="text-[10px] text-amber-800">
-                          Earn ~{estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() + getAdditionalCharges() - getLoyaltyDiscount())} pts
+                          Earn ~{formatLoyaltyValue(loyaltySettings, getLoyaltyEarnEstimate())}
+                          {isCashLoyalty(loyaltySettings) ? ' cashback' : ''}
                         </p>
                       )}
                     </div>

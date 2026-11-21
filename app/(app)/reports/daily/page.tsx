@@ -374,6 +374,51 @@ function ExpensesTable({ report }: { report: DailyReport }) {
 function LoyaltySummaryTable({ report }: { report: DailyReport }) {
   const loyalty = report.loyalty
   if (!loyalty || !loyalty.enabled) return null
+  if (loyalty.reward_type === 'cash') {
+    if (!loyalty.cash_earned && !loyalty.cash_redeemed) return null
+    return (
+      <div className="mt-6 overflow-hidden rounded-lg border border-amber-200">
+        <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3">
+          <Gift className="h-4 w-4 text-amber-700" />
+          <h3 className="text-sm font-semibold text-amber-900">Loyalty cashback</h3>
+          <span className="text-xs text-amber-700">
+            {formatCurrency(loyalty.cash_earned ?? 0)} credited · {formatCurrency(loyalty.cash_redeemed ?? 0)} redeemed
+          </span>
+        </div>
+        <div className="table-scroll">
+          <table className="w-full text-sm">
+            <thead className="bg-amber-50/60 text-left text-amber-900">
+              <tr>
+                <th className="px-4 py-3 font-medium">Activity</th>
+                <th className="px-4 py-3 font-medium text-right">Transactions</th>
+                <th className="px-4 py-3 font-medium text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-amber-100">
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  <TermHelp label="Cashback credited" help={dailyReportSummaryHelp.loyalty_cash_earned} />
+                </td>
+                <td className="px-4 py-3 text-right text-gray-600">{loyalty.earn_transactions}</td>
+                <td className="px-4 py-3 text-right font-semibold text-emerald-800">
+                  {formatCurrency(loyalty.cash_earned ?? 0)}
+                </td>
+              </tr>
+              <tr className="border-t border-amber-100">
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  <TermHelp label="Cashback redeemed" help={dailyReportSummaryHelp.loyalty_cash_redeemed} />
+                </td>
+                <td className="px-4 py-3 text-right text-gray-600">{loyalty.redeem_transactions}</td>
+                <td className="px-4 py-3 text-right font-semibold text-amber-800">
+                  {formatCurrency(loyalty.cash_redeemed ?? 0)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
   if (loyalty.points_earned === 0 && loyalty.points_redeemed === 0) return null
 
   return (

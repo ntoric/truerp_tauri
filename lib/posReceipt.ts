@@ -43,6 +43,8 @@ export interface POSReceiptSale {
   loyalty_discount?: number
   loyalty_points_earned?: number
   loyalty_points_balance?: number
+  /** Cash-mode loyalty: the loyalty_points_* fields hold ₹ cashback amounts. */
+  loyalty_is_cash?: boolean
 }
 
 function thermalCols(printSize: ThermalPrintSize): number {
@@ -174,17 +176,29 @@ export function buildPOSReceiptContent(
   }
   if ((sale.loyalty_points_redeemed || 0) > 0 || (sale.loyalty_points_earned || 0) > 0 || typeof sale.loyalty_points_balance === 'number') {
     lines.push(weak)
-    if ((sale.loyalty_points_redeemed || 0) > 0) {
-      lines.push(labelValue('Pts Redeemed', String(sale.loyalty_points_redeemed), cols))
-    }
-    if ((sale.loyalty_discount || 0) > 0) {
-      lines.push(labelValue('Loyalty Disc', money(sale.loyalty_discount || 0), cols))
-    }
-    if ((sale.loyalty_points_earned || 0) > 0) {
-      lines.push(labelValue('Pts Earned', String(sale.loyalty_points_earned), cols))
-    }
-    if (typeof sale.loyalty_points_balance === 'number') {
-      lines.push(labelValue('Pts Balance', String(sale.loyalty_points_balance), cols))
+    if (sale.loyalty_is_cash) {
+      if ((sale.loyalty_points_redeemed || 0) > 0) {
+        lines.push(labelValue('Cashback Used', money(sale.loyalty_points_redeemed || 0), cols))
+      }
+      if ((sale.loyalty_points_earned || 0) > 0) {
+        lines.push(labelValue('Cashback Earned', money(sale.loyalty_points_earned || 0), cols))
+      }
+      if (typeof sale.loyalty_points_balance === 'number') {
+        lines.push(labelValue('Cashback Bal', money(sale.loyalty_points_balance), cols))
+      }
+    } else {
+      if ((sale.loyalty_points_redeemed || 0) > 0) {
+        lines.push(labelValue('Pts Redeemed', String(sale.loyalty_points_redeemed), cols))
+      }
+      if ((sale.loyalty_discount || 0) > 0) {
+        lines.push(labelValue('Loyalty Disc', money(sale.loyalty_discount || 0), cols))
+      }
+      if ((sale.loyalty_points_earned || 0) > 0) {
+        lines.push(labelValue('Pts Earned', String(sale.loyalty_points_earned), cols))
+      }
+      if (typeof sale.loyalty_points_balance === 'number') {
+        lines.push(labelValue('Pts Balance', String(sale.loyalty_points_balance), cols))
+      }
     }
   }
   lines.push(strong)

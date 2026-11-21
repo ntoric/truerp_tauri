@@ -54,6 +54,8 @@ interface Invoice {
   loyalty_points_earned?: number
   loyalty_points_redeemed?: number
   loyalty_discount?: number
+  loyalty_cash_earned?: number
+  loyalty_cash_redeemed?: number
   payment_mode?: string
   payment_splits?: { mode: string; amount: number }[]
 }
@@ -709,6 +711,14 @@ export default function InvoicesPage() {
                               {inv.invoice_number}
                             </button>
                             {inv.is_pos && getPosBadge()}
+                            {loyaltySettings?.is_enabled && ((inv.loyalty_cash_earned ?? 0) > 0 || (inv.loyalty_cash_redeemed ?? 0) > 0) && (
+                              <StatusBadge tone="warning" title={`Cashback earned ${formatCurrency(inv.loyalty_cash_earned ?? 0)} · Redeemed ${formatCurrency(inv.loyalty_cash_redeemed ?? 0)}`}>
+                                <Gift className="h-3 w-3" />
+                                {(inv.loyalty_cash_earned ?? 0) > 0 ? `+₹${inv.loyalty_cash_earned}` : ''}
+                                {(inv.loyalty_cash_earned ?? 0) > 0 && (inv.loyalty_cash_redeemed ?? 0) > 0 ? ' / ' : ''}
+                                {(inv.loyalty_cash_redeemed ?? 0) > 0 ? `−₹${inv.loyalty_cash_redeemed}` : ''}
+                              </StatusBadge>
+                            )}
                             {loyaltySettings?.is_enabled && ((inv.loyalty_points_earned ?? 0) > 0 || (inv.loyalty_points_redeemed ?? 0) > 0) && (
                               <StatusBadge tone="warning" title={`Earned ${inv.loyalty_points_earned ?? 0} · Redeemed ${inv.loyalty_points_redeemed ?? 0}`}>
                                 <Gift className="h-3 w-3" />
@@ -1005,11 +1015,13 @@ export default function InvoicesPage() {
                         <span className="text-gray-600">Balance</span>
                         <span className="font-medium text-orange-600">{formatCurrency(previewData.total_amount - previewData.amount_paid)}</span>
                       </div>
-                      {loyaltySettings?.is_enabled && ((previewData.loyalty_points_redeemed ?? 0) > 0 || (previewData.loyalty_points_earned ?? 0) > 0 || (previewData.loyalty_discount ?? 0) > 0) && (
+                      {loyaltySettings?.is_enabled && ((previewData.loyalty_points_redeemed ?? 0) > 0 || (previewData.loyalty_points_earned ?? 0) > 0 || (previewData.loyalty_discount ?? 0) > 0 || (previewData.loyalty_cash_earned ?? 0) > 0) && (
                         <div className="mt-2 border-t pt-2">
                           <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-amber-700">
                             <Gift className="h-3.5 w-3.5" />
-                            Loyalty points
+                            {(previewData.loyalty_cash_earned ?? 0) > 0 || (previewData.loyalty_cash_redeemed ?? 0) > 0
+                              ? 'Loyalty cashback'
+                              : 'Loyalty points'}
                           </div>
                           {(previewData.loyalty_points_redeemed ?? 0) > 0 && (
                             <div className="flex justify-between pl-3 text-xs text-gray-600">
@@ -1027,6 +1039,12 @@ export default function InvoicesPage() {
                             <div className="flex justify-between pl-3 text-xs text-gray-600">
                               <span>Points earned</span>
                               <span className="font-medium text-emerald-700">+{previewData.loyalty_points_earned} pts</span>
+                            </div>
+                          )}
+                          {(previewData.loyalty_cash_earned ?? 0) > 0 && (
+                            <div className="flex justify-between pl-3 text-xs text-gray-600">
+                              <span>Cashback earned</span>
+                              <span className="font-medium text-emerald-700">+{formatCurrency(previewData.loyalty_cash_earned ?? 0)}</span>
                             </div>
                           )}
                         </div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import { BrandAvatar } from '@/components/ui/brand-avatar'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
@@ -56,6 +57,7 @@ interface Party {
   pincode: string
   credit_limit: number
   loyalty_points?: number
+  loyalty_cash?: number
   tan: string
   pan: string
   notes: string
@@ -100,6 +102,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editingParty, setEditingParty] = useState<Party | null>(null)
+  const [rowContextMenu, setRowContextMenu] = useState<{ party: Party; x: number; y: number } | null>(null)
   const [isBulkCategoryModalOpen, setIsBulkCategoryModalOpen] = useState(false)
   const [bulkCategory, setBulkCategory] = useState('')
   const [isCategoryUpdateConfirmOpen, setIsCategoryUpdateConfirmOpen] = useState(false)
@@ -233,6 +236,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
         'Balance',
         'Credit Limit',
         'Loyalty Points',
+        'Loyalty Cashback',
         'GSTIN',
         'PAN',
         'TAN',
@@ -253,6 +257,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
         p.balance,
         p.credit_limit,
         p.party_type === 'customer' ? p.loyalty_points ?? 0 : '',
+        p.party_type === 'customer' ? p.loyalty_cash ?? 0 : '',
         p.gstin || '',
         p.pan || '',
         p.tan || '',
@@ -440,6 +445,31 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
       console.error(err)
     }
   }
+
+  const renderPartyActions = (p: Party) => (
+    <>
+      <DropdownMenuItem onClick={() => router.push(`/payments?create=true&party_id=${p.id}`)}>
+        <ArrowDown className="mr-2 h-4 w-4" />
+        Create Payment In
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => router.push(`/payment-outs?create=true&party_id=${p.id}`)}>
+        <ArrowUp className="mr-2 h-4 w-4" />
+        Create Payment Out
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => router.push(`/parties/ledger?party_id=${p.id}`)}>
+        <FileText className="mr-2 h-4 w-4" />
+        View Ledger
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => handleEditParty(p)}>
+        <Edit className="mr-2 h-4 w-4" />
+        Edit
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => handleDeleteParty(p.id)} className="text-red-600">
+        <Trash2 className="mr-2 h-4 w-4" />
+        Delete
+      </DropdownMenuItem>
+    </>
+  )
 
   const handleDeleteParty = async (id: string) => {
     if (!(await confirm({
@@ -866,6 +896,22 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
                 </div>
               ) : null}
               <div className="table-scroll">
+                <DropdownMenu
+                  modal={false}
+                  open={rowContextMenu !== null}
+                  onOpenChange={(open) => { if (!open) setRowContextMenu(null) }}
+                >
+                  <DropdownMenuTrigger asChild>
+                    <span
+                      aria-hidden
+                      className="pointer-events-none fixed h-0 w-0"
+                      style={{ left: rowContextMenu?.x ?? 0, top: rowContextMenu?.y ?? 0 }}
+                    />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="bottom" sideOffset={2}>
+                    {rowContextMenu && renderPartyActions(rowContextMenu.party)}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-gray-500">
@@ -876,7 +922,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
                       <th className="pb-3 font-medium">Category</th>
                       <th className="pb-3 font-medium">Mobile</th>
                       {!typeLocked && <th className="pb-3 font-medium">Party Type</th>}
-                      {partyType !== 'vendor' && <th className="pb-3 font-medium">Loyalty Pts</th>}
+                      {partyType !== 'vendor' && <th className="pb-3 font-medium">Loyalty</th>}
                       <th className="pb-3 font-medium">Balance</th>
                       <th className="pb-3 font-medium">Created</th>
                       <th className="pb-3 font-medium">Last Updated</th>
@@ -885,7 +931,17 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
                   </thead>
                   <tbody>
                     {parties.map((p) => (
-                      <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
+                      <tr
+                        key={p.id}
+                        className={cn(
+                          'border-b last:border-0 hover:bg-gray-50',
+                          rowContextMenu?.party.id === p.id && 'bg-gray-50'
+                        )}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          setRowContextMenu({ party: p, x: e.clientX, y: e.clientY })
+                        }}
+                      >
                         <td className="py-3">
                           <Checkbox checked={selectedParties.has(p.id)} onCheckedChange={() => handleSelectParty(p.id)} />
                         </td>
@@ -897,7 +953,13 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
                               title={p.party_type === 'vendor' ? 'Vendor' : 'Customer'}
                             />
                             <div className="min-w-0">
-                              <p className="max-w-[16rem] truncate font-medium text-gray-900">{p.name}</p>
+                              <Link
+                                href={`/parties/ledger?party_id=${p.id}`}
+                                title={`Open ${p.name} ledger`}
+                                className="block max-w-[16rem] truncate font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                              >
+                                {p.name}
+                              </Link>
                               {(p.email || p.city) && (
                                 <p className="max-w-[16rem] truncate text-xs text-gray-500">{p.email || p.city}</p>
                               )}
@@ -923,7 +985,11 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
                         )}
                         {partyType !== 'vendor' && (
                           <td className="py-3 text-gray-600">
-                            {p.party_type === 'customer' ? (p.loyalty_points ?? 0).toLocaleString() : '—'}
+                            {p.party_type === 'customer'
+                              ? (p.loyalty_cash ?? 0) > 0
+                                ? `${(p.loyalty_points ?? 0) > 0 ? `${(p.loyalty_points ?? 0).toLocaleString()} pts · ` : ''}${formatCurrency(p.loyalty_cash ?? 0)}`
+                                : `${(p.loyalty_points ?? 0).toLocaleString()} pts`
+                              : '—'}
                           </td>
                         )}
                         <td className="py-3">
@@ -956,28 +1022,7 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
                                 <MoreVertical className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => router.push(`/payments?create=true&party_id=${p.id}`)}>
-                                <ArrowDown className="mr-2 h-4 w-4" />
-                                Create Payment In
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => router.push(`/payment-outs?create=true&party_id=${p.id}`)}>
-                                <ArrowUp className="mr-2 h-4 w-4" />
-                                Create Payment Out
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => router.push(`/parties/ledger?party_id=${p.id}`)}>
-                                <FileText className="mr-2 h-4 w-4" />
-                                View Ledger
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleEditParty(p)}>
-                                <Edit className="mr-2 h-4 w-4" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDeleteParty(p.id)} className="text-red-600">
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
+                            <DropdownMenuContent align="end">{renderPartyActions(p)}</DropdownMenuContent>
                           </DropdownMenu>
                         </td>
                       </tr>

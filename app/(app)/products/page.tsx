@@ -1358,7 +1358,7 @@ export default function ProductsPage() {
                   </TabsContent>
                 </Tabs>
                 
-                <div className="flex justify-end gap-2 pt-4 border-t">
+                <div className="sticky -bottom-6 z-10 -mx-6 -mb-6 flex justify-end gap-2 border-t bg-card px-6 py-4 sm:rounded-b-3xl">
                   <Button variant="outline" onClick={() => setShowCreateModal(false)}>Cancel</Button>
                   <Button variant="outline" onClick={handleSaveDraft}>Save as Draft</Button>
                   <Button onClick={handleCreateItem} disabled={creating || itemCodeDuplicate.isDuplicate || pluDuplicate.isDuplicate}>

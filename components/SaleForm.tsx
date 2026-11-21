@@ -30,7 +30,15 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
 import ItemsEmptyState, { type PastedItemRow } from '@/components/ItemsEmptyState'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
-import { computeLoyaltyDiscount, estimatePointsEarned } from '@/lib/loyalty'
+import {
+  computeLoyaltyDiscount,
+  estimateLoyaltyEarnedOnSale,
+  formatLoyaltyValue,
+  isCashLoyalty,
+  loyaltyAvailable,
+  loyaltyRedeemPayload,
+  parseLoyaltyRedeemInput,
+} from '@/lib/loyalty'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
 import InvoiceCustomFieldsForm, {
   type InvoiceCustomFieldDefinition,
@@ -80,6 +88,7 @@ interface Party {
   party_type: string
   category?: string
   loyalty_points?: number
+  loyalty_cash?: number
 }
 
 interface Product {
@@ -1097,15 +1106,25 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   }
 
   const preLoyaltyTotal = saleDiscountBase - effectiveInvoiceDiscount
+  const loyaltyIsCash = isCashLoyalty(loyaltySettings)
+  const loyaltyBalance = loyaltyAvailable(loyaltySettings, selectedParty)
   const { discount: loyaltyDiscount } = computeLoyaltyDiscount(
     loyaltySettings,
-    selectedParty?.loyalty_points ?? 0,
+    loyaltyBalance,
     preLoyaltyTotal,
     loyaltyPointsToRedeem
   )
-  const pointsToEarn = estimatePointsEarned(
+  const pointsToEarn = estimateLoyaltyEarnedOnSale(
     loyaltySettings,
-    Math.max(0, preLoyaltyTotal - loyaltyDiscount)
+    Math.max(0, preLoyaltyTotal - loyaltyDiscount),
+    items.map((item) => ({
+      has_product: !!item.product_id,
+      quantity: Number(parseItemNumber(item.quantity, 1)),
+      unit_price: parseMoney(item.unit_price),
+      discount_percent: isDiscountEnabled ? Number(parseItemNumber(item.discount)) : 0,
+      unit_cost: Number(products.find((p) => p.id === item.product_id)?.purchase_price ?? 0),
+    })),
+    parseMoney(effectiveInvoiceDiscount) + loyaltyDiscount
   )
 
   let totalBeforeRound = preLoyaltyTotal - loyaltyDiscount
@@ -1215,7 +1234,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const applyLoyaltyRedemptionChange = (nextPoints: number) => {
     const { discount: nextDiscount } = computeLoyaltyDiscount(
       loyaltySettings,
-      selectedParty?.loyalty_points ?? 0,
+      loyaltyBalance,
       preLoyaltyTotal,
       nextPoints
     )
@@ -1544,9 +1563,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           invoice_discount: isDiscountEnabled ? parseMoney(effectiveInvoiceDiscount) : 0,
           additional_charges: parseMoney(additionalCharges),
           additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
-          ...( !editId && loyaltyPointsToRedeem > 0
-            ? { loyalty_points_redeemed: loyaltyPointsToRedeem }
-            : {}),
+          ...(!editId ? loyaltyRedeemPayload(loyaltySettings, loyaltyPointsToRedeem) : {}),
           items: items.map(item => ({
             product_id: item.product_id || undefined,
             description: item.description,
@@ -2390,17 +2407,19 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-3 space-y-2">
                     <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
                       <Gift className="h-4 w-4" />
-                      Loyalty — {(selectedParty.loyalty_points ?? 0).toLocaleString()} pts available
+                      Loyalty — {formatLoyaltyValue(loyaltySettings, loyaltyBalance)}{' '}
+                      {loyaltyIsCash ? 'cashback' : ''} available
                     </div>
                     <div className="flex items-center gap-2">
                       <Input
                         type="number"
                         min={0}
-                        max={selectedParty.loyalty_points ?? 0}
-                        placeholder="Points to redeem"
+                        step={loyaltyIsCash ? 0.01 : 1}
+                        max={loyaltyBalance}
+                        placeholder={loyaltyIsCash ? 'Cashback to redeem (₹)' : 'Points to redeem'}
                         value={loyaltyPointsToRedeem || ''}
                         onChange={(e) =>
-                          applyLoyaltyRedemptionChange(parseInt(e.target.value, 10) || 0)
+                          applyLoyaltyRedemptionChange(parseLoyaltyRedeemInput(loyaltySettings, e.target.value))
                         }
                         className="h-8 bg-white"
                       />
@@ -2412,7 +2431,10 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       </div>
                     )}
                     {pointsToEarn > 0 && (
-                      <p className="text-xs text-amber-800">Earn ~{pointsToEarn} points on this bill</p>
+                      <p className="text-xs text-amber-800">
+                        Earn ~{formatLoyaltyValue(loyaltySettings, pointsToEarn)}
+                        {loyaltyIsCash ? ' cashback' : ''} on this bill
+                      </p>
                     )}
                   </div>
                 )}

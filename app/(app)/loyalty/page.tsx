@@ -42,21 +42,35 @@ import {
 } from '@/lib/loyaltyCards'
 import CardLayoutEditor, { CardSide } from '@/components/loyalty/CardLayoutEditor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import type { LoyaltySettings as SharedLoyaltySettings } from '@/lib/loyalty-types'
 
-interface LoyaltySettings {
-  is_enabled: boolean
-  spend_amount: number
-  points_per_spend: number
-  point_value: number
-  min_redeem_points: number
-  max_redeem_percent: number
+/** Signed change and resulting balance of a ledger row, in its own unit. */
+function txnDisplay(tx: LoyaltyTransaction): { positive: boolean; delta: string; balance: string } {
+  if (tx.reward_type === 'cash') {
+    const amt = tx.amount ?? 0
+    return {
+      positive: amt >= 0,
+      delta: `${amt >= 0 ? '+' : '-'}${formatCurrency(Math.abs(amt))}`,
+      balance: formatCurrency(tx.amount_balance_after ?? 0),
+    }
+  }
+  return {
+    positive: tx.points >= 0,
+    delta: `${tx.points >= 0 ? '+' : ''}${tx.points.toLocaleString()} pts`,
+    balance: tx.balance_after.toLocaleString(),
+  }
 }
+
+type LoyaltySettings = Required<SharedLoyaltySettings>
 
 interface LoyaltyStats {
   total_members: number
   total_points_outstanding: number
   points_earned_this_month: number
   points_redeemed_this_month: number
+  cash_outstanding?: number
+  cash_earned_this_month?: number
+  cash_redeemed_this_month?: number
 }
 
 interface LoyaltyCustomer {
@@ -64,6 +78,7 @@ interface LoyaltyCustomer {
   name: string
   phone: string
   loyalty_points: number
+  loyalty_cash?: number
 }
 
 interface LoyaltyTransaction {
@@ -73,6 +88,9 @@ interface LoyaltyTransaction {
   transaction_type: string
   points: number
   balance_after: number
+  reward_type?: 'points' | 'cash'
+  amount?: number
+  amount_balance_after?: number
   reference_number: string
   notes: string
   created_at: string
@@ -179,7 +197,18 @@ export default function LoyaltyPage() {
     point_value: 1,
     min_redeem_points: 50,
     max_redeem_percent: 25,
+    reward_type: 'points',
+    cashback_percent: 1,
+    min_redeem_amount: 0,
+    earn_basis: 'bill',
+    min_margin_percent: 0,
   })
+  const isCash = settings.reward_type === 'cash'
+  const isMargin = settings.earn_basis === 'margin'
+  const earnBaseLabel = isMargin ? 'profit' : 'bill'
+
+  const customerBalanceLabel = (c: LoyaltyCustomer | null | undefined) =>
+    isCash ? formatCurrency(c?.loyalty_cash ?? 0) : `${(c?.loyalty_points ?? 0).toLocaleString()} points`
   const [stats, setStats] = useState<LoyaltyStats | null>(null)
   const [showStats, setShowStats] = useStatsDefaultOpen()
   const [customers, setCustomers] = useState<LoyaltyCustomer[]>([])
@@ -233,7 +262,10 @@ export default function LoyaltyPage() {
         apiFetch('/loyalty/card-design'),
         apiFetch('/loyalty/cards'),
       ])
-      if (settingsRes.ok) setSettings(await settingsRes.json())
+      if (settingsRes.ok) {
+        const data = await settingsRes.json()
+        setSettings((prev) => ({ ...prev, ...data, reward_type: data.reward_type === 'cash' ? 'cash' : 'points', earn_basis: data.earn_basis === 'margin' ? 'margin' : 'bill' }))
+      }
       if (statsRes.ok) setStats(await statsRes.json())
       if (customersRes.ok) setCustomers(await customersRes.json())
       if (txRes.ok) setTransactions(await txRes.json())
@@ -273,7 +305,8 @@ export default function LoyaltyPage() {
       })
       if (res.ok) {
         notifySuccess('Loyalty settings saved')
-        setSettings(await res.json())
+        const data = await res.json()
+        setSettings((prev) => ({ ...prev, ...data, reward_type: data.reward_type === 'cash' ? 'cash' : 'points', earn_basis: data.earn_basis === 'margin' ? 'margin' : 'bill' }))
       } else {
         const data = await res.json().catch(() => ({}))
         notifyError(typeof data.error === 'string' ? data.error : 'Failed to save settings')
@@ -313,19 +346,23 @@ export default function LoyaltyPage() {
 
   const submitAdjust = async () => {
     if (!adjustCustomer) return
-    const points = parseInt(adjustPoints, 10)
-    if (!points || Number.isNaN(points)) {
-      notifyError('Enter a valid points amount (use negative to deduct)')
+    const value = isCash ? Math.round(parseFloat(adjustPoints) * 100) / 100 : parseInt(adjustPoints, 10)
+    if (!value || Number.isNaN(value)) {
+      notifyError(
+        isCash
+          ? 'Enter a valid cashback amount (use negative to deduct)'
+          : 'Enter a valid points amount (use negative to deduct)'
+      )
       return
     }
     setAdjusting(true)
     try {
       const res = await apiFetch(`/loyalty/parties/${adjustCustomer.id}/adjust`, {
         method: 'POST',
-        body: JSON.stringify({ points, notes: adjustNotes }),
+        body: JSON.stringify(isCash ? { amount: value, notes: adjustNotes } : { points: value, notes: adjustNotes }),
       })
       if (res.ok) {
-        notifySuccess('Points updated')
+        notifySuccess(isCash ? 'Cashback updated' : 'Points updated')
         setAdjustOpen(false)
         loadAll()
       } else {
@@ -605,12 +642,21 @@ export default function LoyaltyPage() {
         </div>
 
         {stats && showStats && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <SummaryStat label="Members with points" value={stats.total_members} />
-            <SummaryStat label="Outstanding points" value={stats.total_points_outstanding.toLocaleString()} />
-            <SummaryStat tone="success" label="Earned this month" value={`+${stats.points_earned_this_month.toLocaleString()}`} />
-            <SummaryStat tone="warning" label="Redeemed this month" value={stats.points_redeemed_this_month.toLocaleString()} />
-          </div>
+          isCash ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <SummaryStat label="Members with a balance" value={stats.total_members} />
+              <SummaryStat label="Outstanding cashback" value={formatCurrency(stats.cash_outstanding ?? 0)} />
+              <SummaryStat tone="success" label="Credited this month" value={`+${formatCurrency(stats.cash_earned_this_month ?? 0)}`} />
+              <SummaryStat tone="warning" label="Redeemed this month" value={formatCurrency(stats.cash_redeemed_this_month ?? 0)} />
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <SummaryStat label="Members with points" value={stats.total_members} />
+              <SummaryStat label="Outstanding points" value={stats.total_points_outstanding.toLocaleString()} />
+              <SummaryStat tone="success" label="Earned this month" value={`+${stats.points_earned_this_month.toLocaleString()}`} />
+              <SummaryStat tone="warning" label="Redeemed this month" value={stats.points_redeemed_this_month.toLocaleString()} />
+            </div>
+          )
         )}
 
         <Tabs defaultValue="settings">
@@ -636,7 +682,7 @@ export default function LoyaltyPage() {
                         Program {settings.is_enabled ? 'active' : 'inactive'}
                       </p>
                       <p className="text-xs text-gray-500">
-                        Enable or disable loyalty points earning and redemption.
+                        Enable or disable loyalty rewards earning and redemption.
                       </p>
                     </div>
                   </div>
@@ -645,63 +691,163 @@ export default function LoyaltyPage() {
                     onCheckedChange={(v) => setSettings({ ...settings, is_enabled: v })}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Earn rate — spend amount (₹)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={settings.spend_amount}
-                    onChange={(e) =>
-                      setSettings({ ...settings, spend_amount: parseFloat(e.target.value) || 0 })
-                    }
-                  />
-                  <p className="text-xs text-gray-500">Customer spends this amount to earn points below.</p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Points earned per spend amount</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={settings.points_per_spend}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        points_per_spend: parseInt(e.target.value, 10) || 0,
-                      })
-                    }
-                  />
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Reward type</Label>
+                  <Select
+                    value={settings.reward_type}
+                    onValueChange={(v) => setSettings({ ...settings, reward_type: v === 'cash' ? 'cash' : 'points' })}
+                  >
+                    <SelectTrigger className="md:w-80">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="points">Points — redeem points for a discount</SelectItem>
+                      <SelectItem value="cash">Cash — credit ₹ cashback to the customer</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-gray-500">
-                    Example: ₹{settings.spend_amount} spent → {settings.points_per_spend} point(s).
+                    {isCash
+                      ? 'Customers earn a percentage of each bill as ₹ cashback, redeemable rupee-for-rupee on later bills.'
+                      : 'Customers earn points on each bill and redeem them at the value per point below.'}{' '}
+                    Existing balances in the other type are kept and come back if you switch again.
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Redemption value (₹ per point)</Label>
-                  <Input
-                    type="number"
-                    min={0.01}
-                    step={0.01}
-                    value={settings.point_value}
-                    onChange={(e) =>
-                      setSettings({ ...settings, point_value: parseFloat(e.target.value) || 0 })
-                    }
-                  />
+                  <Label>Earn on</Label>
+                  <Select
+                    value={settings.earn_basis}
+                    onValueChange={(v) => setSettings({ ...settings, earn_basis: v === 'margin' ? 'margin' : 'bill' })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bill">Bill amount</SelectItem>
+                      <SelectItem value="margin">Profit margin on items sold</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500">
+                    {isMargin
+                      ? `The ${isCash ? 'cashback %' : 'earn rate'} applies to the profit (selling price − purchase price) of qualifying items, not the bill total. Items without a purchase price are skipped.`
+                      : `The ${isCash ? 'cashback %' : 'earn rate'} applies to the bill total.`}
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Minimum points to redeem</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={settings.min_redeem_points}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        min_redeem_points: parseInt(e.target.value, 10) || 0,
-                      })
-                    }
-                  />
+                  {isMargin && (
+                    <>
+                      <Label>Minimum item margin (%)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        value={settings.min_margin_percent}
+                        onChange={(e) =>
+                          setSettings({ ...settings, min_margin_percent: parseFloat(e.target.value) || 0 })
+                        }
+                      />
+                      <p className="text-xs text-gray-500">
+                        Only items with at least this margin on selling price earn{' '}
+                        {isCash ? 'cashback' : 'points'}. Example: sold ₹100, cost ₹80 → 20% margin. Use 0 to
+                        include every profitable item.
+                      </p>
+                    </>
+                  )}
                 </div>
+                {isCash ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Cashback (% of {earnBaseLabel})</Label>
+                      <Input
+                        type="number"
+                        min={0.01}
+                        max={100}
+                        step={0.01}
+                        value={settings.cashback_percent}
+                        onChange={(e) =>
+                          setSettings({ ...settings, cashback_percent: parseFloat(e.target.value) || 0 })
+                        }
+                      />
+                      <p className="text-xs text-gray-500">
+                        Example: ₹1,000 {earnBaseLabel} → {formatCurrency((1000 * (settings.cashback_percent || 0)) / 100)} cashback.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Minimum cashback to redeem (₹)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={settings.min_redeem_amount}
+                        onChange={(e) =>
+                          setSettings({ ...settings, min_redeem_amount: parseFloat(e.target.value) || 0 })
+                        }
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Earn rate — {isMargin ? 'profit' : 'spend'} amount (₹)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={settings.spend_amount}
+                        onChange={(e) =>
+                          setSettings({ ...settings, spend_amount: parseFloat(e.target.value) || 0 })
+                        }
+                      />
+                      <p className="text-xs text-gray-500">{isMargin
+                          ? 'Every this much profit on qualifying items earns the points below.'
+                          : 'Customer spends this amount to earn points below.'}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Points earned per spend amount</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={settings.points_per_spend}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            points_per_spend: parseInt(e.target.value, 10) || 0,
+                          })
+                        }
+                      />
+                      <p className="text-xs text-gray-500">
+                        Example: ₹{settings.spend_amount} {isMargin ? 'profit' : 'spent'} → {settings.points_per_spend} point(s).
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Redemption value (₹ per point)</Label>
+                      <Input
+                        type="number"
+                        min={0.01}
+                        step={0.01}
+                        value={settings.point_value}
+                        onChange={(e) =>
+                          setSettings({ ...settings, point_value: parseFloat(e.target.value) || 0 })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Minimum points to redeem</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={settings.min_redeem_points}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            min_redeem_points: parseInt(e.target.value, 10) || 0,
+                          })
+                        }
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="space-y-2 md:col-span-2">
-                  <Label>Max bill % payable with points</Label>
+                  <Label>Max bill % payable with {isCash ? 'cashback' : 'points'}</Label>
                   <Input
                     type="number"
                     min={0}
@@ -756,8 +902,8 @@ export default function LoyaltyPage() {
                         <tr className="border-b text-left text-gray-500">
                           <th className="pb-2 font-medium">Customer</th>
                           <th className="pb-2 font-medium">Phone</th>
-                          <th className="pb-2 font-medium text-right">Points</th>
-                          <th className="pb-2 font-medium text-right">Value (₹)</th>
+                          {!isCash && <th className="pb-2 font-medium text-right">Points</th>}
+                          <th className="pb-2 font-medium text-right">{isCash ? 'Cashback (₹)' : 'Value (₹)'}</th>
                           <th className="pb-2 font-medium text-right">Actions</th>
                         </tr>
                       </thead>
@@ -766,11 +912,15 @@ export default function LoyaltyPage() {
                           <tr key={c.id} className="border-b last:border-0">
                             <td className="py-3 font-medium">{c.name}</td>
                             <td className="py-3 text-gray-600">{c.phone || '—'}</td>
-                            <td className="py-3 text-right font-semibold text-amber-600">
-                              {(c.loyalty_points ?? 0).toLocaleString()}
-                            </td>
-                            <td className="py-3 text-right">
-                              {formatCurrency((c.loyalty_points ?? 0) * settings.point_value)}
+                            {!isCash && (
+                              <td className="py-3 text-right font-semibold text-amber-600">
+                                {(c.loyalty_points ?? 0).toLocaleString()}
+                              </td>
+                            )}
+                            <td className={isCash ? 'py-3 text-right font-semibold text-amber-600' : 'py-3 text-right'}>
+                              {formatCurrency(
+                                isCash ? c.loyalty_cash ?? 0 : (c.loyalty_points ?? 0) * settings.point_value
+                              )}
                             </td>
                             <td className="py-3 text-right">
                               <Button
@@ -839,14 +989,13 @@ export default function LoyaltyPage() {
                       <div className="text-right">
                         <p
                           className={
-                            tx.points >= 0 ? 'font-semibold text-green-600' : 'font-semibold text-red-600'
+                            txnDisplay(tx).positive ? 'font-semibold text-green-600' : 'font-semibold text-red-600'
                           }
                         >
-                          {tx.points >= 0 ? '+' : ''}
-                          {tx.points.toLocaleString()} pts
+                          {txnDisplay(tx).delta}
                         </p>
                         <p className="text-xs text-gray-500">
-                          Balance: {tx.balance_after.toLocaleString()} · {formatDate(tx.created_at)}
+                          Balance: {txnDisplay(tx).balance} · {formatDate(tx.created_at)}
                         </p>
                       </div>
                     </div>
@@ -856,7 +1005,7 @@ export default function LoyaltyPage() {
                       
                       icon={History}
                       title="No activity yet"
-                      hint="Points earned and redeemed by customers will appear here."
+                      hint={`${isCash ? 'Cashback' : 'Points'} earned and redeemed by customers will appear here.`}
                     />
                   )}
                 </div>
@@ -1373,26 +1522,26 @@ export default function LoyaltyPage() {
       <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Adjust points — {adjustCustomer?.name}</DialogTitle>
+            <DialogTitle>Adjust {isCash ? 'cashback' : 'points'} — {adjustCustomer?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-gray-600">
-              Current balance:{' '}
-              <strong>{(adjustCustomer?.loyalty_points ?? 0).toLocaleString()} points</strong>
+              Current balance: <strong>{customerBalanceLabel(adjustCustomer)}</strong>
             </p>
             <div className="space-y-2">
-              <Label>Points change</Label>
+              <Label>{isCash ? 'Cashback change (₹)' : 'Points change'}</Label>
               <div className="flex gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="icon"
-                  onClick={() => setAdjustPoints(String(-Math.abs(parseInt(adjustPoints, 10) || 100)))}
+                  onClick={() => setAdjustPoints(String(-Math.abs(parseFloat(adjustPoints) || 100)))}
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
                 <Input
                   type="number"
+                  step={isCash ? 0.01 : 1}
                   placeholder="e.g. 100 or -50"
                   value={adjustPoints}
                   onChange={(e) => setAdjustPoints(e.target.value)}
@@ -1401,12 +1550,14 @@ export default function LoyaltyPage() {
                   type="button"
                   variant="outline"
                   size="icon"
-                  onClick={() => setAdjustPoints(String(Math.abs(parseInt(adjustPoints, 10) || 100)))}
+                  onClick={() => setAdjustPoints(String(Math.abs(parseFloat(adjustPoints) || 100)))}
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
-              <p className="text-xs text-gray-500">Use negative values to deduct points.</p>
+              <p className="text-xs text-gray-500">
+                Use negative values to deduct {isCash ? 'cashback' : 'points'}.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Notes (optional)</Label>
@@ -1455,7 +1606,7 @@ export default function LoyaltyPage() {
                     <p className="text-xs text-gray-500">{c.phone || '—'}</p>
                   </div>
                   <span className="text-xs text-amber-600">
-                    {(c.loyalty_points ?? 0).toLocaleString()} pts
+                    {isCash ? formatCurrency(c.loyalty_cash ?? 0) : `${(c.loyalty_points ?? 0).toLocaleString()} pts`}
                   </span>
                 </button>
               ))}
@@ -1480,17 +1631,16 @@ export default function LoyaltyPage() {
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Points history — {historyCustomer?.name}</DialogTitle>
+            <DialogTitle>{isCash ? 'Cashback' : 'Points'} history — {historyCustomer?.name}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            Current balance:{' '}
-            <strong>{(historyCustomer?.loyalty_points ?? 0).toLocaleString()} points</strong>
+            Current balance: <strong>{customerBalanceLabel(historyCustomer)}</strong>
           </p>
           <div className="max-h-96 space-y-2 overflow-y-auto">
             {historyLoading ? (
               <p className="py-8 text-center text-sm text-gray-500">Loading…</p>
             ) : historyTxns.length === 0 ? (
-              <p className="py-8 text-center text-sm text-gray-500">No points activity yet</p>
+              <p className="py-8 text-center text-sm text-gray-500">No loyalty activity yet</p>
             ) : (
               historyTxns.map((tx) => (
                 <div
@@ -1508,16 +1658,15 @@ export default function LoyaltyPage() {
                   <div className="text-right">
                     <p
                       className={
-                        tx.points >= 0
+                        txnDisplay(tx).positive
                           ? 'text-sm font-semibold text-green-600'
                           : 'text-sm font-semibold text-red-600'
                       }
                     >
-                      {tx.points >= 0 ? '+' : ''}
-                      {tx.points.toLocaleString()} pts
+                      {txnDisplay(tx).delta}
                     </p>
                     <p className="text-xs text-gray-500">
-                      Balance: {tx.balance_after.toLocaleString()}
+                      Balance: {txnDisplay(tx).balance}
                     </p>
                   </div>
                 </div>

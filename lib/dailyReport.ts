@@ -64,6 +64,10 @@ export interface LoyaltyReportSummary {
   earn_transactions: number
   redeem_transactions: number
   redemption_value: number
+  /** 'cash' when the store rewards ₹ cashback; then cash_* carry the figures. */
+  reward_type?: 'points' | 'cash'
+  cash_earned?: number
+  cash_redeemed?: number
 }
 
 export type PeriodicReportPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
@@ -162,6 +166,10 @@ export const dailyReportSummaryHelp: Record<string, string> = {
     'Loyalty points credited to customers from sales in this period (earn transactions).',
   loyalty_points_redeemed:
     'Loyalty points customers redeemed against bills in this period. Redemption value is the ₹ discount granted.',
+  loyalty_cash_earned:
+    'Loyalty cashback (₹) credited to customers from sales in this period (earn transactions).',
+  loyalty_cash_redeemed:
+    'Loyalty cashback (₹) customers redeemed as a discount against bills in this period.',
 }
 
 function isMetric(value: unknown): value is DailyReportMetric {
@@ -249,6 +257,13 @@ function appendExpenseLinesSection(lines: string[], report: DailyReport) {
 function appendLoyaltySection(lines: string[], report: DailyReport) {
   const loyalty = report.loyalty
   if (!loyalty || !loyalty.enabled) return
+  if (loyalty.reward_type === 'cash') {
+    if (!loyalty.cash_earned && !loyalty.cash_redeemed) return
+    lines.push('', 'Loyalty cashback', '--------')
+    lines.push(`Cashback credited: ${loyalty.earn_transactions} txn · ${formatCurrency(loyalty.cash_earned ?? 0)}`)
+    lines.push(`Cashback redeemed: ${loyalty.redeem_transactions} txn · ${formatCurrency(loyalty.cash_redeemed ?? 0)}`)
+    return
+  }
   if (loyalty.points_earned === 0 && loyalty.points_redeemed === 0) return
   lines.push('', 'Loyalty points', '--------')
   lines.push(

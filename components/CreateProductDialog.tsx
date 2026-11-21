@@ -834,7 +834,7 @@ export default function CreateProductDialog({
             </TabsContent>
           </Tabs>
 
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          <div className="sticky -bottom-6 z-10 -mx-6 -mb-6 flex justify-end gap-2 border-t bg-card px-6 py-4 sm:rounded-b-3xl">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>

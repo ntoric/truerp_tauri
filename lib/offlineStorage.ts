@@ -49,6 +49,8 @@ export interface POSSaleRecord {
   additional_charges?: number
   additional_charge_items?: Array<{ label: string; amount: number }>
   loyalty_points_redeemed?: number
+  /** ₹ cashback redeemed (cash-mode loyalty). */
+  loyalty_cash_redeemed?: number
   items: Array<{
     product_id: string
     description: string
