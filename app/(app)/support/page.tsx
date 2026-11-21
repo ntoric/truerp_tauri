@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import SupportRequestThread from '@/components/support/SupportRequestThread'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import {
   DEFAULT_SUPPORT_EMAIL,
   DEFAULT_SUPPORT_WHATSAPP,
@@ -23,7 +24,7 @@ import {
   type SupportRequest,
 } from '@/lib/supportRequests'
 import {
-  Mail, Copy, Check, ArrowRight, Loader2, Send, ChevronDown, Inbox,
+  Mail, Copy, Check, ArrowRight, ArrowUp, Loader2, Send, ChevronDown, Inbox,
 } from 'lucide-react'
 import { WhatsappLogo } from '@phosphor-icons/react'
 
@@ -309,10 +310,19 @@ export default function SupportPage() {
                   </CardContent>
                 </Card>
               ) : requests.length === 0 ? (
-                <Card>
-                  <CardContent className="flex flex-col items-center gap-2 py-8 text-center">
-                    <Inbox className="h-8 w-8 text-gray-300" />
-                    <p className="text-sm text-gray-500">No support requests yet.</p>
+                <Card className="overflow-hidden">
+                  <CardContent className="p-4">
+                    <PremiumEmpty
+                      icon={Inbox}
+                      title="No requests yet"
+                      hint="When you send us a message it will appear here, so you can track replies and status in one place."
+                      action={
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
+                          <ArrowUp className="h-3 w-3" />
+                          Use the form above to send your first request
+                        </span>
+                      }
+                    />
                   </CardContent>
                 </Card>
               ) : (

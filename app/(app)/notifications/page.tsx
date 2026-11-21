@@ -27,6 +27,7 @@ import {
   CheckCheck,
   Play,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
@@ -534,7 +535,7 @@ export default function NotificationsPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {notifications.length === 0 ? (
-                  <p className="text-sm text-gray-500">No notifications yet.</p>
+                  <PremiumEmpty compact icon={Bell} title="No notifications yet" hint="Scheduled notifications will appear here." />
                 ) : (
                   notificationsPagination.paginatedItems.map((notification) => (
                     <div
@@ -661,7 +662,7 @@ export default function NotificationsPage() {
 
                 <div className="space-y-2">
                   {templates.length === 0 ? (
-                    <p className="text-sm text-gray-500">No templates yet.</p>
+                    <PremiumEmpty compact icon={Mail} title="No templates yet" hint="Message templates you create will appear here." />
                   ) : (
                     templatesPagination.paginatedItems.map((template) => (
                       <div key={template.id} className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">

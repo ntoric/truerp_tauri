@@ -18,7 +18,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Plus, Eye, Pencil, Trash2, MoreVertical, Search, X } from 'lucide-react'
+import { Plus, Eye, Pencil, Trash2, MoreVertical, Search, X, FileText } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { formatDate } from '@/lib/utils'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
@@ -334,8 +335,16 @@ export default function CreditNotesPage() {
                 ))}
                 {filteredCreditNotes.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                      {hasActiveFilters ? 'No credit notes match your filters' : 'No credit notes found'}
+                    <TableCell colSpan={8} className="px-4 py-4">
+                      {hasActiveFilters ? (
+                        <p className="py-6 text-center text-sm text-gray-500">No credit notes match your filters</p>
+                      ) : (
+                        <PremiumEmpty
+                          icon={FileText}
+                          title="No credit notes yet"
+                          hint="Credit notes issued against invoices will appear here."
+                        />
+                      )}
                     </TableCell>
                   </TableRow>
                 )}

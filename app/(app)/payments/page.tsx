@@ -20,7 +20,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, MoreVertical, Trash2, Search, X } from 'lucide-react'
+import { Plus, MoreVertical, Trash2, Search, X, CreditCard } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
@@ -827,8 +828,16 @@ export default function PaymentsPage() {
                     ))}
                     {payments.length === 0 && (
                       <tr>
-                        <td colSpan={isDiscountEnabled ? 10 : 9} className="py-8 text-center text-gray-500">
-                          {hasActiveFilters ? 'No payments match your filters' : 'No payments recorded yet'}
+                        <td colSpan={isDiscountEnabled ? 10 : 9} className="px-4 py-4">
+                          {hasActiveFilters ? (
+                            <p className="py-6 text-center text-sm text-gray-500">No payments match your filters</p>
+                          ) : (
+                            <PremiumEmpty
+                              icon={CreditCard}
+                              title="No payments recorded yet"
+                              hint="Payments received against invoices will appear here."
+                            />
+                          )}
                         </td>
                       </tr>
                     )}

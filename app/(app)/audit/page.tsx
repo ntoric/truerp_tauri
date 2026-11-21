@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Search, Filter, Download, Trash2, Settings, Archive, BarChart3, Activity, Users, Clock, ArrowLeft } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifySuccess, notifyError } from '@/lib/notify'
 import { accountingExportDateStamp, downloadBlob } from '@/lib/accountingExport'
 import { runWithExportProgress } from '@/lib/exportProgress'
@@ -418,7 +419,9 @@ export default function AuditDashboard() {
                 <BrandLoader />
               </div>
             ) : logs.length === 0 ? (
-              <div className="py-12 text-center text-sm text-gray-500">No audit logs found</div>
+              <div className="p-4">
+                <PremiumEmpty compact icon={Activity} title="No audit logs found" hint="Activity across your workspace will be recorded here." />
+              </div>
             ) : (
               <Table>
                   <TableHeader>
@@ -487,7 +490,7 @@ export default function AuditDashboard() {
               </CardHeader>
               <CardContent>
                 {stats.top_actions.length === 0 ? (
-                  <p className="text-sm text-gray-500">No action data yet</p>
+                  <PremiumEmpty compact icon={BarChart3} title="No action data yet" />
                 ) : (
                   <div className="space-y-2">
                     {stats.top_actions.slice(0, 5).map((item, index) => (
@@ -506,7 +509,7 @@ export default function AuditDashboard() {
               </CardHeader>
               <CardContent>
                 {stats.top_users.length === 0 ? (
-                  <p className="text-sm text-gray-500">No user data yet</p>
+                  <PremiumEmpty compact icon={Users} title="No user data yet" />
                 ) : (
                   <div className="space-y-2">
                     {stats.top_users.slice(0, 5).map((item, index) => (

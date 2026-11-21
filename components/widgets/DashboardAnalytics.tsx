@@ -21,6 +21,7 @@ import {
 import {
   ArrowDownRight,
   ArrowUpRight,
+  BadgeCheck,
   BarChart3,
   CreditCard,
   Crown,
@@ -32,6 +33,7 @@ import {
 } from 'lucide-react'
 import { apiFetch } from '@/hooks/useAuth'
 import { useColorTheme } from '@/hooks/useColorTheme'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatCurrency } from '@/lib/utils'
 
@@ -358,6 +360,24 @@ function EmptyChart({ message = 'No data for this period yet' }: { message?: str
     <div className="flex h-full min-h-[160px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-xs text-slate-400">
       {message}
     </div>
+  )
+}
+
+/** Celebratory empty state for "Outstanding dues" when nothing is owed. */
+function AllSettledEmpty() {
+  return (
+    <PremiumEmpty
+      className="min-h-[190px]"
+      icon={BadgeCheck}
+      title="All caught up"
+      hint="Every invoice is settled — there's nothing left to collect."
+      action={
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
+          <BadgeCheck className="h-3 w-3" />
+          ₹0 outstanding
+        </span>
+      }
+    />
   )
 }
 
@@ -782,7 +802,7 @@ export function TopDebtorsPanel({ a, className }: { a: DashboardAnalyticsState; 
       {a.loading ? (
         <ListSkeleton />
       ) : a.topDebtors.length === 0 ? (
-        <EmptyChart message="No dues — every invoice is settled" />
+        <AllSettledEmpty />
       ) : (
         <ol className="space-y-3">
           {a.topDebtors.map((d) => (

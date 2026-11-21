@@ -27,7 +27,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import JSZip from 'jszip'
-import { Plus, Trash2, Info, BookOpen, CheckCircle, Eye, Download, MoreVertical, BarChart3, ChevronDown, ChevronUp, CircleHelp } from 'lucide-react'
+import { Plus, Trash2, Info, BookOpen, CheckCircle, Eye, Download, MoreVertical, BarChart3, ChevronDown, ChevronUp, CircleHelp, Landmark } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -1395,8 +1396,8 @@ export default function AccountingPage() {
                     ))}
                     {!loadingTabs.accounts && accountsData.items.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                          No accounts
+                        <TableCell colSpan={6} className="px-4 py-4">
+                          <PremiumEmpty compact icon={BookOpen} title="No accounts" hint="Ledger accounts will appear here." />
                         </TableCell>
                       </TableRow>
                     )}
@@ -1520,8 +1521,8 @@ export default function AccountingPage() {
                     ))}
                     {!loadingTabs.journal && journalData.items.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-8 text-center text-gray-500">
-                          No journal entries yet
+                        <TableCell colSpan={8} className="px-4 py-4">
+                          <PremiumEmpty compact icon={BookOpen} title="No journal entries yet" hint="Manual journal entries will appear here." />
                         </TableCell>
                       </TableRow>
                     )}
@@ -1616,8 +1617,8 @@ export default function AccountingPage() {
                     ))}
                     {!loadingTabs.ledger && ledgerData.items.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-8 text-center text-gray-500">
-                          No ledger entries — post transactions or journal entries to populate
+                        <TableCell colSpan={8} className="px-4 py-4">
+                          <PremiumEmpty compact icon={BookOpen} title="No ledger entries" hint="Post transactions or journal entries to populate the ledger." />
                         </TableCell>
                       </TableRow>
                     )}
@@ -1721,15 +1722,15 @@ export default function AccountingPage() {
                     ))}
                     {!glAccountId && (
                       <TableRow>
-                        <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                          Select an account to view its general ledger
+                        <TableCell colSpan={6} className="px-4 py-4">
+                          <PremiumEmpty compact icon={BookOpen} title="Nothing selected" hint="Select an account to view its general ledger." />
                         </TableCell>
                       </TableRow>
                     )}
                     {!loadingTabs['general-ledger'] && glAccountId && generalLedger && generalLedger.entries.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                          No entries in this period
+                        <TableCell colSpan={6} className="px-4 py-4">
+                          <PremiumEmpty compact icon={BookOpen} title="No entries in this period" hint="Ledger activity for this account will appear here." />
                         </TableCell>
                       </TableRow>
                     )}
@@ -2115,8 +2116,8 @@ export default function AccountingPage() {
                     ))}
                     {!loadingTabs['bank-recon'] && reconData.items.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-8 text-center text-gray-500">
-                          No bank reconciliations yet
+                        <TableCell colSpan={8} className="px-4 py-4">
+                          <PremiumEmpty compact icon={Landmark} title="No bank reconciliations yet" hint="Reconciliations you create will appear here." />
                         </TableCell>
                       </TableRow>
                     )}

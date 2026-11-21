@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FileDigit, FileCheck, XCircle, Truck, Search, RefreshCw } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -295,7 +296,18 @@ export default function EInvoicingPage() {
                           <TableCell>{new Date(item.generated_at).toLocaleString()}</TableCell>
                         </TableRow>
                       ))}
-                      {eInvoiceHistory.length === 0 && <TableRow><TableCell colSpan={4} className="text-center py-8 text-gray-500">No e-invoice history</TableCell></TableRow>}
+                      {eInvoiceHistory.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="px-4 py-4">
+                            <PremiumEmpty
+                              compact
+                              icon={FileCheck}
+                              title="No e-invoice history"
+                              hint="Generated e-invoices will appear here."
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                   <PaginationControls
@@ -329,7 +341,18 @@ export default function EInvoicingPage() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {ewayBillHistory.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-8 text-gray-500">No e-way bill history</TableCell></TableRow>}
+                      {ewayBillHistory.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="px-4 py-4">
+                            <PremiumEmpty
+                              compact
+                              icon={Truck}
+                              title="No e-way bill history"
+                              hint="Generated e-way bills will appear here."
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                   <PaginationControls

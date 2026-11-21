@@ -70,6 +70,7 @@ import {
   Gift,
   type LucideIcon,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   DropdownMenu,
@@ -1165,7 +1166,7 @@ export default function DailyReportPage() {
                 ) : report ? (
                   <ReportSummaryBody report={report} profitLabel="Daily profit" />
                 ) : (
-                  <p className="py-8 text-center text-gray-500">No report data for this date.</p>
+                  <PremiumEmpty compact icon={CalendarDays} title="No report data for this date" hint="Pick another date or check back once there's activity." />
                 )}
               </CardContent>
             </Card>
@@ -1364,11 +1365,12 @@ export default function DailyReportPage() {
                 ) : periodReport ? (
                   <ReportSummaryBody report={periodReport} profitLabel="Period profit" />
                 ) : (
-                  <p className="py-10 text-center text-sm text-gray-500">
-                    {periodGenerated
-                      ? 'No report data for this period.'
-                      : 'Choose a period and click Generate report to view results.'}
-                  </p>
+                  <PremiumEmpty
+                    compact
+                    icon={CalendarRange}
+                    title={periodGenerated ? 'No report data for this period' : 'Nothing generated yet'}
+                    hint={periodGenerated ? 'Try a different period.' : 'Choose a period and click Generate report to view results.'}
+                  />
                 )}
               </CardContent>
             </Card>

@@ -9,7 +9,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { StatusBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Plus, Eye, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Eye, Pencil, Trash2, ClipboardList } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
@@ -135,7 +136,13 @@ export default function PurchaseOrdersPage() {
                 ))}
                 {orders.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">No purchase orders found</TableCell>
+                    <TableCell colSpan={7} className="px-4 py-4">
+                      <PremiumEmpty
+                        icon={ClipboardList}
+                        title="No purchase orders yet"
+                        hint="Create a purchase order to request stock from suppliers."
+                      />
+                    </TableCell>
                   </TableRow>
                 )}
               </TableBody>

@@ -19,7 +19,8 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { printHtmlDocument } from '@/lib/printDocument'
-import { Plus, Search, Download, MoreVertical, Edit, Trash2, Eye, Printer, ArrowRightCircle } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Edit, Trash2, Eye, Printer, ArrowRightCircle, FileText } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -283,8 +284,12 @@ export default function EstimatesPage() {
                     ))}
                     {filteredEstimates.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-gray-500">
-                          No estimates found
+                        <td colSpan={7} className="px-4 py-4">
+                          <PremiumEmpty
+                            icon={FileText}
+                            title="No estimates yet"
+                            hint="Create a quotation or estimate to share pricing with customers."
+                          />
                         </td>
                       </tr>
                     )}

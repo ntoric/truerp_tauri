@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatDate, publicSiteUrl } from '@/lib/utils'
 import { isSuperAdmin } from '@/lib/roles'
 import { ExternalLink, Globe, Loader2, Save, Users, LifeBuoy } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -375,7 +376,9 @@ export default function CustomerPortalAdminPage() {
         <TabsContent value="tickets" className="mt-4 space-y-4">
           {tickets.length === 0 ? (
             <Card>
-              <CardContent className="py-10 text-center text-muted-foreground">No support tickets yet</CardContent>
+              <CardContent className="p-4">
+                <PremiumEmpty icon={LifeBuoy} title="No support tickets yet" hint="Tickets opened by customers will appear here." />
+              </CardContent>
             </Card>
           ) : (
             ticketsPagination.paginatedItems.map((t) => (

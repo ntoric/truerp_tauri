@@ -23,6 +23,7 @@ import {
   type StoreFormValues,
 } from '@/lib/storeValidation'
 import { ExternalLink, Loader2, MonitorSmartphone, Plus, RotateCcw, Store, Trash2, Users } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import {
   StoreResetDialog,
   type StoreResetScopeId,
@@ -441,7 +442,7 @@ export default function StoresPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               {stores.length === 0 && (
-                <p className="text-sm text-slate-500">No stores yet. Create one to get started.</p>
+                <PremiumEmpty compact icon={Store} title="No stores yet" hint="Create a store to get started." />
               )}
               {stores.map((store) => (
                 <button

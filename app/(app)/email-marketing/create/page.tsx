@@ -13,7 +13,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, Loader2, Repeat, ArrowLeft } from 'lucide-react'
+import { Plus, Loader2, Repeat, ArrowLeft, Users } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError, notifySuccess } from '@/lib/notify'
 
 // CKEditor uses browser-only APIs (window, document), so it must be loaded
@@ -185,7 +186,7 @@ export default function CreateEmailCampaignPage() {
                       </label>
                     ))}
                     {filteredParties.length === 0 && (
-                      <p className="text-sm text-gray-500">No parties available</p>
+                      <PremiumEmpty compact icon={Users} title="No parties available" hint="Parties you add will appear here." />
                     )}
                   </div>
                 </div>

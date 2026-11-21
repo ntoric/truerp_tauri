@@ -27,6 +27,7 @@ import {
   Warehouse,
   X,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import BrandLoader from '@/components/BrandLoader'
 
 const PAGE_SIZE = 50
@@ -670,7 +671,7 @@ export default function StockMovementPage() {
                 <BrandLoader />
               </div>
             ) : rows.length === 0 ? (
-              <p className="py-10 text-center text-sm text-gray-500">No stock movements match these filters.</p>
+              <PremiumEmpty compact icon={ArrowDownUp} title="No stock movements" hint="No stock movements match these filters." />
             ) : (
               <>
                 <div className={cn('table-scroll rounded-lg border', loading && 'opacity-60')}>

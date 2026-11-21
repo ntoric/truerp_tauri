@@ -13,6 +13,7 @@ interface ProductDetailProps {
   slug: string
   productId: string
   showStock: boolean
+  showPrice: boolean
   qtyInCart: (id: string) => number
   onSetCartQty: (product: PublicProduct, qty: number) => void
   onRemove: (id: string) => void
@@ -25,6 +26,7 @@ export default function ProductDetail({
   slug,
   productId,
   showStock,
+  showPrice,
   qtyInCart,
   onSetCartQty,
   onRemove,
@@ -274,6 +276,7 @@ export default function ProductDetail({
                 key={r.id}
                 product={r}
                 showStock={showStock}
+                showPrice={showPrice}
                 cartQty={qtyInCart(r.id)}
                 onOpen={() => onOpenProduct(r.id)}
                 onAdd={() => onSetCartQty(r, r.min_order_qty || 1)}

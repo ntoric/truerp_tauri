@@ -38,6 +38,7 @@ import {
   Star,
   Store,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import BrandLoader from '@/components/BrandLoader'
 
 const PAGE_SIZE = 25
@@ -397,8 +398,8 @@ export default function B2BShopManagerPage() {
                       </tr>
                     ) : items.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="py-12 text-center text-muted-foreground">
-                          No products match these filters.
+                        <td colSpan={8} className="px-4 py-4">
+                          <PremiumEmpty compact icon={PackageCheck} title="No products found" hint="No products match these filters." />
                         </td>
                       </tr>
                     ) : (
@@ -507,6 +508,12 @@ export default function B2BShopManagerPage() {
                 hint="Buyers see how many units are available."
                 checked={settings.show_stock}
                 onChange={(v) => setSettings({ ...settings, show_stock: v })}
+              />
+              <ToggleRow
+                label="Show prices"
+                hint="Buyers see wholesale prices on product cards."
+                checked={settings.show_price}
+                onChange={(v) => setSettings({ ...settings, show_price: v })}
               />
               <ToggleRow
                 label="Allow backorders"

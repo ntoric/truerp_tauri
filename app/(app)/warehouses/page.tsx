@@ -21,7 +21,8 @@ import {
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Plus, Edit, Trash2, Search, Download, MoreVertical, Power } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, Download, MoreVertical, Power, Warehouse } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { usePagination } from '@/hooks/usePagination'
@@ -622,8 +623,8 @@ export default function WarehousesPage() {
               <TableBody>
                 {warehouses.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-gray-500">
-                      No warehouses found. Create your first warehouse to get started.
+                    <TableCell colSpan={8} className="px-4 py-4">
+                      <PremiumEmpty compact icon={Warehouse} title="No warehouses found" hint="Create your first warehouse to get started." />
                     </TableCell>
                   </TableRow>
                 ) : filteredWarehouses.length === 0 ? (

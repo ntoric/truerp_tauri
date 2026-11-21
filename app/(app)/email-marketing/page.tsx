@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate } from '@/lib/utils'
 import { Plus, Send, Calendar, Users, Mail, Loader2, Clock, CheckCircle, XCircle, AlertCircle, Eye, MousePointerClick, Pencil, RefreshCw, Repeat } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -486,8 +487,12 @@ export default function EmailMarketingPage() {
                     ))}
                     {campaigns.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-gray-500">
-                          No email campaigns created yet
+                        <td colSpan={7} className="px-4 py-4">
+                          <PremiumEmpty
+                            icon={Mail}
+                            title="No email campaigns yet"
+                            hint="Create a campaign to reach customers by email."
+                          />
                         </td>
                       </tr>
                     )}

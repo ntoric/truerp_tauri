@@ -35,7 +35,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Users,
+  CalendarCheck,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
@@ -890,12 +893,14 @@ export default function AttendancePage() {
                 })}
                 {filteredStaffs.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
-                      {activeStaffs.length === 0
-                        ? 'No active staff found. Add staff first.'
-                        : statusFilter === 'not_marked'
-                          ? 'All staff marked for this day!'
-                          : 'No staff match the selected filters.'}
+                    <TableCell colSpan={6} className="px-4 py-4">
+                      {activeStaffs.length === 0 ? (
+                        <PremiumEmpty compact icon={Users} title="No active staff found" hint="Add staff first to start marking attendance." />
+                      ) : statusFilter === 'not_marked' ? (
+                        <PremiumEmpty compact icon={CalendarCheck} title="All staff marked for this day" hint="Everyone's attendance is already recorded." />
+                      ) : (
+                        <p className="py-6 text-center text-sm text-muted-foreground">No staff match the selected filters.</p>
+                      )}
                     </TableCell>
                   </TableRow>
                 )}

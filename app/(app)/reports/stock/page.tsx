@@ -41,6 +41,7 @@ import {
   Warehouse,
   TrendingUp,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import BrandLoader from '@/components/BrandLoader'
 
 type StockPreset =
@@ -429,11 +430,12 @@ export default function StockReportPage() {
                 </p>
               </>
             ) : (
-              <p className="py-10 text-center text-sm text-gray-500">
-                {generated
-                  ? 'No report data for this period.'
-                  : 'Choose a period and click Generate report to view results.'}
-              </p>
+              <PremiumEmpty
+                compact
+                icon={Package}
+                title={generated ? 'No report data for this period' : 'Nothing generated yet'}
+                hint={generated ? 'Try a different period.' : 'Choose a period and click Generate report to view results.'}
+              />
             )}
           </CardContent>
         </Card>

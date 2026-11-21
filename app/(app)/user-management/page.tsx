@@ -33,6 +33,7 @@ import {
   QrCode,
   ChevronsUpDown,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { QRCodeSVG } from 'qrcode.react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
@@ -859,7 +860,7 @@ export default function UserManagementPage() {
                 </form>
                 <UserTable rows={manageableUsers} allowRoleEdit showStore={isSA} showResetPassword={isSA} />
                 {manageableUsers.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No users yet.</p>
+                  <PremiumEmpty compact icon={Users} title="No users yet" hint="Users you invite will appear here." />
                 )}
               </CardContent>
             </Card>
@@ -916,7 +917,7 @@ export default function UserManagementPage() {
                 <CardContent>
                   <UserTable rows={admins} allowRoleEdit showStore showResetPassword />
                   {admins.length === 0 && (
-                    <p className="text-sm text-muted-foreground">No admin users yet.</p>
+                    <PremiumEmpty compact icon={Shield} title="No admin users yet" hint="Admins you assign will appear here." />
                   )}
                 </CardContent>
               </Card>

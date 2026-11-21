@@ -18,7 +18,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Search, Download, MoreVertical, Edit, Trash2, Eye, CheckCircle, X } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Edit, Trash2, Eye, CheckCircle, X, FileText } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError } from '@/lib/notify'
@@ -311,8 +312,12 @@ export default function DebitNotesPage() {
               <TableBody>
                 {debitNotes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-gray-500">
-                      No debit notes found
+                    <TableCell colSpan={7} className="px-4 py-4">
+                      <PremiumEmpty
+                        icon={FileText}
+                        title="No debit notes yet"
+                        hint="Debit notes raised against purchases will appear here."
+                      />
                     </TableCell>
                   </TableRow>
                 ) : filteredDebitNotes.length === 0 ? (

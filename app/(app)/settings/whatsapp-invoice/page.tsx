@@ -33,6 +33,7 @@ import {
   Settings2,
   Trash2,
 } from "lucide-react";
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError, notifySuccess } from "@/lib/notify";
 import { formatDateTime } from "@/lib/utils";
 import {
@@ -914,9 +915,7 @@ export default function WhatsAppInvoiceSettingsPage() {
               </CardHeader>
               <CardContent>
                 {logs.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    No messages yet.
-                  </p>
+                  <PremiumEmpty compact icon={MessageCircle} title="No messages yet" hint="WhatsApp invoice messages sent will appear here." />
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">

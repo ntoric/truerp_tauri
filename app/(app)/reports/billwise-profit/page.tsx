@@ -41,6 +41,7 @@ import {
   TrendingUp,
   Wallet,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -536,8 +537,8 @@ export default function BillwiseProfitReportPage() {
                       })}
                       {bills.length === 0 && (
                         <tr>
-                          <td colSpan={11} className="px-4 py-10 text-center text-sm text-gray-500">
-                            No bills found for this period.
+                          <td colSpan={11} className="px-4 py-4">
+                            <PremiumEmpty compact icon={Receipt} title="No bills found for this period" hint="Try a different period." />
                           </td>
                         </tr>
                       )}
@@ -584,11 +585,12 @@ export default function BillwiseProfitReportPage() {
                 </p>
               </>
             ) : (
-              <p className="py-10 text-center text-sm text-gray-500">
-                {generated
-                  ? 'No report data for this period.'
-                  : 'Choose a period and click Generate report to view results.'}
-              </p>
+              <PremiumEmpty
+                compact
+                icon={CalendarRange}
+                title={generated ? 'No report data for this period' : 'Nothing generated yet'}
+                hint={generated ? 'Try a different period.' : 'Choose a period and click Generate report to view results.'}
+              />
             )}
           </CardContent>
         </Card>

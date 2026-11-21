@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea'
 import { API_BASE, formatCurrency, formatDate } from '@/lib/utils'
 import { Gift, Users, History, Save, Loader2, Search, Plus, Minus, CreditCard, Download, Trash2, Move, RotateCcw, Eye, EyeOff } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
@@ -790,7 +791,12 @@ export default function LoyaltyPage() {
                       </tbody>
                     </table>
                     {filteredCustomers.length === 0 && (
-                      <p className="py-8 text-center text-gray-500">No customers found</p>
+                      <PremiumEmpty
+                        
+                        icon={Users}
+                        title="No customers found"
+                        hint="Customers who join the loyalty program will appear here."
+                      />
                     )}
                   </div>
                 )}
@@ -846,7 +852,12 @@ export default function LoyaltyPage() {
                     </div>
                   ))}
                   {transactions.length === 0 && !loading && (
-                    <p className="py-8 text-center text-gray-500">No loyalty activity yet</p>
+                    <PremiumEmpty
+                      
+                      icon={History}
+                      title="No activity yet"
+                      hint="Points earned and redeemed by customers will appear here."
+                    />
                   )}
                 </div>
               </CardContent>
@@ -1291,62 +1302,68 @@ export default function LoyaltyPage() {
                     ))}
                   </div>
                 )}
-                <div className="table-scroll">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-gray-500">
-                        <th className="pb-2 font-medium">Card number</th>
-                        <th className="pb-2 font-medium">Serial</th>
-                        <th className="pb-2 font-medium">Status</th>
-                        <th className="pb-2 font-medium">Customer</th>
-                        <th className="pb-2 font-medium">Generated</th>
-                        <th className="pb-2 font-medium text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredCards.map((card) => (
-                        <tr key={card.id || card.card_number} className="border-b last:border-0">
-                          <td className="py-2.5 font-mono font-medium">
-                            {prettyCardNumber(card.card_number)}
-                          </td>
-                          <td className="py-2.5 text-gray-600">#{card.serial}</td>
-                          <td className="py-2.5">
-                            <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-                              {card.status || 'active'}
-                            </span>
-                          </td>
-                          <td className="py-2.5 text-gray-700">
-                            {card.party?.name || <span className="text-gray-400">Unassigned</span>}
-                          </td>
-                          <td className="py-2.5 text-gray-600">{formatDate(card.created_at || '')}</td>
-                          <td className="py-2.5 text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="mr-1"
-                              onClick={() => openAssign(card)}
-                            >
-                              {card.party ? 'Reassign' : 'Assign'}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Delete card (misprint)"
-                              onClick={() => deleteGeneratedCard(card)}
-                            >
-                              <Trash2 className="h-4 w-4 text-gray-400" />
-                            </Button>
-                          </td>
+                {generatedCards.length === 0 ? (
+                  <PremiumEmpty
+                    icon={CreditCard}
+                    title="No cards generated yet"
+                    hint="Generate a batch of loyalty cards to see them listed here."
+                  />
+                ) : (
+                  <div className="table-scroll">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-gray-500">
+                          <th className="pb-2 font-medium">Card number</th>
+                          <th className="pb-2 font-medium">Serial</th>
+                          <th className="pb-2 font-medium">Status</th>
+                          <th className="pb-2 font-medium">Customer</th>
+                          <th className="pb-2 font-medium">Generated</th>
+                          <th className="pb-2 font-medium text-right">Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {filteredCards.length === 0 && (
-                    <p className="py-6 text-center text-sm text-gray-500">
-                      {generatedCards.length === 0 ? 'No cards generated yet' : 'No cards match'}
-                    </p>
-                  )}
-                </div>
+                      </thead>
+                      <tbody>
+                        {filteredCards.map((card) => (
+                          <tr key={card.id || card.card_number} className="border-b last:border-0">
+                            <td className="py-2.5 font-mono font-medium">
+                              {prettyCardNumber(card.card_number)}
+                            </td>
+                            <td className="py-2.5 text-gray-600">#{card.serial}</td>
+                            <td className="py-2.5">
+                              <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                                {card.status || 'active'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 text-gray-700">
+                              {card.party?.name || <span className="text-gray-400">Unassigned</span>}
+                            </td>
+                            <td className="py-2.5 text-gray-600">{formatDate(card.created_at || '')}</td>
+                            <td className="py-2.5 text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="mr-1"
+                                onClick={() => openAssign(card)}
+                              >
+                                {card.party ? 'Reassign' : 'Assign'}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Delete card (misprint)"
+                                onClick={() => deleteGeneratedCard(card)}
+                              >
+                                <Trash2 className="h-4 w-4 text-gray-400" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {filteredCards.length === 0 && (
+                      <p className="py-6 text-center text-sm text-gray-500">No cards match</p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

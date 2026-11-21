@@ -328,7 +328,7 @@ export default function DashboardPage() {
         <section className={cn('flex flex-col rounded-3xl p-5', CARD_CLASS)}>
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold tracking-[-0.01em] text-heading">Receivables</h3>
-            <StatusBadge tone="brand">Needs attention</StatusBadge>
+            <StatusBadge tone="brand" hideDot>Needs attention</StatusBadge>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
             {[

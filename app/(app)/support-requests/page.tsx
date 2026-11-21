@@ -26,7 +26,8 @@ import {
   type SupportRequest,
 } from '@/lib/supportRequests'
 import { cn } from '@/lib/utils'
-import { Inbox, Loader2, Save, Search, Send, Settings2 } from 'lucide-react'
+import { Inbox, Loader2, MessagesSquare, Save, Search, Send, Settings2 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 
 export default function SupportRequestsPage() {
   const { user, loading: authLoading } = useAuth()
@@ -340,9 +341,13 @@ export default function SupportRequestsPage() {
             )}
             <div className="flex-1 divide-y overflow-y-auto">
               {requests.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
-                  <Inbox className="h-8 w-8 text-gray-300" />
-                  <p className="text-sm text-gray-500">No support requests found.</p>
+                <div className="p-4">
+                  <PremiumEmpty
+                    compact
+                    icon={Inbox}
+                    title="No requests found"
+                    hint="New support requests from users will show up here."
+                  />
                 </div>
               ) : (
                 requests.map((req) => (
@@ -479,10 +484,14 @@ export default function SupportRequestsPage() {
               </CardContent>
             </Card>
           ) : (
-            <Card className="hidden min-w-0 lg:block">
-              <CardContent className="flex flex-col items-center gap-2 py-16 text-center">
-                <Inbox className="h-10 w-10 text-gray-300" />
-                <p className="text-sm text-gray-500">Select a request to view the conversation.</p>
+            <Card className="hidden min-w-0 overflow-hidden lg:block">
+              <CardContent className="p-4">
+                <PremiumEmpty
+                  className="py-20"
+                  icon={MessagesSquare}
+                  title="Nothing selected"
+                  hint="Pick a request from the list to read the conversation, reply, and manage its status."
+                />
               </CardContent>
             </Card>
           )}

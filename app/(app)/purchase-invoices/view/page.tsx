@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ArrowLeft, Download, Edit, Loader2, ExternalLink, FileText, AlertCircle } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError } from '@/lib/notify'
 import { downloadPurchaseBillPdf } from '@/lib/printDocument'
 import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
@@ -243,7 +244,9 @@ function PurchaseBillViewContent() {
                     ))}
                     {(bill.items || []).length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-3 py-4 text-center text-gray-500">No items</td>
+                        <td colSpan={6} className="px-3 py-4">
+                          <PremiumEmpty compact icon={FileText} title="No items" hint="This bill has no line items." />
+                        </td>
                       </tr>
                     )}
                   </tbody>

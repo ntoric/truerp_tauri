@@ -21,7 +21,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
-import { Plus, Search, Download, MoreVertical, Trash2, X } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Trash2, X, Banknote } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
@@ -1085,10 +1086,16 @@ export default function PaymentOutsPage() {
                   <tbody>
                     {paymentOuts.length === 0 ? (
                       <tr>
-                        <td colSpan={isDiscountEnabled ? 11 : 10} className="py-8 text-center text-gray-500">
-                          {hasActiveFilters
-                            ? 'No payment outs match your filters'
-                            : 'No payment outs recorded yet'}
+                        <td colSpan={isDiscountEnabled ? 11 : 10} className="px-4 py-4">
+                          {hasActiveFilters ? (
+                            <p className="py-6 text-center text-sm text-gray-500">No payment outs match your filters</p>
+                          ) : (
+                            <PremiumEmpty
+                              icon={Banknote}
+                              title="No payment outs recorded yet"
+                              hint="Payments made to suppliers will appear here."
+                            />
+                          )}
                         </td>
                       </tr>
                     ) : (

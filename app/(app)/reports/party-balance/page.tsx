@@ -49,6 +49,7 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import BrandLoader from '@/components/BrandLoader'
 
 const PARTY_TYPE_OPTIONS: { value: PartyBalanceType; label: string }[] = [
@@ -560,9 +561,12 @@ export default function PartyBalanceReportPage() {
                     />
                   </>
                 ) : (
-                  <p className="py-10 text-center text-sm text-gray-500">
-                    No parties with an outstanding balance on this day.
-                  </p>
+                  <PremiumEmpty
+                    compact
+                    icon={ArrowUpRight}
+                    title="Nothing outstanding"
+                    hint="No parties with an outstanding balance on this day."
+                  />
                 )}
 
                 <p className="mt-4 text-xs text-gray-500">
@@ -574,7 +578,7 @@ export default function PartyBalanceReportPage() {
                 </p>
               </>
             ) : (
-              <p className="py-10 text-center text-sm text-gray-500">No report data.</p>
+              <PremiumEmpty compact icon={CalendarDays} title="No report data" hint="Pick a date to view the party balance report." />
             )}
           </CardContent>
         </Card>

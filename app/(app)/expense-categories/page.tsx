@@ -31,7 +31,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Pencil, Trash2, Power, MoreVertical, ArrowLeft, Download, Search } from 'lucide-react'
+import { Plus, Pencil, Trash2, Power, MoreVertical, ArrowLeft, Download, Search, Tags } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { Switch } from '@/components/ui/switch'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
@@ -312,8 +313,16 @@ export default function ExpenseCategoriesPage() {
                 ))}
                 {filteredCategories.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                      {categories.length === 0 ? 'No expense categories found' : 'No categories match your search'}
+                    <TableCell colSpan={6} className="px-4 py-4">
+                      {categories.length === 0 ? (
+                        <PremiumEmpty
+                          icon={Tags}
+                          title="No expense categories yet"
+                          hint="Create categories to organise your expenses."
+                        />
+                      ) : (
+                        <p className="py-6 text-center text-sm text-gray-500">No categories match your search</p>
+                      )}
                     </TableCell>
                   </TableRow>
                 )}

@@ -30,6 +30,7 @@ import {
   normalizeSaleDiscountSettings,
 } from '@/lib/saleDiscount'
 import { Percent, Save, Loader2, Search, History, Settings2 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 
 interface DiscountTransaction {
   id: string
@@ -458,8 +459,8 @@ export default function DiscountPage() {
                       ))}
                       {!txnLoading && transactions.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={8} className="py-8 text-center text-sm text-gray-500">
-                            No discount transactions found.
+                          <TableCell colSpan={8} className="px-4 py-4">
+                            <PremiumEmpty compact icon={Percent} title="No discount transactions found" hint="Discounts applied to sales will appear here." />
                           </TableCell>
                         </TableRow>
                       )}

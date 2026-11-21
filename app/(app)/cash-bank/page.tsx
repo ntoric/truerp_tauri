@@ -20,6 +20,7 @@ import { notifyError, notifySuccess } from '@/lib/notify'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import {
   PaymentMethodMapping,
   savePaymentMethodMappings,
@@ -1103,8 +1104,12 @@ export default function CashBankPage() {
                       ))}
                       {transactions.length === 0 && (
                         <tr>
-                          <td colSpan={canDeleteTransactions ? 8 : 7} className="py-8 text-center text-gray-500">
-                            No transactions found.
+                          <td colSpan={canDeleteTransactions ? 8 : 7} className="px-4 py-4">
+                            <PremiumEmpty
+                              icon={Landmark}
+                              title="No transactions found"
+                              hint="Cash and bank movements will appear here."
+                            />
                           </td>
                         </tr>
                       )}

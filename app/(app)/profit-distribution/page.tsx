@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { Plus, Search, Download, Trash2, UserPlus, HandCoins } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
@@ -653,11 +654,22 @@ export default function ProfitDistributionPage() {
                 {loading ? (
                   <div className="p-8 text-center text-sm text-gray-500">Loading...</div>
                 ) : distPagination.paginatedItems.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-gray-500">
-                    {hasActiveFilters
-                      ? 'No profit distributions match the current filters.'
-                      : 'No profit distributions yet. Click "New Distribution" to create one.'}
-                  </div>
+                  hasActiveFilters ? (
+                    <div className="p-8 text-center text-sm text-gray-500">
+                      No profit distributions match the current filters.
+                    </div>
+                  ) : (
+                    <PremiumEmpty
+                      icon={HandCoins}
+                      title="No distributions yet"
+                      hint="Pay out profits to your partners — every distribution is recorded and restores the paying account on delete."
+                      action={
+                        <Button size="sm" onClick={() => setDistributionDialogOpen(true)}>
+                          <HandCoins className="mr-1.5 h-4 w-4" /> New Distribution
+                        </Button>
+                      }
+                    />
+                  )
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -708,11 +720,22 @@ export default function ProfitDistributionPage() {
             <Card>
               <CardContent className="p-0">
                 {partnerPagination.paginatedItems.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-gray-500">
-                    {search
-                      ? 'No partners match the search.'
-                      : 'No partners yet. Click "Add Partner" to create one.'}
-                  </div>
+                  search ? (
+                    <div className="p-8 text-center text-sm text-gray-500">
+                      No partners match the search.
+                    </div>
+                  ) : (
+                    <PremiumEmpty
+                      icon={UserPlus}
+                      title="No partners yet"
+                      hint="Add your business partners here — they can then receive profit distributions."
+                      action={
+                        <Button size="sm" onClick={() => setPartnerDialogOpen(true)}>
+                          <UserPlus className="mr-1.5 h-4 w-4" /> Add Partner
+                        </Button>
+                      }
+                    />
+                  )
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">

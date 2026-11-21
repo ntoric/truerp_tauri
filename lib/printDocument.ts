@@ -195,6 +195,57 @@ export async function downloadPurchaseBillPdf(
   await triggerBlobDownload(blob, name)
 }
 
+/** Fallback cap for bulk PDF downloads when the developer setting is unreadable. */
+export const DEFAULT_BULK_DOWNLOAD_LIMIT = 25
+
+/**
+ * Read the configured bulk PDF download cap (Developer Settings → General).
+ * Only super admins can read developer settings; everyone else gets the default.
+ */
+export async function fetchBulkDownloadLimit(): Promise<number> {
+  try {
+    const res = await apiFetch('/developer-settings')
+    if (!res.ok) return DEFAULT_BULK_DOWNLOAD_LIMIT
+    const data = await res.json()
+    const limit = Number(data?.bulk_download_limit)
+    return Number.isFinite(limit) && limit > 0
+      ? Math.floor(limit)
+      : DEFAULT_BULK_DOWNLOAD_LIMIT
+  } catch {
+    return DEFAULT_BULK_DOWNLOAD_LIMIT
+  }
+}
+
+/** POST ids to a bulk PDF endpoint and return the ZIP blob. */
+async function fetchPdfZip(path: string, ids: string[]): Promise<Blob> {
+  const res = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to download invoice PDFs')
+  }
+  const buffer = await res.arrayBuffer()
+  if (!buffer.byteLength) {
+    throw new Error('PDF download was empty')
+  }
+  const copy = new Uint8Array(buffer.byteLength)
+  copy.set(new Uint8Array(buffer))
+  return new Blob([copy], { type: 'application/zip' })
+}
+
+/** Fetch a ZIP of invoice PDFs for the selected sales invoices. */
+export function downloadInvoicePdfsZip(invoiceIds: string[]): Promise<Blob> {
+  return fetchPdfZip('/invoices/download-pdf', invoiceIds)
+}
+
+/** Fetch a ZIP of invoice PDFs for the selected purchase bills. */
+export function downloadPurchaseBillPdfsZip(billIds: string[]): Promise<Blob> {
+  return fetchPdfZip('/purchase/bills/download-pdf', billIds)
+}
+
 function thermalReceiptHtml(content: string, widthMm: number, logoUrl?: string): string {
   const pageWidth = Math.max(40, Math.min(100, widthMm))
   const fontSize = pageWidth <= 42 ? 9 : pageWidth <= 60 ? 11 : 12

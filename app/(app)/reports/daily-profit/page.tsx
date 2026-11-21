@@ -37,6 +37,7 @@ import {
   Wallet,
   Receipt,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -569,10 +570,12 @@ export default function DailyProfitReportPage() {
                 />
               </>
             ) : (
-              <div className="flex h-48 flex-col items-center justify-center gap-2 text-sm text-gray-500">
-                <CalendarRange className="h-8 w-8 text-gray-300" />
-                {generated ? 'No report data' : 'Choose a period and generate the report'}
-              </div>
+              <PremiumEmpty
+                compact
+                icon={CalendarRange}
+                title={generated ? 'No report data' : 'Nothing generated yet'}
+                hint={generated ? 'Try a different period.' : 'Choose a period and generate the report.'}
+              />
             )}
           </CardContent>
         </Card>

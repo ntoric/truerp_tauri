@@ -37,6 +37,7 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { isSuperAdmin } from '@/lib/roles'
 import {
@@ -636,8 +637,8 @@ export default function NotificationCenterPage() {
           <TabsContent value="events" className="space-y-3">
             {events.length === 0 ? (
               <Card>
-                <CardContent className="py-8 text-center text-sm text-gray-500">
-                  No notification events yet. Create one to get started.
+                <CardContent className="p-4">
+                  <PremiumEmpty icon={Bell} title="No notification events yet" hint="Create one to get started." />
                 </CardContent>
               </Card>
             ) : (
@@ -970,7 +971,7 @@ export default function NotificationCenterPage() {
               </CardHeader>
               <CardContent>
                 {deliveries.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-gray-500">No deliveries recorded yet.</p>
+                  <PremiumEmpty compact icon={Send} title="No deliveries recorded yet" hint="Delivery attempts for this event will appear here." />
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">

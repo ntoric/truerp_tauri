@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Plus, DollarSign, Calendar, Download, Search, MoreVertical, Pencil, Trash2, Power, BarChart3, ChevronUp, ChevronDown, Wallet, History } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
@@ -957,8 +958,12 @@ export default function PayrollPage() {
                   ))}
                   {filteredPayrolls.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={14} className="text-center py-8 text-gray-500">
-                        {payrolls.length === 0 ? 'No payroll records found' : 'No payroll records match the selected filters.'}
+                      <TableCell colSpan={14} className="px-4 py-4">
+                        {payrolls.length === 0 ? (
+                          <PremiumEmpty compact icon={Wallet} title="No payroll records found" hint="Run payroll to create your first record." />
+                        ) : (
+                          <p className="py-6 text-center text-sm text-gray-500">No payroll records match the selected filters.</p>
+                        )}
                       </TableCell>
                     </TableRow>
                   )}
@@ -1474,7 +1479,7 @@ export default function PayrollPage() {
                 {paymentsLoading ? (
                   <p className="py-6 text-center text-sm text-gray-500">Loading payments...</p>
                 ) : payrollPayments.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-gray-500">No payments recorded yet.</p>
+                  <PremiumEmpty compact icon={History} title="No payments recorded yet" hint="Salary payments for this run will appear here." />
                 ) : (
                   <Table>
                     <TableHeader>

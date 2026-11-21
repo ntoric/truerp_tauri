@@ -35,6 +35,7 @@ import {
   Package,
   Wallet,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -528,11 +529,12 @@ export default function ProfitLossReportPage() {
                 </p>
               </>
             ) : (
-              <p className="py-10 text-center text-sm text-gray-500">
-                {generated
-                  ? 'No report data for this period.'
-                  : 'Choose a period and click Generate report to view results.'}
-              </p>
+              <PremiumEmpty
+                compact
+                icon={TrendingUp}
+                title={generated ? 'No report data for this period' : 'Nothing generated yet'}
+                hint={generated ? 'Try a different period.' : 'Choose a period and click Generate report to view results.'}
+              />
             )}
           </CardContent>
         </Card>

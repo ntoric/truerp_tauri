@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FileText, Calculator, FileCheck, FileX, Search, FileDigit, Truck, XCircle } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -194,7 +195,13 @@ export default function GSTPage() {
                       <TableCell className="text-right">{formatCurrency(r.igst)}</TableCell>
                     </TableRow>
                   ))}
-                  {gstr1.length === 0 && <TableRow><TableCell colSpan={8} className="text-center py-8 text-gray-500">No data</TableCell></TableRow>}
+                  {gstr1.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="px-4 py-4">
+                        <PremiumEmpty compact icon={FileText} title="No data" hint="No GSTR-1 entries for this period." />
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
               <PaginationControls
@@ -224,7 +231,13 @@ export default function GSTPage() {
                       <TableCell className="text-right">{formatCurrency(r.igst)}</TableCell>
                     </TableRow>
                   ))}
-                  {gstr2.length === 0 && <TableRow><TableCell colSpan={8} className="text-center py-8 text-gray-500">No data</TableCell></TableRow>}
+                  {gstr2.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="px-4 py-4">
+                        <PremiumEmpty compact icon={FileText} title="No data" hint="No GSTR-2 entries for this period." />
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
               <PaginationControls

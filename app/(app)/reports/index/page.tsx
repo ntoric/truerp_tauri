@@ -27,6 +27,7 @@ import {
   ReceiptText,
   type LucideIcon,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 
 const GROUP_ICONS: Record<string, LucideIcon> = {
   sales: TrendingUp,
@@ -222,9 +223,7 @@ export default function ReportsIndexPage() {
         </div>
 
         {visibleGroups.length === 0 && favouriteEntries.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-16 text-center">
-            <p className="text-sm text-gray-500">No reports match your search or filter.</p>
-          </div>
+          <PremiumEmpty icon={Search} title="No reports found" hint="No reports match your search or filter." />
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {favouriteEntries.length > 0 && (

@@ -21,6 +21,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import ProductItemCodeField from '@/components/ProductItemCodeField'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
 import { Package, Plus, Search, Trash2, Download, Upload, Printer, Edit, MoreVertical, Eye, Power, Loader2, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { asArray, cn, skuFromProductName } from '@/lib/utils'
@@ -1491,7 +1492,15 @@ export default function ProductsPage() {
                         onCheckedChange={() => handleSelectItem(p)}
                       />
                     </TableCell>
-                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <button
+                        type="button"
+                        className="font-medium text-blue-600 hover:underline text-left"
+                        onClick={() => handlePreviewProduct(p)}
+                      >
+                        {p.name}
+                      </button>
+                    </TableCell>
                     <TableCell>{p.sku}</TableCell>
                     <TableCell>{p.category}</TableCell>
                     <TableCell className="text-right">{formatCurrency(p.sale_price)}</TableCell>
@@ -1538,7 +1547,17 @@ export default function ProductsPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {products.length === 0 && <TableRow><TableCell colSpan={8} className="text-center py-8 text-gray-500">No products found</TableCell></TableRow>}
+                {products.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="px-4 py-4">
+                      <PremiumEmpty
+                        icon={Package}
+                        title="No products found"
+                        hint="Add products or services to start billing them."
+                      />
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
             <PaginationControls

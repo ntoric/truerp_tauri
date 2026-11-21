@@ -52,6 +52,7 @@ import {
   SlidersHorizontal,
   Download,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import {
@@ -823,8 +824,8 @@ export default function ReportsPage() {
                         ))}
                         {!categoryReport?.categories?.length && (
                           <TableRow>
-                            <TableCell colSpan={3} className="text-center text-gray-500">
-                              No category sales data yet
+                            <TableCell colSpan={3} className="px-4 py-4">
+                              <PremiumEmpty compact icon={Package} title="No category sales data yet" hint="Sales by category will appear here." />
                             </TableCell>
                           </TableRow>
                         )}
@@ -1074,7 +1075,9 @@ export default function ReportsPage() {
                         ))}
                         {!profitLoss?.income?.length && (
                           <TableRow>
-                            <TableCell colSpan={3} className="text-center text-gray-500">No income balances</TableCell>
+                            <TableCell colSpan={3} className="px-4 py-4">
+                              <PremiumEmpty compact icon={TrendingUp} title="No income balances" hint="Income accounts will appear here." />
+                            </TableCell>
                           </TableRow>
                         )}
                       </TableBody>
@@ -1106,7 +1109,9 @@ export default function ReportsPage() {
                         ))}
                         {!profitLoss?.expenses?.length && (
                           <TableRow>
-                            <TableCell colSpan={3} className="text-center text-gray-500">No expense balances</TableCell>
+                            <TableCell colSpan={3} className="px-4 py-4">
+                              <PremiumEmpty compact icon={Package} title="No expense balances" hint="Expense accounts will appear here." />
+                            </TableCell>
                           </TableRow>
                         )}
                       </TableBody>
@@ -1446,7 +1451,7 @@ export default function ReportsPage() {
                 </ReportPanel>
               </>
             ) : (
-              <p className="py-8 text-center text-gray-500">No tax data available</p>
+              <PremiumEmpty compact icon={FileBarChart} title="No tax data available" hint="Tax summaries will appear here once transactions are recorded." />
             )}
           </TabsContent>
 

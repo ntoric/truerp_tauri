@@ -90,9 +90,11 @@ interface StatusBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   tone?: StatusBadgeTone
   /** Raw status key (e.g. 'paid') — also rendered when no children are given. */
   status?: string
+  /** Hide the leading dot. */
+  hideDot?: boolean
 }
 
-function StatusBadge({ tone, status, className, children, ...props }: StatusBadgeProps) {
+function StatusBadge({ tone, status, hideDot, className, children, ...props }: StatusBadgeProps) {
   const resolved = tone || DEFAULT_STATUS_TONES[(status || '').toLowerCase()] || 'neutral'
   const styles = STATUS_BADGE_TONES[resolved]
   return (
@@ -104,7 +106,7 @@ function StatusBadge({ tone, status, className, children, ...props }: StatusBadg
       )}
       {...props}
     >
-      <span aria-hidden="true" className={cn('h-1.5 w-1.5 shrink-0 rounded-full', styles.dot)} />
+      {!hideDot && <span aria-hidden="true" className={cn('h-1.5 w-1.5 shrink-0 rounded-full', styles.dot)} />}
       {children ?? status}
     </span>
   )

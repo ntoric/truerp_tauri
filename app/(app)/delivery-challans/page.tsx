@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
@@ -17,7 +17,9 @@ import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
+import { isSuperAdmin } from '@/lib/roles'
 import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Truck } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -37,6 +39,8 @@ interface DeliveryChallan {
 
 export default function DeliveryChallansPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { user } = useAuth()
+  const canDelete = isSuperAdmin(user?.role)
   const [challans, setChallans] = useState<DeliveryChallan[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -280,12 +284,34 @@ export default function DeliveryChallansPage() {
                       <Button variant="outline" size="sm" onClick={handleBulkCancelChallans}>
                         Cancel
                       </Button>
-                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteChallans}>
-                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
-                      </Button>
+                      {canDelete && (
+                        <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteChallans}>
+                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
+                {filteredChallans.length === 0 ? (
+                  challans.length === 0 ? (
+                    <PremiumEmpty
+                      icon={Truck}
+                      title="No delivery challans yet"
+                      hint="Create your first delivery challan to track goods on their way to customers."
+                      action={
+                        <Link href="/delivery-challans/create">
+                          <Button size="sm">
+                            <Plus className="mr-1.5 h-4 w-4" /> New Delivery Challan
+                          </Button>
+                        </Link>
+                      }
+                    />
+                  ) : (
+                    <div className="py-10 text-center text-sm text-gray-500">
+                      No challans match the current filters.
+                    </div>
+                  )
+                ) : (
                 <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
@@ -360,16 +386,10 @@ export default function DeliveryChallansPage() {
                         </td>
                       </tr>
                     ))}
-                    {filteredChallans.length === 0 && (
-                      <tr>
-                        <td colSpan={8} className="py-8 text-center text-gray-500">
-                          No delivery challans found
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
                 </div>
+                )}
               </>
             )}
             {!loading && (

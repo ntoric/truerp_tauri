@@ -18,7 +18,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
-import { Plus, Search, Tags, Printer as ThermalPrinter, MoreVertical, Trash2, Download, Eye, X, Pencil } from 'lucide-react'
+import { Plus, Search, Tags, Printer as ThermalPrinter, MoreVertical, Trash2, Download, Eye, X, Pencil, Receipt } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import ThermalPrintModal from '@/components/ThermalPrintModal'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
@@ -488,8 +489,12 @@ export default function ExpensesPage() {
                     ))}
                     {expenses.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-gray-500">
-                          No expenses recorded yet
+                        <td colSpan={7} className="px-4 py-4">
+                          <PremiumEmpty
+                            icon={Receipt}
+                            title="No expenses recorded yet"
+                            hint="Log your business expenses to keep reports accurate."
+                          />
                         </td>
                       </tr>
                     )}

@@ -28,6 +28,7 @@ import {
   DatabaseBackup, Upload, FileArchive, FileUp, FileDown, AlertTriangle, Store,
   Database, Download, Trash2, CloudUpload, Palette,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { getServerTime, type ServerTimeInfo } from '@/lib/dailyReport'
 import { downloadBlob } from '@/lib/accountingExport'
 import BrandLoader from '@/components/BrandLoader'
@@ -534,6 +535,7 @@ interface DeveloperSettings {
   sendgrid_sms_api_key?: string
   timezone: string
   async_daily_profit: boolean
+  bulk_download_limit: number
 }
 
 // GET/PUT /api/v1/developer-settings/db-maintenance payload shape.
@@ -655,6 +657,7 @@ export default function DeveloperSettingsPage() {
     aws_region: '',
     timezone: '',
     async_daily_profit: false,
+    bulk_download_limit: 25,
   })
   const [pageFeatures, setPageFeatures] = useState<PageFeaturesMap>(defaultPageFeatures)
   const [aiSettings, setAiSettings] = useState<AiBusinessSettings>({
@@ -1323,6 +1326,42 @@ export default function DeveloperSettingsPage() {
                       setSettings({ ...settings, async_daily_profit: checked })
                     }
                   />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileDown className="h-5 w-5" />
+                  Bulk Downloads
+                </CardTitle>
+                <CardDescription>
+                  Maximum number of invoices that can be downloaded at once as a
+                  ZIP of PDFs from the Sales Invoices and Purchase Invoices
+                  pages.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 max-w-xs">
+                  <Label>Maximum invoices per download</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={settings.bulk_download_limit}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        bulk_download_limit: Math.max(
+                          0,
+                          Math.floor(Number(e.target.value)) || 0
+                        ),
+                      })
+                    }
+                  />
+                  <p className="text-xs text-gray-500">
+                    Default is 25. Leave at 0 or blank to use the default.
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -2307,7 +2346,7 @@ export default function DeveloperSettingsPage() {
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-gray-900">Recent backups</p>
                   {(dbBackupInfo?.records ?? []).length === 0 ? (
-                    <p className="text-xs text-gray-500">No backups yet.</p>
+                    <PremiumEmpty compact icon={DatabaseBackup} title="No backups yet" hint="Database backups you create will appear here." />
                   ) : (
                     <div className="divide-y rounded-md border">
                       {(dbBackupInfo?.records ?? []).map((rec) => (

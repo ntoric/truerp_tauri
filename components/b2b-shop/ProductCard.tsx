@@ -9,6 +9,7 @@ import QtyStepper from './QtyStepper'
 interface ProductCardProps {
   product: PublicProduct
   showStock: boolean
+  showPrice: boolean
   cartQty: number
   /** Opens the product's detail page. */
   onOpen?: () => void
@@ -31,7 +32,7 @@ export function ProductImage({ src, name, className }: { src?: string; name: str
   )
 }
 
-export default function ProductCard({ product, showStock, cartQty, onOpen, onAdd, onChangeQty, onRemove, onSetQty }: ProductCardProps) {
+export default function ProductCard({ product, showStock, showPrice, cartQty, onOpen, onAdd, onChangeQty, onRemove, onSetQty }: ProductCardProps) {
   const saving = product.mrp > product.price ? Math.round(((product.mrp - product.price) / product.mrp) * 100) : 0
   const orderable = product.in_stock && (product.max_qty === undefined || product.max_qty >= product.min_order_qty)
   const lowStock = showStock && product.stock_qty !== undefined && product.stock_qty > 0 && product.stock_qty <= product.min_order_qty * 3
@@ -57,7 +58,7 @@ export default function ProductCard({ product, showStock, cartQty, onOpen, onAdd
               <Star className="h-3 w-3 fill-current" /> Featured
             </span>
           )}
-          {saving >= 1 && (
+          {showPrice && saving >= 1 && (
             <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white">{saving}% below MRP</span>
           )}
         </div>
@@ -82,11 +83,13 @@ export default function ProductCard({ product, showStock, cartQty, onOpen, onAdd
         {product.description && <p className="line-clamp-2 text-xs text-slate-500">{product.description}</p>}
 
         <div className="mt-auto space-y-1 pt-1">
-          <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-slate-900">{formatCurrency(product.price)}</span>
-            <span className="text-xs text-slate-500">/ {product.unit || 'unit'}</span>
-            {saving >= 1 && <span className="text-xs text-slate-400 line-through">{formatCurrency(product.mrp)}</span>}
-          </div>
+          {showPrice && (
+            <div className="flex items-baseline gap-2">
+              <span className="text-lg font-bold text-slate-900">{formatCurrency(product.price)}</span>
+              <span className="text-xs text-slate-500">/ {product.unit || 'unit'}</span>
+              {saving >= 1 && <span className="text-xs text-slate-400 line-through">{formatCurrency(product.mrp)}</span>}
+            </div>
+          )}
           <div className="flex flex-wrap gap-x-3 text-[11px] text-slate-500">
             {product.min_order_qty > 1 && (
               <span>
@@ -116,7 +119,7 @@ export default function ProductCard({ product, showStock, cartQty, onOpen, onAdd
                   type="button"
                   onClick={() => onSetQty?.(q)}
                   aria-pressed={active}
-                  title={`${formatQty(q)} ${unit} · ${formatCurrency(q * product.price)}`}
+                  title={showPrice ? `${formatQty(q)} ${unit} · ${formatCurrency(q * product.price)}` : `${formatQty(q)} ${unit}`}
                   className={cn(
                     'rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums transition-colors',
                     active
@@ -141,7 +144,7 @@ export default function ProductCard({ product, showStock, cartQty, onOpen, onAdd
               onBelowMin={onRemove}
               size="sm"
             />
-            <span className="text-sm font-semibold text-slate-700">{formatCurrency(cartQty * product.price)}</span>
+            {showPrice && <span className="text-sm font-semibold text-slate-700">{formatCurrency(cartQty * product.price)}</span>}
           </div>
         ) : (
           <Button size="sm" className="mt-1 w-full" onClick={onAdd} disabled={!orderable}>

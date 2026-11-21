@@ -21,7 +21,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Pencil, Trash2, Search, MoreVertical, Power, Download, Wallet, Sparkles } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, MoreVertical, Power, Download, Wallet, Sparkles, Users } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
@@ -697,7 +698,17 @@ export default function StaffPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {filteredStaffs.length === 0 && <TableRow><TableCell colSpan={11} className="text-center py-8 text-gray-500">No staff found</TableCell></TableRow>}
+                {filteredStaffs.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={11} className="px-4 py-4">
+                      <PremiumEmpty
+                        icon={Users}
+                        title="No staff found"
+                        hint="Add team members to manage attendance, payroll and extras."
+                      />
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
             <PaginationControls

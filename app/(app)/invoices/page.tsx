@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import Link from 'next/link'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
@@ -9,9 +9,8 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
 import PageHeader from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
-import { StatusBadge } from '@/components/ui/badge'
+import { Badge, StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,18 +18,24 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { formatPaymentMethod, formatPaymentSplitsLabel } from '@/lib/paymentSplits'
 import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
-import { downloadInvoicePdf } from '@/lib/printDocument'
+import {
+  DEFAULT_BULK_DOWNLOAD_LIMIT,
+  downloadInvoicePdf,
+  downloadInvoicePdfsZip,
+  fetchBulkDownloadLimit,
+} from '@/lib/printDocument'
+import { runWithExportProgress } from '@/lib/exportProgress'
 import { displayAdditionalChargeRows } from '@/lib/additionalCharges'
-import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Upload, Loader2, Package, BarChart3, ChevronUp, ChevronDown, ArrowUpDown, Gift } from 'lucide-react'
+import { Plus, Search, FileText, Download, MoreVertical, Edit, X, Trash2, Eye, Loader2, Package, BarChart3, ChevronUp, ChevronDown, ArrowUpDown, Gift } from 'lucide-react'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
 import BrandLoader from '@/components/BrandLoader'
@@ -112,30 +117,6 @@ function SortableHeader({
   )
 }
 
-const INVOICE_IMPORT_HEADERS = [
-  'Invoice Number',
-  'Date',
-  'Party Name',
-  'Due Date',
-  'Status',
-  'Payment Mode',
-  'Amount Paid',
-  'Is Inter State',
-  'Notes',
-  'Item Description',
-  'Quantity',
-  'Unit',
-  'Unit Price',
-  'Discount %',
-  'Tax Rate %',
-]
-
-const INVOICE_IMPORT_SAMPLE_ROWS: (string | number)[][] = [
-  ['INV-001', '2026-06-07', 'Acme Corp', '2026-07-07', 'sent', 'cash', 0, 'false', '', 'Widget A', 2, 'pcs', 500, 0, 18],
-  ['INV-001', '2026-06-07', 'Acme Corp', '2026-07-07', 'sent', 'cash', 0, 'false', '', 'Widget B', 1, 'pcs', 300, 5, 18],
-  ['', '2026-06-08', 'Test Customer', '', 'draft', '', 0, 'false', '', 'Consulting Service', 1, 'hrs', 5000, 0, 18],
-]
-
 export default function InvoicesPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
   const { user } = useAuth()
@@ -160,14 +141,10 @@ export default function InvoicesPage() {
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [previewData, setPreviewData] = useState<any>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
-  const [showImportDialog, setShowImportDialog] = useState(false)
   const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
-  const [importFile, setImportFile] = useState<File | null>(null)
-  const [importing, setImporting] = useState(false)
-  const [importedCount, setImportedCount] = useState<number | null>(null)
-  const [importErrors, setImportErrors] = useState<string[]>([])
-  const importFileRef = useRef<HTMLInputElement>(null)
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set())
+  const [bulkDownloading, setBulkDownloading] = useState(false)
+  const [bulkLimit, setBulkLimit] = useState(DEFAULT_BULK_DOWNLOAD_LIMIT)
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
 
   useEffect(() => {
@@ -181,6 +158,13 @@ export default function InvoicesPage() {
   useEffect(() => {
     fetchLoyaltySettings()
   }, [])
+
+  // Bulk download cap is configurable in Developer Settings (super admin only);
+  // everyone else uses the default and the backend enforces the limit anyway.
+  useEffect(() => {
+    if (!isSuperAdmin(user?.role)) return
+    fetchBulkDownloadLimit().then(setBulkLimit).catch(() => {})
+  }, [user?.role])
 
   // Debounce the search box so each keystroke doesn't hit the API.
   useEffect(() => {
@@ -314,70 +298,6 @@ export default function InvoicesPage() {
     }
   }
 
-  const handleDownloadImportTemplate = () => {
-    void downloadCsv(`sales_invoices_import_template_${accountingExportDateStamp()}.csv`, [
-      INVOICE_IMPORT_HEADERS,
-      ...INVOICE_IMPORT_SAMPLE_ROWS,
-    ], { label: 'Exporting import template' })
-  }
-
-  const resetImportDialog = () => {
-    setImportFile(null)
-    setImportedCount(null)
-    setImportErrors([])
-    if (importFileRef.current) importFileRef.current.value = ''
-  }
-
-  const handleImportDialogChange = (open: boolean) => {
-    setShowImportDialog(open)
-    if (!open) resetImportDialog()
-  }
-
-  const handleImportInvoices = async () => {
-    if (!importFile) {
-      notifyError('Please select a CSV file to import')
-      return
-    }
-
-    setImporting(true)
-    setImportedCount(null)
-    setImportErrors([])
-
-    try {
-      const formData = new FormData()
-      formData.append('file', importFile)
-
-      const res = await apiFetch('/invoices/import/csv', { method: 'POST', body: formData })
-      const data = await res.json()
-
-      if (res.ok) {
-        const count = data.imported ?? 0
-        const errors: string[] = data.errors ?? []
-        setImportedCount(count)
-        setImportErrors(errors)
-
-        if (count > 0) {
-          fetchInvoices()
-          fetchStats()
-          notifySuccess(`Successfully imported ${count} invoice${count === 1 ? '' : 's'}`)
-        }
-
-        if (count === 0 && errors.length > 0) {
-          notifyError('No invoices were imported. Please review the errors below.')
-        } else if (errors.length > 0) {
-          notifyError(`${errors.length} invoice${errors.length === 1 ? '' : 's'} could not be imported`)
-        }
-      } else {
-        notifyError(data.error || 'Import failed')
-      }
-    } catch (err) {
-      console.error(err)
-      notifyError('Import failed')
-    } finally {
-      setImporting(false)
-    }
-  }
-
   const handleCancelInvoice = async (id: string) => {
     const reason = await requestCancelReason({
       title: 'Cancel invoice?',
@@ -497,6 +417,39 @@ export default function InvoicesPage() {
     }
   }
 
+  const handleBulkDownloadPdfs = async () => {
+    const selected = invoices.filter((inv) => selectedInvoices.has(inv.id))
+    if (selected.length === 0) {
+      notifyError('No invoices selected')
+      return
+    }
+    if (selected.length > bulkLimit) {
+      notifyError(`You can download up to ${bulkLimit} invoices at once`)
+      return
+    }
+    if (bulkDownloading) return
+    setBulkDownloading(true)
+    try {
+      if (selected.length === 1) {
+        await downloadInvoicePdf(selected[0].id, { invoiceNumber: selected[0].invoice_number })
+        notifySuccess('Invoice PDF downloaded')
+        return
+      }
+      await runWithExportProgress('Downloading invoice PDFs', async (update) => {
+        update(10, 'Requesting PDFs from backend…')
+        const blob = await downloadInvoicePdfsZip(selected.map((inv) => inv.id))
+        update(75, 'Saving ZIP…')
+        await downloadBlob(`invoices_${accountingExportDateStamp()}.zip`, blob, { skipProgress: true })
+        update(100, 'Saved')
+      })
+      notifySuccess(`Downloaded ${selected.length} invoice PDFs`)
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to download invoice PDFs')
+    } finally {
+      setBulkDownloading(false)
+    }
+  }
+
   const handleBulkCancelInvoices = async () => {
     const eligible = invoices.filter(
       inv => selectedInvoices.has(inv.id) && inv.status !== 'cancelled' && (inv.status !== 'paid' || canDelete)
@@ -576,14 +529,8 @@ export default function InvoicesPage() {
                 Stats
                 {showStats ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
               </Button>
-              <Link href="/invoices/templates">
-                <Button variant="outline"><FileText className="mr-2 h-4 w-4" /> Templates</Button>
-              </Link>
               <Button variant="outline" onClick={() => setShowBulkCreateProducts(true)}>
                 <Package className="mr-2 h-4 w-4" /> Bulk Create Products
-              </Button>
-              <Button variant="outline" onClick={() => setShowImportDialog(true)}>
-                <Upload className="mr-2 h-4 w-4" /> Bulk Import
               </Button>
               <Button variant="outline" onClick={handleExport}>
                 <Download className="mr-2 h-4 w-4" /> Export
@@ -656,6 +603,25 @@ export default function InvoicesPage() {
                     <div className="ml-auto flex gap-2">
                       <Button variant="outline" size="sm" onClick={handleBulkExportInvoices}>
                         <Download className="mr-1 h-3.5 w-3.5" /> Export
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleBulkDownloadPdfs()}
+                        disabled={bulkDownloading || selectedInvoices.size > bulkLimit}
+                        title={
+                          selectedInvoices.size > bulkLimit
+                            ? `You can download up to ${bulkLimit} invoices at once`
+                            : 'Download selected invoices as a ZIP of PDFs'
+                        }
+                      >
+                        {bulkDownloading ? (
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <FileText className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        Download Invoices
+                        <Badge variant="secondary" className="ml-1">{selectedInvoices.size}</Badge>
                       </Button>
                       <Button variant="outline" size="sm" onClick={handleBulkCancelInvoices}>
                         Cancel
@@ -770,8 +736,19 @@ export default function InvoicesPage() {
                     ))}
                     {invoices.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="py-8 text-center text-gray-500">
-                          No invoices found
+                        <td colSpan={9} className="px-4 py-4">
+                          <PremiumEmpty
+                            icon={FileText}
+                            title="No invoices yet"
+                            hint="Create your first invoice to start tracking sales."
+                            action={
+                              <Link href="/invoices/create">
+                                <Button size="sm">
+                                  <Plus className="mr-1.5 h-4 w-4" /> New Invoice
+                                </Button>
+                              </Link>
+                            }
+                          />
                         </td>
                       </tr>
                     )}
@@ -1046,54 +1023,6 @@ export default function InvoicesPage() {
             </div>
           </div>
         )}
-
-      <Dialog open={showImportDialog} onOpenChange={handleImportDialogChange}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Bulk Import Sales Invoices</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              Upload a CSV file to import sales invoices. Use the same invoice number on multiple rows to add multiple line items to one invoice. Party names must already exist in your contacts.
-            </p>
-            <Button variant="outline" onClick={handleDownloadImportTemplate} className="gap-2 w-full sm:w-auto">
-              <Download className="h-4 w-4" />
-              Download Import Template
-            </Button>
-            <div className="space-y-2">
-              <Label htmlFor="invoice_import_file">Import file</Label>
-              <Input
-                id="invoice_import_file"
-                ref={importFileRef}
-                type="file"
-                accept=".csv"
-                onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-              />
-              {importFile && (
-                <p className="text-sm text-gray-500">Selected: {importFile.name}</p>
-              )}
-            </div>
-            {importedCount !== null && (
-              <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-                Imported {importedCount} invoice{importedCount === 1 ? '' : 's'} successfully.
-              </div>
-            )}
-            {importErrors.length > 0 && (
-              <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                {importErrors.map((error, index) => (
-                  <p key={`${error}-${index}`}>{error}</p>
-                ))}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => handleImportDialogChange(false)}>Cancel</Button>
-            <Button onClick={handleImportInvoices} disabled={importing || !importFile}>
-              {importing ? 'Importing...' : 'Import Invoices'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <BulkCreateProductsDialog
         open={showBulkCreateProducts}

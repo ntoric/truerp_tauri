@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
@@ -15,7 +15,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, MoreVertical, Edit, Trash2, CheckCircle } from 'lucide-react'
+import { isSuperAdmin } from '@/lib/roles'
+import { Plus, Search, MoreVertical, Edit, Trash2, CheckCircle, RotateCcw } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
@@ -34,6 +36,8 @@ interface SalesReturn {
 
 export default function SalesReturnsPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { user } = useAuth()
+  const canDelete = isSuperAdmin(user?.role)
   const [returns, setReturns] = useState<SalesReturn[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -214,9 +218,11 @@ export default function SalesReturnsPage() {
                       <Button variant="outline" size="sm" onClick={handleBulkProcessReturns}>
                         <CheckCircle className="mr-1 h-3.5 w-3.5" /> Process
                       </Button>
-                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteReturns}>
-                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
-                      </Button>
+                      {canDelete && (
+                        <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteReturns}>
+                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -296,8 +302,12 @@ export default function SalesReturnsPage() {
                     ))}
                     {filteredReturns.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="py-8 text-center text-gray-500">
-                          No sales returns found
+                        <td colSpan={8} className="px-4 py-4">
+                          <PremiumEmpty
+                            icon={RotateCcw}
+                            title="No sales returns found"
+                            hint="Returns recorded against invoices will appear here."
+                          />
                         </td>
                       </tr>
                     )}

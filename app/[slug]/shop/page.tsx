@@ -258,6 +258,7 @@ function Storefront() {
             slug={slug}
             productId={productId}
             showStock={shop.show_stock}
+            showPrice={shop.show_price}
             qtyInCart={(id) => qtyById.get(id) || 0}
             onSetCartQty={setCartQty}
             onRemove={removeFromCart}
@@ -319,6 +320,7 @@ function Storefront() {
                     key={p.id}
                     product={p}
                     showStock={shop.show_stock}
+                    showPrice={shop.show_price}
                     cartQty={qtyById.get(p.id) || 0}
                     onOpen={() => openProduct(p.id)}
                     onAdd={() => addToCart(p)}

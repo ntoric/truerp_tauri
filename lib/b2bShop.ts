@@ -16,6 +16,7 @@ export interface B2BShopSettings {
   contact_email: string
   min_order_value: number
   show_stock: boolean
+  show_price: boolean
   allow_backorders: boolean
   hide_out_of_stock: boolean
   allow_new_buyers: boolean
@@ -108,6 +109,7 @@ export interface PublicShop {
   contact_email: string
   min_order_value: number
   show_stock: boolean
+  show_price: boolean
   allow_backorders: boolean
   allow_new_buyers: boolean
   require_delivery_address: boolean
