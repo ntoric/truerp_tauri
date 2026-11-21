@@ -122,8 +122,10 @@ export interface PublicProduct {
   name: string
   category: string
   unit: string
-  price: number
-  mrp: number
+  /** Omitted when the shop hides prices. */
+  price?: number
+  /** Omitted when the shop hides prices. */
+  mrp?: number
   min_order_qty: number
   is_featured: boolean
   description: string
@@ -231,7 +233,7 @@ export const shopApi = {
   searchBuyers: (slug: string, q: string) =>
     shopRequest<BuyerMatch[]>(slug, `/buyers?q=${encodeURIComponent(q)}`),
   placeOrder: (slug: string, body: unknown) =>
-    shopRequest<{ order_number: string; party_id: string; buyer_match: string; verified: boolean; status: string; total_amount: number; item_count: number; buyer_name: string }>(
+    shopRequest<{ order_number: string; party_id: string; buyer_match: string; verified: boolean; status: string; total_amount?: number; item_count: number; buyer_name: string }>(
       slug,
       '/orders',
       { method: 'POST', body: JSON.stringify(body) }
@@ -241,13 +243,13 @@ export const shopApi = {
       order_number: string
       status: B2BOrderStatus
       buyer_name: string
-      total_amount: number
+      total_amount?: number
       item_count: number
       shipping_address: string
       city: string
       created_at: string
       timeline: { status: B2BOrderStatus; note?: string; at: string }[]
-      items: { name: string; unit: string; quantity: number; unit_price: number; total: number }[]
+      items: { name: string; unit: string; quantity: number; unit_price?: number; total?: number }[]
       invoiced: boolean
     }>(slug, `/orders/${encodeURIComponent(orderNumber)}?phone=${encodeURIComponent(phone)}`),
 }

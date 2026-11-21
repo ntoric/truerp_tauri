@@ -33,7 +33,9 @@ export function ProductImage({ src, name, className }: { src?: string; name: str
 }
 
 export default function ProductCard({ product, showStock, showPrice, cartQty, onOpen, onAdd, onChangeQty, onRemove, onSetQty }: ProductCardProps) {
-  const saving = product.mrp > product.price ? Math.round(((product.mrp - product.price) / product.mrp) * 100) : 0
+  const price = product.price ?? 0
+  const mrp = product.mrp ?? 0
+  const saving = mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0
   const orderable = product.in_stock && (product.max_qty === undefined || product.max_qty >= product.min_order_qty)
   const lowStock = showStock && product.stock_qty !== undefined && product.stock_qty > 0 && product.stock_qty <= product.min_order_qty * 3
   const bulkQtys = onSetQty && orderable ? bulkQtySuggestions(product) : []
@@ -85,9 +87,9 @@ export default function ProductCard({ product, showStock, showPrice, cartQty, on
         <div className="mt-auto space-y-1 pt-1">
           {showPrice && (
             <div className="flex items-baseline gap-2">
-              <span className="text-lg font-bold text-slate-900">{formatCurrency(product.price)}</span>
+              <span className="text-lg font-bold text-slate-900">{formatCurrency(price)}</span>
               <span className="text-xs text-slate-500">/ {product.unit || 'unit'}</span>
-              {saving >= 1 && <span className="text-xs text-slate-400 line-through">{formatCurrency(product.mrp)}</span>}
+              {saving >= 1 && <span className="text-xs text-slate-400 line-through">{formatCurrency(mrp)}</span>}
             </div>
           )}
           <div className="flex flex-wrap gap-x-3 text-[11px] text-slate-500">
@@ -119,7 +121,7 @@ export default function ProductCard({ product, showStock, showPrice, cartQty, on
                   type="button"
                   onClick={() => onSetQty?.(q)}
                   aria-pressed={active}
-                  title={showPrice ? `${formatQty(q)} ${unit} · ${formatCurrency(q * product.price)}` : `${formatQty(q)} ${unit}`}
+                  title={showPrice ? `${formatQty(q)} ${unit} · ${formatCurrency(q * price)}` : `${formatQty(q)} ${unit}`}
                   className={cn(
                     'rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums transition-colors',
                     active
@@ -144,7 +146,7 @@ export default function ProductCard({ product, showStock, showPrice, cartQty, on
               onBelowMin={onRemove}
               size="sm"
             />
-            {showPrice && <span className="text-sm font-semibold text-slate-700">{formatCurrency(cartQty * product.price)}</span>}
+            {showPrice && <span className="text-sm font-semibold text-slate-700">{formatCurrency(cartQty * price)}</span>}
           </div>
         ) : (
           <Button size="sm" className="mt-1 w-full" onClick={onAdd} disabled={!orderable}>

@@ -511,7 +511,7 @@ export default function B2BShopManagerPage() {
               />
               <ToggleRow
                 label="Show prices"
-                hint="Buyers see wholesale prices on product cards."
+                hint="Buyers see wholesale prices and order totals on the storefront."
                 checked={settings.show_price}
                 onChange={(v) => setSettings({ ...settings, show_price: v })}
               />

@@ -13,15 +13,16 @@ interface CartPanelProps {
   onClose: () => void
   lines: CartLine[]
   minOrderValue: number
+  showPrice: boolean
   onChangeQty: (productId: string, qty: number) => void
   onRemove: (productId: string) => void
   onClear: () => void
   onCheckout: () => void
 }
 
-export default function CartPanel({ open, onClose, lines, minOrderValue, onChangeQty, onRemove, onClear, onCheckout }: CartPanelProps) {
-  const total = lines.reduce((sum, l) => sum + l.quantity * l.product.price, 0)
-  const shortBy = minOrderValue > 0 ? Math.max(0, minOrderValue - total) : 0
+export default function CartPanel({ open, onClose, lines, minOrderValue, showPrice, onChangeQty, onRemove, onClear, onCheckout }: CartPanelProps) {
+  const total = showPrice ? lines.reduce((sum, l) => sum + l.quantity * (l.product.price ?? 0), 0) : 0
+  const shortBy = showPrice && minOrderValue > 0 ? Math.max(0, minOrderValue - total) : 0
 
   useEffect(() => {
     if (!open) return
@@ -87,7 +88,8 @@ export default function CartPanel({ open, onClose, lines, minOrderValue, onChang
                     </button>
                   </div>
                   <p className="text-xs text-slate-500">
-                    {formatCurrency(product.price)} / {product.unit}
+                    {showPrice && product.price !== undefined ? `${formatCurrency(product.price)} / ` : ''}
+                    {product.unit}
                     {product.min_order_qty > 1 && ` · min ${formatQty(product.min_order_qty)}`}
                   </p>
                   <div className="flex items-center justify-between">
@@ -99,7 +101,7 @@ export default function CartPanel({ open, onClose, lines, minOrderValue, onChang
                       onChange={(q) => onChangeQty(product.id, q)}
                       onBelowMin={() => onRemove(product.id)}
                     />
-                    <span className="text-sm font-semibold tabular-nums">{formatCurrency(quantity * product.price)}</span>
+                    {showPrice && <span className="text-sm font-semibold tabular-nums">{formatCurrency(quantity * (product.price ?? 0))}</span>}
                   </div>
                 </div>
               </li>
@@ -108,10 +110,12 @@ export default function CartPanel({ open, onClose, lines, minOrderValue, onChang
         )}
 
         <footer className="space-y-3 border-t bg-slate-50 px-4 py-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-600">Order total</span>
-            <span className="text-xl font-bold tabular-nums">{formatCurrency(total)}</span>
-          </div>
+          {showPrice && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-600">Order total</span>
+              <span className="text-xl font-bold tabular-nums">{formatCurrency(total)}</span>
+            </div>
+          )}
           {shortBy > 0 && lines.length > 0 && (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
               Minimum order value is {formatCurrency(minOrderValue)}. Add {formatCurrency(shortBy)} more to check out.

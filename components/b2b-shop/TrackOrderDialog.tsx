@@ -16,11 +16,12 @@ interface TrackOrderDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   slug: string
+  showPrice: boolean
   initialOrderNumber?: string
   initialPhone?: string
 }
 
-export default function TrackOrderDialog({ open, onOpenChange, slug, initialOrderNumber = '', initialPhone = '' }: TrackOrderDialogProps) {
+export default function TrackOrderDialog({ open, onOpenChange, slug, showPrice, initialOrderNumber = '', initialPhone = '' }: TrackOrderDialogProps) {
   const [orderNumber, setOrderNumber] = useState(initialOrderNumber)
   const [phone, setPhone] = useState(initialPhone)
   const [loading, setLoading] = useState(false)
@@ -148,14 +149,16 @@ export default function TrackOrderDialog({ open, onOpenChange, slug, initialOrde
                     <span className="truncate">
                       {it.name} <span className="text-slate-400">× {formatQty(it.quantity)} {it.unit}</span>
                     </span>
-                    <span className="tabular-nums">{formatCurrency(it.total)}</span>
+                    {showPrice && <span className="tabular-nums">{formatCurrency(it.total ?? 0)}</span>}
                   </li>
                 ))}
               </ul>
-              <div className="flex justify-between border-t bg-slate-50 px-3 py-2 text-sm font-semibold">
-                <span>Total</span>
-                <span className="tabular-nums">{formatCurrency(order.total_amount)}</span>
-              </div>
+              {showPrice && order.total_amount !== undefined && (
+                <div className="flex justify-between border-t bg-slate-50 px-3 py-2 text-sm font-semibold">
+                  <span>Total</span>
+                  <span className="tabular-nums">{formatCurrency(order.total_amount)}</span>
+                </div>
+              )}
             </div>
             {order.invoiced && <p className="text-xs text-emerald-700">An invoice has been raised for this order.</p>}
           </div>

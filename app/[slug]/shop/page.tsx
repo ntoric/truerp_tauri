@@ -86,7 +86,7 @@ function Storefront() {
   const [trackPrefill, setTrackPrefill] = useState({ order: '', phone: '' })
   const [placed, setPlaced] = useState<{
     order_number: string
-    total_amount: number
+    total_amount?: number
     phone: string
   } | null>(null)
   const requestSeq = useRef(0)
@@ -155,7 +155,7 @@ function Storefront() {
   }, [shop, fetchProducts])
 
   const qtyById = useMemo(() => new Map(cart.map((l) => [l.product.id, l.quantity])), [cart])
-  const cartTotal = cart.reduce((s, l) => s + l.quantity * l.product.price, 0)
+  const cartTotal = cart.reduce((s, l) => s + l.quantity * (l.product.price ?? 0), 0)
   const cartCount = cart.length
 
   const addToCart = (p: PublicProduct) =>
@@ -370,7 +370,7 @@ function Storefront() {
             <span>
               {cartCount} item{cartCount === 1 ? '' : 's'} in cart
             </span>
-            <span className="font-bold">{formatCurrency(cartTotal)} →</span>
+            <span className="font-bold">{shop.show_price ? `${formatCurrency(cartTotal)} ` : ''}→</span>
           </Button>
         </div>
       )}
@@ -380,6 +380,7 @@ function Storefront() {
         onClose={() => setCartOpen(false)}
         lines={cart}
         minOrderValue={shop.min_order_value}
+        showPrice={shop.show_price}
         onChangeQty={setQty}
         onRemove={removeFromCart}
         onClear={() => setCart([])}
@@ -406,6 +407,7 @@ function Storefront() {
         open={trackOpen}
         onOpenChange={setTrackOpen}
         slug={slug}
+        showPrice={shop.show_price}
         initialOrderNumber={trackPrefill.order}
         initialPhone={trackPrefill.phone}
       />
@@ -421,7 +423,9 @@ function Storefront() {
             <div className="rounded-lg bg-slate-50 py-3">
               <p className="text-xs uppercase tracking-wide text-slate-500">Order number</p>
               <p className="text-2xl font-bold tracking-wide">{placed.order_number}</p>
-              <p className="text-sm text-slate-600">{formatCurrency(placed.total_amount)}</p>
+              {shop.show_price && placed.total_amount !== undefined && (
+                <p className="text-sm text-slate-600">{formatCurrency(placed.total_amount)}</p>
+              )}
             </div>
           )}
           <div className="flex flex-col gap-2">

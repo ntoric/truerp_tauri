@@ -30,7 +30,7 @@ interface CheckoutDialogProps {
   onOpenChange: (open: boolean) => void
   shop: PublicShop
   lines: CartLine[]
-  onPlaced: (result: { order_number: string; total_amount: number; phone: string }) => void
+  onPlaced: (result: { order_number: string; total_amount?: number; phone: string }) => void
   /** Called when the server rejects the cart (stock/listing changed). */
   onCartStale: () => void
 }
@@ -67,7 +67,8 @@ export default function CheckoutDialog({ open, onOpenChange, shop, lines, onPlac
   const isIndividual = business.buyer_type === 'individual'
   // Older servers don't send the flag; treat it as required.
   const addressRequired = shop.require_delivery_address !== false
-  const total = useMemo(() => lines.reduce((s, l) => s + l.quantity * l.product.price, 0), [lines])
+  const showPrice = shop.show_price
+  const total = useMemo(() => lines.reduce((s, l) => s + l.quantity * (l.product.price ?? 0), 0), [lines])
 
   // Start from the business picked in the shop header each time the dialog opens.
   useEffect(() => {
@@ -193,7 +194,8 @@ export default function CheckoutDialog({ open, onOpenChange, shop, lines, onPlac
         <DialogHeader>
           <DialogTitle>Place your order</DialogTitle>
           <DialogDescription>
-            {lines.length} product{lines.length === 1 ? '' : 's'} · {formatCurrency(total)}. {shop.name} will confirm availability and send
+            {lines.length} product{lines.length === 1 ? '' : 's'}
+            {showPrice && ` · ${formatCurrency(total)}`}. {shop.name} will confirm availability and send
             the invoice.
           </DialogDescription>
         </DialogHeader>
@@ -445,14 +447,16 @@ export default function CheckoutDialog({ open, onOpenChange, shop, lines, onPlac
                     × {formatQty(l.quantity)} {l.product.unit}
                   </span>
                 </span>
-                <span className="tabular-nums">{formatCurrency(l.quantity * l.product.price)}</span>
+                {showPrice && <span className="tabular-nums">{formatCurrency(l.quantity * (l.product.price ?? 0))}</span>}
               </li>
             ))}
           </ul>
-          <div className="flex justify-between border-t pt-2 text-base font-semibold">
-            <span>Total</span>
-            <span className="tabular-nums">{formatCurrency(total)}</span>
-          </div>
+          {showPrice && (
+            <div className="flex justify-between border-t pt-2 text-base font-semibold">
+              <span>Total</span>
+              <span className="tabular-nums">{formatCurrency(total)}</span>
+            </div>
+          )}
           {shop.terms && (
             <details className="text-xs text-slate-500">
               <summary className="cursor-pointer">Terms of sale</summary>
@@ -469,7 +473,7 @@ export default function CheckoutDialog({ open, onOpenChange, shop, lines, onPlac
           </Button>
           <Button onClick={submit} disabled={submitting || lines.length === 0}>
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Place order · {formatCurrency(total)}
+            Place order{showPrice ? ` · ${formatCurrency(total)}` : ''}
           </Button>
         </div>
       </DialogContent>

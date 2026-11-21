@@ -96,7 +96,9 @@ export default function ProductDetail({
   const images = detail.images.length ? detail.images : p.image_url ? [p.image_url] : []
   const inCart = qtyInCart(p.id)
   const orderable = p.in_stock && (p.max_qty === undefined || p.max_qty >= p.min_order_qty)
-  const saving = p.mrp > p.price ? Math.round(((p.mrp - p.price) / p.mrp) * 100) : 0
+  const price = p.price ?? 0
+  const mrp = p.mrp ?? 0
+  const saving = mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0
 
   const addOrUpdate = () => {
     onSetCartQty(p, qty)
@@ -109,7 +111,7 @@ export default function ProductDetail({
     ...(p.category ? ([['Category', p.category]] as [string, string][]) : []),
     ...(detail.item_code ? ([['Item code', detail.item_code]] as [string, string][]) : []),
     ...(p.hsn_code ? ([['HSN code', p.hsn_code]] as [string, string][]) : []),
-    ...(p.mrp > 0 ? ([['MRP', formatCurrency(p.mrp)]] as [string, string][]) : []),
+    ...(showPrice && mrp > 0 ? ([['MRP', formatCurrency(mrp)]] as [string, string][]) : []),
     [
       'Availability',
       !orderable ? 'Out of stock' : showStock && p.stock_qty !== undefined ? `${formatQty(p.stock_qty)} ${p.unit} in stock` : 'In stock',
@@ -173,19 +175,23 @@ export default function ProductDetail({
             {detail.item_code && <p className="text-sm text-slate-500">Item code {detail.item_code}</p>}
           </div>
 
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="text-3xl font-bold tabular-nums text-slate-900">{formatCurrency(p.price)}</span>
-              <span className="text-slate-500">per {p.unit || 'unit'}</span>
-              {saving >= 1 && (
-                <>
-                  <span className="text-slate-400 line-through">{formatCurrency(p.mrp)}</span>
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-sm font-semibold text-emerald-700">{saving}% below MRP</span>
-                </>
-              )}
+          {showPrice ? (
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-3xl font-bold tabular-nums text-slate-900">{formatCurrency(price)}</span>
+                <span className="text-slate-500">per {p.unit || 'unit'}</span>
+                {saving >= 1 && (
+                  <>
+                    <span className="text-slate-400 line-through">{formatCurrency(mrp)}</span>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-sm font-semibold text-emerald-700">{saving}% below MRP</span>
+                  </>
+                )}
+              </div>
+              <p className="text-xs text-slate-500">Wholesale price. The final amount is confirmed on your invoice.</p>
             </div>
-            <p className="text-xs text-slate-500">Wholesale price. The final amount is confirmed on your invoice.</p>
-          </div>
+          ) : (
+            <p className="text-sm font-medium text-slate-500">Price available on request</p>
+          )}
 
           <div
             className={cn(
@@ -213,10 +219,12 @@ export default function ProductDetail({
                 </div>
                 <QtyStepper value={qty} min={p.min_order_qty} max={p.max_qty} onChange={setQty} />
               </div>
-              <div className="flex items-center justify-between border-t pt-3 text-sm">
-                <span className="text-slate-600">Line total</span>
-                <span className="text-lg font-semibold tabular-nums">{formatCurrency(qty * p.price)}</span>
-              </div>
+              {showPrice && (
+                <div className="flex items-center justify-between border-t pt-3 text-sm">
+                  <span className="text-slate-600">Line total</span>
+                  <span className="text-lg font-semibold tabular-nums">{formatCurrency(qty * price)}</span>
+                </div>
+              )}
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button size="lg" variant={inCart ? 'outline' : 'default'} onClick={addOrUpdate} disabled={inCart === qty}>
                   {justAdded ? <Check className="mr-1.5 h-4 w-4" /> : <ShoppingCart className="mr-1.5 h-4 w-4" />}
