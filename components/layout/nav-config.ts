@@ -54,6 +54,7 @@ import {
   ShoppingCartSimple,
   ListChecks,
   ArrowsLeftRight,
+  PlugsConnected,
 } from '@phosphor-icons/react'
 import { canManageUsers, isSuperAdmin } from '@/lib/roles'
 
@@ -244,6 +245,7 @@ export const navItems: NavItem[] = [
       { name: 'Stores', href: '/stores', icon: Storefront, superAdminOnly: true },
       { name: 'User Management', href: '/user-management', icon: Users, userManagementOnly: true },
       { name: 'Audit Trails', href: '/audit', icon: Scroll, superAdminOnly: true },
+      { name: 'API Management', href: '/api-management', icon: PlugsConnected, superAdminOnly: true },
     ],
   },
   { name: 'Notifications', href: '/notifications', icon: Bell, accent: '#d97706' },
