@@ -89,6 +89,7 @@ interface Party {
   category?: string
   loyalty_points?: number
   loyalty_cash?: number
+  loyalty_excluded?: boolean
 }
 
 interface Product {
@@ -1107,15 +1108,18 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
 
   const preLoyaltyTotal = saleDiscountBase - effectiveInvoiceDiscount
   const loyaltyIsCash = isCashLoyalty(loyaltySettings)
+  // Excluded customers neither earn nor redeem: treat loyalty as off for them.
+  const partyLoyaltyExcluded = !!selectedParty?.loyalty_excluded
+  const partyLoyaltySettings = partyLoyaltyExcluded ? null : loyaltySettings
   const loyaltyBalance = loyaltyAvailable(loyaltySettings, selectedParty)
   const { discount: loyaltyDiscount } = computeLoyaltyDiscount(
-    loyaltySettings,
+    partyLoyaltySettings,
     loyaltyBalance,
     preLoyaltyTotal,
     loyaltyPointsToRedeem
   )
   const pointsToEarn = estimateLoyaltyEarnedOnSale(
-    loyaltySettings,
+    partyLoyaltySettings,
     Math.max(0, preLoyaltyTotal - loyaltyDiscount),
     items.map((item) => ({
       has_product: !!item.product_id,
@@ -1233,7 +1237,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
 
   const applyLoyaltyRedemptionChange = (nextPoints: number) => {
     const { discount: nextDiscount } = computeLoyaltyDiscount(
-      loyaltySettings,
+      partyLoyaltySettings,
       loyaltyBalance,
       preLoyaltyTotal,
       nextPoints
@@ -1563,7 +1567,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           invoice_discount: isDiscountEnabled ? parseMoney(effectiveInvoiceDiscount) : 0,
           additional_charges: parseMoney(additionalCharges),
           additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
-          ...(!editId ? loyaltyRedeemPayload(loyaltySettings, loyaltyPointsToRedeem) : {}),
+          ...(!editId && partyLoyaltySettings ? loyaltyRedeemPayload(partyLoyaltySettings, loyaltyPointsToRedeem) : {}),
           items: items.map(item => ({
             product_id: item.product_id || undefined,
             description: item.description,
@@ -2403,7 +2407,13 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                     <span className="font-medium">{formatCurrency(charge.amount)}</span>
                   </div>
                 ))}
-                {!editId && !isEstimateOnly && loyaltySettings?.is_enabled && selectedParty && (
+                {!editId && !isEstimateOnly && loyaltySettings?.is_enabled && selectedParty && partyLoyaltyExcluded && (
+                  <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-gray-500">
+                    <Gift className="h-3.5 w-3.5" />
+                    Excluded from the loyalty program — no earning or redemption on this bill.
+                  </div>
+                )}
+                {!editId && !isEstimateOnly && loyaltySettings?.is_enabled && selectedParty && !partyLoyaltyExcluded && (
                   <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-3 space-y-2">
                     <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
                       <Gift className="h-4 w-4" />

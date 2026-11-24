@@ -42,6 +42,7 @@ import {
 } from '@/lib/loyaltyCards'
 import CardLayoutEditor, { CardSide } from '@/components/loyalty/CardLayoutEditor'
 import LoyaltyCategoriesEditor from '@/components/loyalty/LoyaltyCategoriesEditor'
+import ExcludedCustomersCard from '@/components/loyalty/ExcludedCustomersCard'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { LoyaltySettings as SharedLoyaltySettings } from '@/lib/loyalty-types'
 
@@ -95,6 +96,7 @@ interface LoyaltyCustomer {
   phone: string
   loyalty_points: number
   loyalty_cash?: number
+  loyalty_excluded?: boolean
 }
 
 interface LoyaltyTransaction {
@@ -343,6 +345,38 @@ export default function LoyaltyPage() {
     setAdjustPoints('')
     setAdjustNotes('')
     setAdjustOpen(true)
+  }
+
+  /** Exclude a customer from (or include them back in) the program. Returns true on success. */
+  const setCustomerExcluded = async (customer: LoyaltyCustomer, excluded: boolean, reason?: string) => {
+    try {
+      const res = await apiFetch(`/loyalty/parties/${customer.id}/exclusion`, {
+        method: 'PUT',
+        body: JSON.stringify({ excluded, reason }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        notifyError(typeof data.error === 'string' ? data.error : 'Failed to update customer')
+        return false
+      }
+      setCustomers((prev) => prev.map((c) => (c.id === customer.id ? { ...c, loyalty_excluded: excluded } : c)))
+      notifySuccess(excluded ? `${customer.name} excluded from loyalty` : `${customer.name} included in loyalty again`)
+      return true
+    } catch {
+      notifyError('Failed to update customer')
+      return false
+    }
+  }
+
+  const toggleCustomerExcluded = async (customer: LoyaltyCustomer) => {
+    if (!customer.loyalty_excluded) {
+      const ok = await confirm({
+        title: `Exclude ${customer.name} from loyalty?`,
+        description: `They won't earn or redeem ${isCash ? 'cashback' : 'points'} on any bill. Their current balance (${customerBalanceLabel(customer)}) is kept.`,
+      })
+      if (!ok) return
+    }
+    await setCustomerExcluded(customer, !customer.loyalty_excluded)
   }
 
   const openHistory = async (customer: LoyaltyCustomer) => {
@@ -915,6 +949,11 @@ export default function LoyaltyPage() {
                 </div>
               </CardContent>
             </Card>
+            <ExcludedCustomersCard
+              customers={customers}
+              balanceLabel={customerBalanceLabel}
+              onSetExcluded={setCustomerExcluded}
+            />
           </TabsContent>
 
           <TabsContent value="customers" className="mt-4">
@@ -952,7 +991,14 @@ export default function LoyaltyPage() {
                       <tbody>
                         {paginatedItems.map((c) => (
                           <tr key={c.id} className="border-b last:border-0">
-                            <td className="py-3 font-medium">{c.name}</td>
+                            <td className="py-3 font-medium">
+                              {c.name}
+                              {c.loyalty_excluded && (
+                                <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                                  Excluded
+                                </span>
+                              )}
+                            </td>
                             <td className="py-3 text-gray-600">{c.phone || '—'}</td>
                             {!isCash && (
                               <td className="py-3 text-right font-semibold text-amber-600">
@@ -974,8 +1020,11 @@ export default function LoyaltyPage() {
                                 <History className="mr-1.5 h-3.5 w-3.5" />
                                 History
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => openAdjust(c)}>
+                              <Button variant="outline" size="sm" className="mr-1" onClick={() => openAdjust(c)}>
                                 Adjust
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => toggleCustomerExcluded(c)}>
+                                {c.loyalty_excluded ? 'Include' : 'Exclude'}
                               </Button>
                             </td>
                           </tr>

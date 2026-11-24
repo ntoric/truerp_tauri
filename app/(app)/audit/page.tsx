@@ -358,6 +358,7 @@ export default function AuditDashboard() {
                   <SelectItem value="user">User</SelectItem>
                   <SelectItem value="loyalty_settings">Loyalty settings</SelectItem>
                   <SelectItem value="loyalty_category">Loyalty category</SelectItem>
+                  <SelectItem value="loyalty_exclusion">Loyalty exclusion</SelectItem>
                 </SelectContent>
               </Select>
               <Select

@@ -106,6 +106,7 @@ interface Party {
   gstin: string
   loyalty_points?: number
   loyalty_cash?: number
+  loyalty_excluded?: boolean
   local_only?: boolean
 }
 
@@ -1085,8 +1086,12 @@ export default function POSPage() {
 
   const getAdditionalCharges = () => Math.max(0, sumAdditionalChargeItems(activeTab.additionalChargeItems || []))
 
+  /** Loyalty applies to the selected customer: program on and customer not excluded. */
+  const partyLoyaltyActive = () =>
+    !!(loyaltySettings?.is_enabled && activeTab.selectedParty && !activeTab.selectedParty.loyalty_excluded)
+
   const getLoyaltyDiscount = (saleDiscount = getSaleDiscount()) => {
-    if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+    if (!partyLoyaltyActive()) return 0
     const { discount } = computeLoyaltyDiscount(
       loyaltySettings,
       loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
@@ -1103,7 +1108,7 @@ export default function POSPage() {
 
   /** Reward the current cart earns (bill or margin basis), in the active loyalty unit. */
   const getLoyaltyEarnEstimate = (saleDiscount = getSaleDiscount()) => {
-    if (!loyaltySettings?.is_enabled) return 0
+    if (!loyaltySettings?.is_enabled || activeTab.selectedParty?.loyalty_excluded) return 0
     const loyaltyDisc = getLoyaltyDiscount(saleDiscount)
     return estimateLoyaltyEarnedOnSale(
       loyaltySettings,
@@ -1144,7 +1149,7 @@ export default function POSPage() {
     const nextSale = computeSaleDiscount(cartTotal, nextType, nextValue)
     const prevLoyalty = getLoyaltyDiscount(prevSale)
     const nextLoyalty = (() => {
-      if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+      if (!partyLoyaltyActive()) return 0
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
         loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
@@ -1169,7 +1174,7 @@ export default function POSPage() {
     const nextSale = applied ? computeAutoDiscount(saleDiscount, cartTotal + addCharges) : 0
     const prevLoyalty = getLoyaltyDiscount(prevSale)
     const nextLoyalty = (() => {
-      if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+      if (!partyLoyaltyActive()) return 0
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
         loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
@@ -1199,7 +1204,7 @@ export default function POSPage() {
     const nextSale = Math.min(parseMoney(clamped || '0'), cap)
     const prevLoyalty = getLoyaltyDiscount(prevSale)
     const nextLoyalty = (() => {
-      if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+      if (!partyLoyaltyActive()) return 0
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
         loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
@@ -1246,7 +1251,7 @@ export default function POSPage() {
     const nextAddCharges = Math.max(0, sumAdditionalChargeItems(nextItems))
     const prevLoyalty = getLoyaltyDiscount(saleDiscount)
     const nextLoyalty = (() => {
-      if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+      if (!partyLoyaltyActive()) return 0
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
         loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
@@ -1925,7 +1930,7 @@ export default function POSPage() {
     const loyaltyIsCash = isCashLoyalty(loyaltySettings)
     const loyaltyEarned = getLoyaltyEarnEstimate(saleDiscount)
     const loyaltyBalanceAfter =
-      loyaltySettings?.is_enabled && activeTab.selectedParty
+      partyLoyaltyActive() && activeTab.selectedParty
         ? Math.max(
             0,
             Math.round(
@@ -1963,7 +1968,7 @@ export default function POSPage() {
         ...(saleDiscount > 0 ? { invoice_discount: saleDiscount } : {}),
         ...(getAdditionalCharges() > 0 ? { additional_charges: getAdditionalCharges() } : {}),
         ...(chargeItems.length > 0 ? { additional_charge_items: chargeItems } : {}),
-        ...loyaltyRedeemPayload(loyaltySettings, loyaltyPointsToRedeem),
+        ...(partyLoyaltyActive() ? loyaltyRedeemPayload(loyaltySettings, loyaltyPointsToRedeem) : {}),
         items: cartSnapshot.map((item) => ({
           product_id: item.product.id,
           description: item.product.name,
@@ -2612,7 +2617,11 @@ export default function POSPage() {
                   <p className="text-xs font-medium text-gray-900">{p.name}</p>
                   <p className="text-xs text-gray-500">
                     {p.phone || '—'}
-                    {loyaltySettings?.is_enabled ? ` · ${formatLoyaltyValue(loyaltySettings, loyaltyAvailable(loyaltySettings, p))}` : ''}
+                    {loyaltySettings?.is_enabled
+                      ? p.loyalty_excluded
+                        ? ' · no loyalty'
+                        : ` · ${formatLoyaltyValue(loyaltySettings, loyaltyAvailable(loyaltySettings, p))}`
+                      : ''}
                   </p>
                 </button>
               ))}
@@ -3162,7 +3171,13 @@ export default function POSPage() {
                       </span>
                     </div>
                   )}
-                  {loyaltySettings?.is_enabled && activeTab.selectedParty && (
+                  {loyaltySettings?.is_enabled && activeTab.selectedParty?.loyalty_excluded && (
+                    <div className="flex items-center gap-1 rounded border border-dashed px-2 py-1 text-[10px] text-gray-500">
+                      <Gift className="h-3 w-3" />
+                      Excluded from loyalty — no earn or redeem
+                    </div>
+                  )}
+                  {partyLoyaltyActive() && (
                     <div className="rounded border border-amber-100 bg-amber-50/80 p-2 space-y-1">
                       <div className="flex items-center justify-between gap-1 text-[10px] font-medium text-amber-900">
                         <span className="flex items-center gap-1">
