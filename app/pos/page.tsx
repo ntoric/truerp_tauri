@@ -75,6 +75,11 @@ import {
   normalizeSaleDiscountSettings,
 } from '@/lib/saleDiscount'
 import BrandLoader from '@/components/BrandLoader'
+import LoyaltyCardAssignField, {
+  assignNextLoyaltyCard,
+  resolveScannedLoyaltyCard,
+  type LoyaltyCardAssignMode,
+} from '@/components/loyalty/LoyaltyCardAssignField'
 
 interface Product {
   id: string
@@ -1722,12 +1727,18 @@ export default function POSPage() {
   // "Add & link card" modal — creates the customer and links a loyalty card.
   const [linkModalOpen, setLinkModalOpen] = useState(false)
   const [linkCardInput, setLinkCardInput] = useState('')
+  const [linkCardMode, setLinkCardMode] = useState<LoyaltyCardAssignMode>('scan')
   const [linkNameInput, setLinkNameInput] = useState('')
   const [linkPhoneInput, setLinkPhoneInput] = useState('')
   const [linkModalError, setLinkModalError] = useState('')
   const [linkModalBusy, setLinkModalBusy] = useState(false)
   // Inline confirm — shown when the entered mobile already belongs to a customer.
-  const [linkAsk, setLinkAsk] = useState<{ party: Party; cardId: string | null; cardNum: string | null } | null>(null)
+  const [linkAsk, setLinkAsk] = useState<{
+    party: Party
+    cardId: string | null
+    cardNum: string | null
+    autoAssign: boolean
+  } | null>(null)
 
   const finishLinkFlow = (party: Party) => {
     selectCustomer(party)
@@ -1745,6 +1756,13 @@ export default function POSPage() {
     finishLinkFlow(party)
   }
 
+  /** Auto-assign mode — the server hands out the next unassigned card. */
+  const autoAssignCardToParty = async (party: Party) => {
+    const r = await assignNextLoyaltyCard(party.id)
+    if ('error' in r) notifyError(r.error)
+    else notifySuccess(`Card ${r.card_number} assigned to ${party.name}`)
+  }
+
   const submitLinkCustomer = async () => {
     const phone = linkPhoneInput.trim()
     if (!/^[0-9+\-\s]{6,15}$/.test(phone)) {
@@ -1757,33 +1775,26 @@ export default function POSPage() {
       // Validate the card first — it must exist as a generated card.
       let cardId: string | null = null
       let cardNum: string | null = null
+      const autoAssign = linkCardMode === 'auto'
       const rawCard = linkCardInput.trim()
-      if (rawCard) {
+      if (!autoAssign && rawCard) {
         if (!/^[0-9\s-]{3,}$/.test(rawCard)) {
           setLinkModalError('Card number can only contain digits')
           return
         }
-        const lr = await apiFetch(
-          `/loyalty/cards/lookup?number=${encodeURIComponent(rawCard)}`,
-          { timeoutMs: 5000 }
-        )
-        const ld = await lr.json().catch(() => ({}))
-        if (!lr.ok || !ld.card?.id) {
-          setLinkModalError(`Card ${rawCard} not found`)
+        const r = await resolveScannedLoyaltyCard(rawCard)
+        if ('error' in r) {
+          setLinkModalError(r.error)
           return
         }
-        if (ld.party) {
-          setLinkModalError(`Card ${ld.card.card_number} is already linked to ${ld.party.name}`)
-          return
-        }
-        cardId = ld.card.id
-        cardNum = ld.card.card_number
+        cardId = r.card.id
+        cardNum = r.card.card_number
       }
 
       // Customer already exists → ask before linking instead of duplicating.
       const existing = parties.find((p) => p.phone === phone)
       if (existing) {
-        setLinkAsk({ party: existing, cardId, cardNum })
+        setLinkAsk({ party: existing, cardId, cardNum, autoAssign })
         return
       }
 
@@ -1806,7 +1817,9 @@ export default function POSPage() {
         setParties((prev) => [party as Party, ...prev])
       }
 
-      if (cardId && cardNum) {
+      if (autoAssign) {
+        await autoAssignCardToParty(party)
+      } else if (cardId && cardNum) {
         await apiFetch(`/loyalty/cards/${cardId}/assign`, {
           method: 'POST',
           body: JSON.stringify({ party_id: party.id }),
@@ -3394,17 +3407,23 @@ export default function POSPage() {
               </button>
             </div>
             <div className="space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">
-                  Loyalty card number <span className="text-gray-400">(optional)</span>
-                </label>
-                <Input
-                  value={linkCardInput}
-                  onChange={(e) => setLinkCardInput(e.target.value)}
-                  placeholder="e.g. 000142"
-                  className="h-9 font-mono text-sm"
-                />
-              </div>
+              <LoyaltyCardAssignField
+                compact
+                mode={linkCardMode}
+                onModeChange={(m) => {
+                  setLinkCardMode(m)
+                  setLinkModalError('')
+                }}
+                value={linkCardInput}
+                onChange={setLinkCardInput}
+                inputId="pos-link-card-number"
+                label={
+                  <>
+                    Loyalty card number{' '}
+                    {linkCardMode === 'scan' && <span className="text-gray-400">(optional)</span>}
+                  </>
+                }
+              />
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
                 <Input
@@ -3431,19 +3450,28 @@ export default function POSPage() {
                 <div className="rounded border border-blue-200 bg-blue-50 px-2.5 py-2 space-y-1.5">
                   <p className="text-xs text-blue-800">
                     Customer <b>{linkAsk.party.name}</b> already exists with this mobile.
-                    {linkAsk.cardNum ? ` Link card ${linkAsk.cardNum} to them?` : ' Select them?'}
+                    {linkAsk.cardNum
+                      ? ` Link card ${linkAsk.cardNum} to them?`
+                      : linkAsk.autoAssign
+                        ? ' Assign them the next available card?'
+                        : ' Select them?'}
                   </p>
                   <div className="flex gap-2">
                     <Button
                       size="sm"
                       className="h-6 px-2 text-xs"
-                      onClick={() =>
-                        linkAsk.cardId && linkAsk.cardNum
-                          ? linkCardToParty(linkAsk.cardId, linkAsk.cardNum, linkAsk.party)
-                          : finishLinkFlow(linkAsk.party)
-                      }
+                      onClick={async () => {
+                        if (linkAsk.cardId && linkAsk.cardNum) {
+                          await linkCardToParty(linkAsk.cardId, linkAsk.cardNum, linkAsk.party)
+                        } else if (linkAsk.autoAssign) {
+                          await autoAssignCardToParty(linkAsk.party)
+                          finishLinkFlow(linkAsk.party)
+                        } else {
+                          finishLinkFlow(linkAsk.party)
+                        }
+                      }}
                     >
-                      {linkAsk.cardNum ? 'Link & select' : 'Select'}
+                      {linkAsk.cardNum || linkAsk.autoAssign ? 'Link & select' : 'Select'}
                     </Button>
                     <Button
                       size="sm"

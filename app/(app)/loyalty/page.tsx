@@ -253,6 +253,7 @@ export default function LoyaltyPage() {
   const [cardDesignSaving, setCardDesignSaving] = useState(false)
   const [cardCount, setCardCount] = useState('50')
   const [generating, setGenerating] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
   const [genProgress, setGenProgress] = useState('')
   const [generatedCards, setGeneratedCards] = useState<GeneratedLoyaltyCard[]>([])
   const [cardBatches, setCardBatches] = useState<CardBatch[]>([])
@@ -453,11 +454,11 @@ export default function LoyaltyPage() {
     }
   }
 
-  const generateAndDownload = async () => {
+  const generateAndDownload = async (): Promise<boolean> => {
     const count = parseInt(cardCount, 10)
     if (!count || count < 1 || count > 250) {
       notifyError('Enter a number of cards between 1 and 250')
-      return
+      return false
     }
     setGenerating(true)
     setGenProgress('Reserving card numbers…')
@@ -469,7 +470,7 @@ export default function LoyaltyPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         notifyError(typeof data.error === 'string' ? data.error : 'Failed to generate cards')
-        return
+        return false
       }
       const cards: GeneratedLoyaltyCard[] = data.cards || []
       const design: LoyaltyCardDesign = {
@@ -482,7 +483,7 @@ export default function LoyaltyPage() {
       const store: LoyaltyCardStore | null = data.store || cardStore
       if (!business) {
         notifyError('Business details unavailable')
-        return
+        return false
       }
 
       const zipBlob = await generateLoyaltyCardsZip({
@@ -515,8 +516,10 @@ export default function LoyaltyPage() {
           layout: data.layout || {},
         })
       }
+      return true
     } catch {
       notifyError('Failed to generate card artwork')
+      return false
     } finally {
       setGenerating(false)
       setGenProgress('')
@@ -1461,14 +1464,20 @@ export default function LoyaltyPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Generated cards</CardTitle>
-                <div className="relative w-56">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  <Input
-                    className="pl-9"
-                    placeholder="Search card number..."
-                    value={cardSearch}
-                    onChange={(e) => setCardSearch(e.target.value)}
-                  />
+                <div className="flex items-center gap-2">
+                  <div className="relative w-56">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <Input
+                      className="pl-9"
+                      placeholder="Search card number..."
+                      value={cardSearch}
+                      onChange={(e) => setCardSearch(e.target.value)}
+                    />
+                  </div>
+                  <Button onClick={() => setGenerateOpen(true)} disabled={generating}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Generate cards
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1495,6 +1504,12 @@ export default function LoyaltyPage() {
                     icon={CreditCard}
                     title="No cards generated yet"
                     hint="Generate a batch of loyalty cards to see them listed here."
+                    action={
+                      <Button onClick={() => setGenerateOpen(true)} disabled={generating}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Generate cards
+                      </Button>
+                    }
                   />
                 ) : (
                   <div className="table-scroll">
@@ -1610,6 +1625,51 @@ export default function LoyaltyPage() {
             <Button onClick={submitAdjust} disabled={adjusting}>
               {adjusting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={generateOpen} onOpenChange={(open) => !generating && setGenerateOpen(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Generate loyalty cards</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Number of cards</Label>
+              <Input
+                type="number"
+                min={1}
+                max={250}
+                value={cardCount}
+                onChange={(e) => setCardCount(e.target.value)}
+                disabled={generating}
+              />
+            </div>
+            {generating && genProgress && <p className="text-sm text-gray-500">{genProgress}</p>}
+            <p className="text-xs text-gray-500">
+              Reserves new card numbers using your saved card design and downloads a ZIP of
+              print-ready artwork, a card number list (CSV) and a print spec sheet. Max 250 cards
+              per batch.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGenerateOpen(false)} disabled={generating}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (await generateAndDownload()) setGenerateOpen(false)
+              }}
+              disabled={generating}
+            >
+              {generating ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
+              Generate &amp; download
             </Button>
           </DialogFooter>
         </DialogContent>
