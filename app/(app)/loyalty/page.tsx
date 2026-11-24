@@ -41,6 +41,7 @@ import {
   resolveCardLayout,
 } from '@/lib/loyaltyCards'
 import CardLayoutEditor, { CardSide } from '@/components/loyalty/CardLayoutEditor'
+import LoyaltyCategoriesEditor from '@/components/loyalty/LoyaltyCategoriesEditor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { LoyaltySettings as SharedLoyaltySettings } from '@/lib/loyalty-types'
 
@@ -62,6 +63,21 @@ function txnDisplay(tx: LoyaltyTransaction): { positive: boolean; delta: string;
 }
 
 type LoyaltySettings = Required<SharedLoyaltySettings>
+
+/** Coerce a settings payload from the API into the page's settings shape. */
+function normalizeLoyaltySettings(prev: LoyaltySettings, data: Partial<LoyaltySettings>): LoyaltySettings {
+  const basis = data.earn_basis === 'margin' || data.earn_basis === 'category' ? data.earn_basis : 'bill'
+  return {
+    ...prev,
+    ...data,
+    reward_type: data.reward_type === 'cash' ? 'cash' : 'points',
+    earn_basis: basis,
+    category_scope: data.category_scope === 'invoice' ? 'invoice' : 'item',
+    categories: Array.isArray(data.categories)
+      ? data.categories.map((c) => ({ ...c, conditions: Array.isArray(c.conditions) ? c.conditions : [] }))
+      : prev.categories,
+  }
+}
 
 interface LoyaltyStats {
   total_members: number
@@ -202,9 +218,12 @@ export default function LoyaltyPage() {
     min_redeem_amount: 0,
     earn_basis: 'bill',
     min_margin_percent: 0,
+    category_scope: 'item',
+    categories: [],
   })
   const isCash = settings.reward_type === 'cash'
   const isMargin = settings.earn_basis === 'margin'
+  const isCategory = settings.earn_basis === 'category'
   const earnBaseLabel = isMargin ? 'profit' : 'bill'
 
   const customerBalanceLabel = (c: LoyaltyCustomer | null | undefined) =>
@@ -264,7 +283,7 @@ export default function LoyaltyPage() {
       ])
       if (settingsRes.ok) {
         const data = await settingsRes.json()
-        setSettings((prev) => ({ ...prev, ...data, reward_type: data.reward_type === 'cash' ? 'cash' : 'points', earn_basis: data.earn_basis === 'margin' ? 'margin' : 'bill' }))
+        setSettings((prev) => normalizeLoyaltySettings(prev, data))
       }
       if (statsRes.ok) setStats(await statsRes.json())
       if (customersRes.ok) setCustomers(await customersRes.json())
@@ -306,7 +325,7 @@ export default function LoyaltyPage() {
       if (res.ok) {
         notifySuccess('Loyalty settings saved')
         const data = await res.json()
-        setSettings((prev) => ({ ...prev, ...data, reward_type: data.reward_type === 'cash' ? 'cash' : 'points', earn_basis: data.earn_basis === 'margin' ? 'margin' : 'bill' }))
+        setSettings((prev) => normalizeLoyaltySettings(prev, data))
       } else {
         const data = await res.json().catch(() => ({}))
         notifyError(typeof data.error === 'string' ? data.error : 'Failed to save settings')
@@ -716,7 +735,9 @@ export default function LoyaltyPage() {
                   <Label>Earn on</Label>
                   <Select
                     value={settings.earn_basis}
-                    onValueChange={(v) => setSettings({ ...settings, earn_basis: v === 'margin' ? 'margin' : 'bill' })}
+                    onValueChange={(v) =>
+                      setSettings({ ...settings, earn_basis: v === 'margin' || v === 'category' ? v : 'bill' })
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -724,10 +745,13 @@ export default function LoyaltyPage() {
                     <SelectContent>
                       <SelectItem value="bill">Bill amount</SelectItem>
                       <SelectItem value="margin">Profit margin on items sold</SelectItem>
+                      <SelectItem value="category">Categories — rules on profit margin / amount</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-gray-500">
-                    {isMargin
+                    {isCategory
+                      ? `Each category below sets its own ${isCash ? 'cashback' : 'points'} reward and the profit margin % / profit amount criteria a sale must meet.`
+                      : isMargin
                       ? `The ${isCash ? 'cashback %' : 'earn rate'} applies to the profit (selling price − purchase price) of qualifying items, not the bill total. Items without a purchase price are skipped.`
                       : `The ${isCash ? 'cashback %' : 'earn rate'} applies to the bill total.`}
                   </p>
@@ -754,24 +778,35 @@ export default function LoyaltyPage() {
                     </>
                   )}
                 </div>
+                {isCategory && (
+                  <LoyaltyCategoriesEditor
+                    categories={settings.categories}
+                    scope={settings.category_scope}
+                    isCash={isCash}
+                    onChange={(categories) => setSettings((prev) => ({ ...prev, categories }))}
+                    onScopeChange={(category_scope) => setSettings((prev) => ({ ...prev, category_scope }))}
+                  />
+                )}
                 {isCash ? (
                   <>
-                    <div className="space-y-2">
-                      <Label>Cashback (% of {earnBaseLabel})</Label>
-                      <Input
-                        type="number"
-                        min={0.01}
-                        max={100}
-                        step={0.01}
-                        value={settings.cashback_percent}
-                        onChange={(e) =>
-                          setSettings({ ...settings, cashback_percent: parseFloat(e.target.value) || 0 })
-                        }
-                      />
-                      <p className="text-xs text-gray-500">
-                        Example: ₹1,000 {earnBaseLabel} → {formatCurrency((1000 * (settings.cashback_percent || 0)) / 100)} cashback.
-                      </p>
-                    </div>
+                    {!isCategory && (
+                      <div className="space-y-2">
+                        <Label>Cashback (% of {earnBaseLabel})</Label>
+                        <Input
+                          type="number"
+                          min={0.01}
+                          max={100}
+                          step={0.01}
+                          value={settings.cashback_percent}
+                          onChange={(e) =>
+                            setSettings({ ...settings, cashback_percent: parseFloat(e.target.value) || 0 })
+                          }
+                        />
+                        <p className="text-xs text-gray-500">
+                          Example: ₹1,000 {earnBaseLabel} → {formatCurrency((1000 * (settings.cashback_percent || 0)) / 100)} cashback.
+                        </p>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label>Minimum cashback to redeem (₹)</Label>
                       <Input
@@ -787,37 +822,41 @@ export default function LoyaltyPage() {
                   </>
                 ) : (
                   <>
-                    <div className="space-y-2">
-                      <Label>Earn rate — {isMargin ? 'profit' : 'spend'} amount (₹)</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={settings.spend_amount}
-                        onChange={(e) =>
-                          setSettings({ ...settings, spend_amount: parseFloat(e.target.value) || 0 })
-                        }
-                      />
-                      <p className="text-xs text-gray-500">{isMargin
-                          ? 'Every this much profit on qualifying items earns the points below.'
-                          : 'Customer spends this amount to earn points below.'}</p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Points earned per spend amount</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={settings.points_per_spend}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            points_per_spend: parseInt(e.target.value, 10) || 0,
-                          })
-                        }
-                      />
-                      <p className="text-xs text-gray-500">
-                        Example: ₹{settings.spend_amount} {isMargin ? 'profit' : 'spent'} → {settings.points_per_spend} point(s).
-                      </p>
-                    </div>
+                    {!isCategory && (
+                      <>
+                        <div className="space-y-2">
+                          <Label>Earn rate — {isMargin ? 'profit' : 'spend'} amount (₹)</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={settings.spend_amount}
+                            onChange={(e) =>
+                              setSettings({ ...settings, spend_amount: parseFloat(e.target.value) || 0 })
+                            }
+                          />
+                          <p className="text-xs text-gray-500">{isMargin
+                              ? 'Every this much profit on qualifying items earns the points below.'
+                              : 'Customer spends this amount to earn points below.'}</p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Points earned per spend amount</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={settings.points_per_spend}
+                            onChange={(e) =>
+                              setSettings({
+                                ...settings,
+                                points_per_spend: parseInt(e.target.value, 10) || 0,
+                              })
+                            }
+                          />
+                          <p className="text-xs text-gray-500">
+                            Example: ₹{settings.spend_amount} {isMargin ? 'profit' : 'spent'} → {settings.points_per_spend} point(s).
+                          </p>
+                        </div>
+                      </>
+                    )}
                     <div className="space-y-2">
                       <Label>Redemption value (₹ per point)</Label>
                       <Input

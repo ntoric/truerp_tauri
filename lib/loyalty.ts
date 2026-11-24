@@ -1,4 +1,4 @@
-import type { LoyaltySettings } from './loyalty-types'
+import type { LoyaltyCategory, LoyaltyCondition, LoyaltySettings } from './loyalty-types'
 
 /** True when the store rewards customers with ₹ cashback instead of points. */
 export function isCashLoyalty(settings: LoyaltySettings | null | undefined): boolean {
@@ -161,6 +161,9 @@ export function estimateLoyaltyEarnedOnSale(
   lines: LoyaltyEarnLine[],
   billDiscount: number
 ): number {
+  if (isCategoryLoyalty(settings)) {
+    return categoryLoyaltyEarn(settings, billAmount, lines, billDiscount).value
+  }
   const base = isMarginLoyalty(settings)
     ? eligibleMarginProfit(lines, billDiscount, settings?.min_margin_percent ?? 0)
     : billAmount
@@ -170,4 +173,121 @@ export function estimateLoyaltyEarnedOnSale(
 /** Reward earned on an amount (bill total or profit) in the active unit (points or ₹). */
 export function estimateLoyaltyEarned(settings: LoyaltySettings | null, amount: number): number {
   return isCashLoyalty(settings) ? estimateCashEarned(settings, amount) : estimatePointsEarned(settings, amount)
+}
+
+/** True when rewards come from loyalty categories. */
+export function isCategoryLoyalty(settings: LoyaltySettings | null | undefined): boolean {
+  return settings?.earn_basis === 'category'
+}
+
+/** Figures a category's conditions are tested against; costKnown=false fails every condition. */
+interface SaleFigures {
+  sale: number
+  profit: number
+  costKnown: boolean
+}
+
+function conditionHolds(c: LoyaltyCondition, f: SaleFigures): boolean {
+  if (!f.costKnown) return false
+  const v = c.field === 'margin_percent' ? (f.sale > 0 ? (f.profit / f.sale) * 100 : 0) : f.profit
+  const eps = 1e-9
+  switch (c.op) {
+    case 'gte':
+      return v + eps >= c.value
+    case 'gt':
+      return v > c.value + eps
+    case 'lte':
+      return v <= c.value + eps
+    case 'lt':
+      return v + eps < c.value
+    case 'eq':
+      return Math.abs(v - c.value) <= 0.005
+  }
+  return false
+}
+
+/** AND binds tighter than OR; no conditions = always matches. Mirrors the backend. */
+export function loyaltyCategoryMatches(cat: LoyaltyCategory, f: SaleFigures): boolean {
+  const conds = cat.conditions ?? []
+  if (conds.length === 0) return true
+  let groupOK = true
+  for (let i = 0; i < conds.length; i++) {
+    if (i > 0 && conds[i].join === 'or') {
+      if (groupOK) return true
+      groupOK = true
+    }
+    if (groupOK && !conditionHolds(conds[i], f)) groupOK = false
+  }
+  return groupOK
+}
+
+function categoryReward(cat: LoyaltyCategory, f: SaleFigures): number {
+  if (cat.reward_kind === 'fixed') return cat.reward_value
+  const base = cat.reward_on === 'profit' ? f.profit : f.sale
+  return base > 0 ? (base * cat.reward_value) / 100 : 0
+}
+
+/**
+ * Reward from loyalty categories for a sale (₹ in cash mode, points otherwise)
+ * and how many times each category matched. Mirrors computeCategoryLoyaltyEarn
+ * on the backend.
+ */
+export function categoryLoyaltyEarn(
+  settings: LoyaltySettings | null,
+  billAmount: number,
+  lines: LoyaltyEarnLine[],
+  billDiscount: number
+): { value: number; matches: Record<string, number> } {
+  const matches: Record<string, number> = {}
+  const cats = (settings?.categories ?? []).filter((c) => c.is_active)
+  if (!settings?.is_enabled || cats.length === 0) return { value: 0, matches }
+  const cash = isCashLoyalty(settings)
+  const net = (l: LoyaltyEarnLine) => {
+    const gross = l.quantity * l.unit_price
+    return gross - gross * ((l.discount_percent ?? 0) / 100)
+  }
+  const gross = lines.reduce((sum, l) => sum + net(l), 0)
+  const ratio = gross > 0 && billDiscount > 0 ? Math.max(0, 1 - billDiscount / gross) : 1
+  const figures = (l: LoyaltyEarnLine): SaleFigures => {
+    const f: SaleFigures = { sale: net(l) * ratio, profit: 0, costKnown: false }
+    const cost = l.unit_cost ?? 0
+    if (!l.has_product || l.quantity <= 0 || cost <= 0 || f.sale <= 0) return f
+    return { ...f, profit: f.sale - l.quantity * cost, costKnown: true }
+  }
+  const firstMatch = (f: SaleFigures) => cats.find((c) => loyaltyCategoryMatches(c, f))
+
+  let total = 0
+  if (settings.category_scope === 'invoice') {
+    const agg: SaleFigures = { sale: 0, profit: 0, costKnown: false }
+    for (const l of lines) {
+      const f = figures(l)
+      if (f.costKnown) {
+        agg.sale += f.sale
+        agg.profit += f.profit
+        agg.costKnown = true
+      }
+    }
+    const cat = firstMatch(agg)
+    if (cat) {
+      const r = categoryReward(cat, { ...agg, sale: billAmount })
+      if (r > 0) {
+        total = r
+        matches[cat.name] = 1
+      }
+    }
+  } else {
+    for (const l of lines) {
+      if (l.quantity <= 0) continue
+      const f = figures(l)
+      const cat = firstMatch(f)
+      if (!cat) continue
+      const r = categoryReward(cat, f)
+      if (r > 0) {
+        total += r
+        matches[cat.name] = (matches[cat.name] ?? 0) + 1
+      }
+    }
+  }
+  const value = cash ? roundMoney(total) : Math.floor(total + 1e-9)
+  return value > 0 ? { value, matches } : { value: 0, matches: {} }
 }
