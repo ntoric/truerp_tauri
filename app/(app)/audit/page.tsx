@@ -356,6 +356,8 @@ export default function AuditDashboard() {
                   <SelectItem value="expense">Expense</SelectItem>
                   <SelectItem value="party">Party</SelectItem>
                   <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="loyalty_settings">Loyalty settings</SelectItem>
+                  <SelectItem value="loyalty_category">Loyalty category</SelectItem>
                 </SelectContent>
               </Select>
               <Select
@@ -455,7 +457,7 @@ export default function AuditDashboard() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="max-w-md truncate text-sm text-gray-600">
+                        <TableCell className="max-w-md truncate text-sm text-gray-600" title={log.description}>
                           {log.description}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
