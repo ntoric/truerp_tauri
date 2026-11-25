@@ -82,6 +82,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import BrandLoader from '@/components/BrandLoader'
+import ReportTelegramToggle from '@/components/ReportTelegramToggle'
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -656,6 +657,7 @@ function ReportEmailSettingsCard() {
   // Local editable form state
   const [isEnabled, setIsEnabled] = useState(false)
   const [recipients, setRecipients] = useState('')
+  const [sendTelegram, setSendTelegram] = useState(false)
   const [period, setPeriod] = useState<ReportEmailPeriod>('daily')
   const [sendTime, setSendTime] = useState('09:00')
   const [subject, setSubject] = useState('')
@@ -667,6 +669,7 @@ function ReportEmailSettingsCard() {
       setSettings(s)
       setIsEnabled(s.is_enabled)
       setRecipients(s.recipient_emails || '')
+      setSendTelegram(!!s.send_telegram)
       setPeriod((s.period as ReportEmailPeriod) || 'daily')
       setSendTime(s.send_time || '09:00')
       setSubject(s.subject || '')
@@ -706,6 +709,7 @@ function ReportEmailSettingsCard() {
       const updated = await updateDailyReportEmailSettings({
         is_enabled: isEnabled,
         recipient_emails: recipients,
+        send_telegram: sendTelegram,
         period,
         send_time: sendTime,
         subject,
@@ -713,6 +717,7 @@ function ReportEmailSettingsCard() {
       setSettings(updated)
       setIsEnabled(updated.is_enabled)
       setRecipients(updated.recipient_emails || '')
+      setSendTelegram(!!updated.send_telegram)
       setPeriod((updated.period as ReportEmailPeriod) || 'daily')
       setSendTime(updated.send_time || '09:00')
       setSubject(updated.subject || '')
@@ -849,6 +854,8 @@ function ReportEmailSettingsCard() {
               </p>
             </div>
 
+            <ReportTelegramToggle id="daily-report-telegram" checked={sendTelegram} onChange={setSendTelegram} />
+
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-gray-50 px-3 py-2">
               <div className="space-y-0.5 text-xs text-gray-600">
                 <div>
@@ -899,7 +906,7 @@ function ReportEmailSettingsCard() {
                   variant="outline"
                   size="sm"
                   onClick={() => void sendNow()}
-                  disabled={sending || !settings?.recipient_emails}
+                  disabled={sending || (!settings?.recipient_emails && !settings?.send_telegram)}
                 >
                   <Mail className="mr-2 h-4 w-4" />
                   {sending ? 'Sending…' : 'Send now (test)'}

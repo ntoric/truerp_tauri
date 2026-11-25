@@ -392,6 +392,7 @@ export default function InvoicesPage() {
     try {
       await downloadInvoicePdf(previewId, {
         invoiceNumber: previewData?.invoice_number,
+        partyName: previewData?.party?.name || previewData?.customer?.name,
       })
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Failed to download PDF')
@@ -455,7 +456,10 @@ export default function InvoicesPage() {
     setBulkDownloading(true)
     try {
       if (selected.length === 1) {
-        await downloadInvoicePdf(selected[0].id, { invoiceNumber: selected[0].invoice_number })
+        await downloadInvoicePdf(selected[0].id, {
+          invoiceNumber: selected[0].invoice_number,
+          partyName: selected[0].party?.name || selected[0].customer?.name,
+        })
         notifySuccess('Invoice PDF downloaded')
         return
       }

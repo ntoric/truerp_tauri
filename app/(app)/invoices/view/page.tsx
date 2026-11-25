@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter, Gift, ExternalLink, MessageCircle } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter, Gift, ExternalLink, MessageCircle, Send } from 'lucide-react'
 import ThermalPrintModal from '@/components/ThermalPrintModal'
 import InvoiceAttachments from '@/components/InvoiceAttachments'
 import InvoiceStatusTracker from '@/components/InvoiceStatusTracker'
@@ -22,6 +22,7 @@ import InvoiceCustomFieldsForm, {
 import { downloadInvoicePdf } from '@/lib/printDocument'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { sendInvoiceOnWhatsApp } from '@/lib/whatsappInvoice'
+import { sendInvoiceOnTelegram } from '@/lib/telegram'
 import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
 import BrandLoader from '@/components/BrandLoader'
@@ -116,6 +117,7 @@ function InvoiceViewContent() {
   const [thermalPrintOpen, setThermalPrintOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false)
+  const [sendingTelegram, setSendingTelegram] = useState(false)
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
 
   useEffect(() => {
@@ -155,7 +157,10 @@ function InvoiceViewContent() {
     if (!invoice?.id || downloading) return
     setDownloading(true)
     try {
-      await downloadInvoicePdf(invoice.id, { invoiceNumber: invoice.invoice_number })
+      await downloadInvoicePdf(invoice.id, {
+        invoiceNumber: invoice.invoice_number,
+        partyName: invoice.party?.name || invoice.customer?.name,
+      })
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Failed to download PDF')
     } finally {
@@ -173,6 +178,19 @@ function InvoiceViewContent() {
       notifyError(err instanceof Error ? err.message : 'Failed to send WhatsApp message')
     } finally {
       setSendingWhatsApp(false)
+    }
+  }
+
+  const handleSendTelegram = async () => {
+    if (!invoice?.id || sendingTelegram) return
+    setSendingTelegram(true)
+    try {
+      await sendInvoiceOnTelegram(invoice.id)
+      notifySuccess('Invoice sent on Telegram')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to send on Telegram')
+    } finally {
+      setSendingTelegram(false)
     }
   }
 
@@ -211,7 +229,7 @@ function InvoiceViewContent() {
           <Link href="/invoices">
             <Button variant="outline"><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button>
           </Link>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => void handleSendWhatsApp()} disabled={sendingWhatsApp}>
               {sendingWhatsApp ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -219,6 +237,14 @@ function InvoiceViewContent() {
                 <MessageCircle className="mr-2 h-4 w-4" />
               )}
               WhatsApp
+            </Button>
+            <Button variant="outline" onClick={() => void handleSendTelegram()} disabled={sendingTelegram}>
+              {sendingTelegram ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              Telegram
             </Button>
             <Button variant="outline" onClick={() => setThermalPrintOpen(true)}>
               <ThermalPrinter className="mr-2 h-4 w-4" /> Thermal

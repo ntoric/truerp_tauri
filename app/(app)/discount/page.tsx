@@ -319,6 +319,37 @@ export default function DiscountPage() {
                         </div>
                       </div>
                     )}
+
+                    {canEdit && (
+                      <div className="space-y-2 rounded-lg border border-dashed px-4 py-3">
+                        <Label htmlFor="max-discount-amount" className="flex items-center gap-2">
+                          Maximum discount amount
+                          <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-purple-700">
+                            Super admin
+                          </span>
+                        </Label>
+                        <Input
+                          id="max-discount-amount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="No limit"
+                          className="max-w-xs"
+                          value={settings.max_discount_amount || ''}
+                          onChange={(e) =>
+                            setSettings({
+                              ...settings,
+                              max_discount_amount: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                        />
+                        <p className="text-xs text-gray-500">
+                          Highest invoice-level discount allowed on a single sale, in invoices and
+                          POS, for both manual entry and the auto rule. Leave empty or 0 for no
+                          limit.
+                        </p>
+                      </div>
+                    )}
                   </>
                 )}
 

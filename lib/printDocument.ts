@@ -155,10 +155,29 @@ export async function downloadPdfBase64(pdfBase64: string, filename: string): Pr
   await triggerBlobDownload(blob, filename.endsWith('.pdf') ? filename : `${filename}.pdf`)
 }
 
+function cleanFilenamePart(value?: string | null): string {
+  return (value || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+/** "Invoice_<number>_<party>.pdf" — mirrors the backend's invoiceDownloadFilename. */
+export function invoicePdfFilename(
+  invoiceNumber: string | undefined | null,
+  partyName: string | undefined | null,
+  fallbackId: string
+): string {
+  const number = cleanFilenamePart(invoiceNumber) || cleanFilenamePart(fallbackId)
+  const party = cleanFilenamePart(partyName).slice(0, 60).replace(/_+$/, '')
+  return party ? `Invoice_${number}_${party}.pdf` : `Invoice_${number}.pdf`
+}
+
 /** Download invoice PDF from API. */
 export async function downloadInvoicePdf(
   invoiceId: string,
-  options?: { invoiceNumber?: string }
+  options?: { invoiceNumber?: string; partyName?: string }
 ): Promise<void> {
   const res = await apiFetch(`/invoices/${invoiceId}/pdf`)
   if (!res.ok) {
@@ -169,9 +188,11 @@ export async function downloadInvoicePdf(
   if (!blob.size) {
     throw new Error('Invoice PDF was empty')
   }
-  const name = options?.invoiceNumber
-    ? `Invoice_${options.invoiceNumber}.pdf`
-    : `Invoice_${invoiceId}.pdf`
+  // Callers that only have the id get the server-chosen name (number + party).
+  const serverName = !options?.invoiceNumber
+    ? /filename="?([^";]+)"?/i.exec(res.headers.get('Content-Disposition') || '')?.[1]
+    : undefined
+  const name = serverName || invoicePdfFilename(options?.invoiceNumber, options?.partyName, invoiceId)
   await triggerBlobDownload(blob, name)
 }
 

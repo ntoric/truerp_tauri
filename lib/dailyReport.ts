@@ -435,6 +435,8 @@ export interface DailyReportEmailSettings {
   user_id: string
   is_enabled: boolean
   recipient_emails: string
+  /** Also deliver the PDF to the store's Telegram owner chats. */
+  send_telegram?: boolean
   period: ReportEmailPeriod
   send_time: string
   subject: string

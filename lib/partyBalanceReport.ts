@@ -73,6 +73,8 @@ export interface PartyBalanceEmailSettings {
   user_id: string
   is_enabled: boolean
   recipient_emails: string
+  /** Also deliver the PDF to the store's Telegram owner chats. */
+  send_telegram?: boolean
   report_day: PartyBalanceReportDay
   party_type: PartyBalanceType
   send_time: string

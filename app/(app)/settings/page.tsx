@@ -22,14 +22,13 @@ import LogoAspectRatioPicker from '@/components/LogoAspectRatioPicker'
 import { logoPreviewBoxClass, normalizeLogoAspectRatio, type LogoAspectRatio } from '@/lib/logoAspect'
 import {
   Building2, Save, Loader2, User, Settings as SettingsIcon,
-  FileText, Printer, Bell, HelpCircle, Share2, LogOut, Scale, Trash2, Palette, RefreshCw
+  FileText, Printer, Bell, HelpCircle, Share2, LogOut, Scale, Trash2, Palette, RefreshCw, MessagesSquare
 } from 'lucide-react'
 import { hasDesktopUpdater } from '@/lib/desktopBridge'
 import WeighingScaleSettingsCard from '@/components/WeighingScaleSettingsCard'
 import PrintSettingsCard from '@/components/PrintSettingsCard'
 import DesktopUpdatesCard from '@/components/DesktopUpdatesCard'
 import AppearanceSettings from '@/components/appearance/AppearanceSettings'
-import WhatsAppInvoiceToggleCard from '@/components/WhatsAppInvoiceToggleCard'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
@@ -595,14 +594,21 @@ export default function SettingsPage() {
           </div>
         )}
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => {
+            // Messaging has its own page; the tab is a shortcut to it.
+            if (v === 'messaging') router.push('/settings/messaging')
+            else setActiveTab(v)
+          }}
+        >
           <TabsList
             className={`grid h-auto w-full grid-cols-4 ${
               [
-                'lg:grid-cols-7',
                 'lg:grid-cols-8',
                 'lg:grid-cols-9',
                 'lg:grid-cols-10',
+                'lg:grid-cols-11',
               ][
                 (remindersEnabled ? 1 : 0) +
                   (caShareEnabled ? 1 : 0) +
@@ -625,6 +631,10 @@ export default function SettingsPage() {
             <TabsTrigger value="invoice" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               <span className="hidden lg:inline">Invoice</span>
+            </TabsTrigger>
+            <TabsTrigger value="messaging" className="flex items-center gap-2">
+              <MessagesSquare className="h-4 w-4" />
+              <span className="hidden lg:inline">Messaging</span>
             </TabsTrigger>
             <TabsTrigger value="print" className="flex items-center gap-2">
               <Printer className="h-4 w-4" />
@@ -885,7 +895,6 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
             )}
-            {activeTab === 'invoice' && <WhatsAppInvoiceToggleCard />}
             <Card>
               <CardHeader className="flex flex-row items-center gap-2">
                 <FileText className="h-5 w-5 text-blue-600" />

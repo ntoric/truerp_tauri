@@ -186,6 +186,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const [notes, setNotes] = useState('')
   const [terms, setTerms] = useState('')
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
+  // Discount already saved on the document being edited. Kept allowed even
+  // when it exceeds the max-discount limit set after it was created.
+  const [storedInvoiceDiscount, setStoredInvoiceDiscount] = useState(0)
   const { settings: saleDiscount, isDiscountEnabled } = useDiscount()
   const [autoDiscountApplied, setAutoDiscountApplied] = useState(false)
   const [autoDiscountValue, setAutoDiscountValue] = useState('')
@@ -1091,11 +1094,27 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const discountModeAuto = isDiscountEnabled && saleDiscount?.mode === 'auto'
   const saleDiscountBase = subTotal - discountTotal + taxTotal + additionalCharges
   const autoDiscountCap = computeAutoDiscount(saleDiscount, saleDiscountBase)
-  const effectiveInvoiceDiscount = !isDiscountEnabled
+  const effectiveInvoiceDiscountRaw = !isDiscountEnabled
     ? 0
     : discountModeAuto
       ? (autoDiscountApplied ? Math.min(parseMoney(autoDiscountValue || '0'), autoDiscountCap) : 0)
       : invoiceDiscount
+  const maxInvoiceDiscount =
+    (saleDiscount?.max_discount_amount ?? 0) > 0
+      ? Math.max(saleDiscount.max_discount_amount, storedInvoiceDiscount)
+      : 0
+  const effectiveInvoiceDiscount = effectiveInvoiceDiscountRaw
+  // Discount the user typed (before any clamping), checked against the
+  // super-admin max-discount limit so we can show a validation error.
+  const enteredInvoiceDiscount = !isDiscountEnabled
+    ? 0
+    : discountModeAuto
+      ? (autoDiscountApplied ? parseMoney(autoDiscountValue || '0') : 0)
+      : invoiceDiscount
+  const discountLimitError =
+    maxInvoiceDiscount > 0 && enteredInvoiceDiscount > maxInvoiceDiscount + 0.005
+      ? `Discount cannot exceed the maximum allowed amount of ${formatCurrency(maxInvoiceDiscount)}`
+      : ''
 
   const applyAutoDiscount = () => {
     setAutoDiscountApplied(true)
@@ -1103,7 +1122,14 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   }
   const changeAutoDiscountValue = (raw: string) => {
     const next = limitDecimalInput(raw)
-    setAutoDiscountValue(parseMoney(next || '0') > autoDiscountCap ? String(autoDiscountCap) : next)
+    setAutoDiscountValue(clampAutoDiscountValue(next))
+  }
+  // Clamp to the auto rule's grant, except when the value is over the
+  // max-discount limit — that is left as typed so validation can flag it.
+  function clampAutoDiscountValue(next: string) {
+    const value = parseMoney(next || '0')
+    if (maxInvoiceDiscount > 0 && value > maxInvoiceDiscount) return next
+    return value > autoDiscountCap ? String(autoDiscountCap) : next
   }
 
   const preLoyaltyTotal = saleDiscountBase - effectiveInvoiceDiscount
@@ -1320,6 +1346,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setTerms(invoice.terms || '')
         const storedDiscount = invoice.invoice_discount ?? invoice.quotation_discount ?? 0
         setInvoiceDiscount(storedDiscount)
+        setStoredInvoiceDiscount(storedDiscount)
         setAutoDiscountApplied(storedDiscount > 0)
         setAutoDiscountValue(storedDiscount > 0 ? String(storedDiscount) : '')
         setChargeItems(hydrateAdditionalCharges(invoice.additional_charge_items, invoice.additional_charges || 0))
@@ -1407,6 +1434,10 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     if (items.some(i => !i.description)) {
       setError('items', 'Please fill all item details')
       showErrorToast('Please fill all item details')
+      return
+    }
+    if (discountLimitError) {
+      showErrorToast(discountLimitError)
       return
     }
     setSaving(true)
@@ -1505,6 +1536,10 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     if (items.some(i => !i.description)) {
       setError('items', 'Please fill all item details')
       showErrorToast('Please fill all item details')
+      return
+    }
+    if (discountLimitError) {
+      showErrorToast(discountLimitError)
       return
     }
     setSaving(true)
@@ -2338,9 +2373,10 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                               inputMode="decimal"
                               value={autoDiscountValue}
                               onChange={(e) => changeAutoDiscountValue(e.target.value)}
-                              onBlur={() => setAutoDiscountValue(String(Math.min(parseMoney(autoDiscountValue || '0'), autoDiscountCap)))}
+                              onBlur={() => setAutoDiscountValue(clampAutoDiscountValue(autoDiscountValue))}
                               aria-label="Applied discount amount"
-                              className="h-9"
+                              aria-invalid={!!discountLimitError}
+                              className={`h-9 ${discountLimitError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                             />
                             <Button
                               type="button"
@@ -2371,7 +2407,27 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       </p>
                     </div>
                   ) : (
-                    <Input type="number" min="0" step="0.01" value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Number(e.target.value))} />
+                    <>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={invoiceDiscount}
+                        aria-invalid={!!discountLimitError}
+                        className={discountLimitError ? 'border-red-500 focus-visible:ring-red-500' : ''}
+                        onChange={(e) => setInvoiceDiscount(Math.max(0, Number(e.target.value) || 0))}
+                      />
+                      {maxInvoiceDiscount > 0 && !discountLimitError && (
+                        <p className="text-xs text-muted-foreground">
+                          Max discount {formatCurrency(maxInvoiceDiscount)}
+                        </p>
+                      )}
+                    </>
+                  )}
+                  {discountLimitError && (
+                    <p className="text-xs font-medium text-red-600" role="alert">
+                      {discountLimitError}
+                    </p>
                   )}
                 </div>
                 )}

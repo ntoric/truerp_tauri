@@ -412,6 +412,11 @@ export default function POSPage() {
   const [customerSuggestions, setCustomerSuggestions] = useState<Party[]>([])
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
   const [isEditingCustomer, setIsEditingCustomer] = useState(false)
+  // Set when checkout was pressed without a customer: asks for details first.
+  const [checkoutPrompt, setCheckoutPrompt] = useState<{ shouldPrint: boolean } | null>(null)
+  const [promptName, setPromptName] = useState('')
+  const [promptPhone, setPromptPhone] = useState('')
+  const [promptBusy, setPromptBusy] = useState(false)
   const [customerPanelOpen, setCustomerPanelOpen] = useState(false)
   const [totalsExpanded, setTotalsExpanded] = useState(true)
   const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: string }[]>([
@@ -568,10 +573,9 @@ export default function POSPage() {
 
   const applyDefaultCustomer = (party: Party | null) => {
     if (!party) return
+    // Kept for the "Use Walk-in" fallback only — tabs start with no customer so
+    // checkout asks for the buyer's details first.
     setWalkInCustomer(party)
-    setTabs((prev) =>
-      prev.map((tab) => (tab.selectedParty ? tab : { ...tab, selectedParty: party }))
-    )
   }
 
   const ensureWalkInCustomer = async (list: Party[]): Promise<{ party: Party | null; parties: Party[] }> => {
@@ -766,7 +770,7 @@ export default function POSPage() {
     const finishClose = async () => {
       await offlineStorage.closePOSSession(session.id)
       setSession(null)
-      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', autoDiscountApplied: false, autoDiscountValue: '', additionalChargeItems: [] })
+      updateTab(activeTabId, { cart: [], selectedParty: null, discountType: 'amount', discountValue: '', autoDiscountApplied: false, autoDiscountValue: '', additionalChargeItems: [] })
       setIsEditingCustomer(false)
       resetPayment()
       window.location.href = '/dashboard'
@@ -1086,6 +1090,21 @@ export default function POSPage() {
 
   const getAdditionalCharges = () => Math.max(0, sumAdditionalChargeItems(activeTab.additionalChargeItems || []))
 
+  // Super-admin max-discount limit (0 = none) and the validation error shown
+  // when the discount the cashier entered goes over it.
+  const maxSaleDiscount = discountsEnabled ? (saleDiscount?.max_discount_amount ?? 0) : 0
+  const getEnteredSaleDiscount = () => {
+    if (!discountsEnabled) return 0
+    if (autoDiscountMode) {
+      return activeTab.autoDiscountApplied ? parseMoney(activeTab.autoDiscountValue || '0') : 0
+    }
+    return computeSaleDiscount(getCartTotal(), activeTab.discountType || 'amount', activeTab.discountValue || '')
+  }
+  const discountLimitError =
+    maxSaleDiscount > 0 && getEnteredSaleDiscount() > maxSaleDiscount + 0.005
+      ? `Discount cannot exceed the maximum allowed amount of ${formatCurrency(maxSaleDiscount)}`
+      : ''
+
   /** Loyalty applies to the selected customer: program on and customer not excluded. */
   const partyLoyaltyActive = () =>
     !!(loyaltySettings?.is_enabled && activeTab.selectedParty && !activeTab.selectedParty.loyalty_excluded)
@@ -1199,7 +1218,9 @@ export default function POSPage() {
     const cartTotal = getCartTotal()
     const addCharges = getAdditionalCharges()
     const cap = computeAutoDiscount(saleDiscount, cartTotal + addCharges)
-    const clamped = parseMoney(next || '0') > cap ? String(cap) : next
+    // Over the max-discount limit: keep as typed so validation flags it.
+    const overLimit = maxSaleDiscount > 0 && parseMoney(next || '0') > maxSaleDiscount
+    const clamped = !overLimit && parseMoney(next || '0') > cap ? String(cap) : next
     const prevSale = getSaleDiscount()
     const nextSale = Math.min(parseMoney(clamped || '0'), cap)
     const prevLoyalty = getLoyaltyDiscount(prevSale)
@@ -1365,7 +1386,7 @@ export default function POSPage() {
       id: `tab-${Date.now()}`,
       title: `Order ${tabs.length + 1}`,
       cart: [],
-      selectedParty: walkInCustomer,
+      selectedParty: null,
       notes: '',
       isDraft: false,
       discountType: 'amount',
@@ -1462,7 +1483,7 @@ export default function POSPage() {
         id: `draft-${draft.id}`,
         title: draft.title,
         cart: cartData,
-        selectedParty: party || walkInCustomer,
+        selectedParty: party || null,
         notes: draft.notes,
         isDraft: true,
         draftId: draft.id,
@@ -1847,9 +1868,6 @@ export default function POSPage() {
     setCustomerPhone('')
     setCustomerSuggestions([])
     setShowCustomerSuggestions(false)
-    if (!activeTab.selectedParty && walkInCustomer) {
-      updateTab(activeTabId, { selectedParty: walkInCustomer })
-    }
   }
 
   const useWalkInCustomer = () => {
@@ -1860,15 +1878,18 @@ export default function POSPage() {
     cancelEditingCustomer()
   }
 
-  const createQuickCustomer = async () => {
-    if (!customerPhone.trim()) {
+  const createQuickCustomer = async (
+    nameArg: string = customerName,
+    phoneArg: string = customerPhone,
+  ): Promise<Party | null> => {
+    if (!phoneArg.trim()) {
       notifyError('Phone number is required')
-      return
+      return null
     }
 
     const newCustomer = {
-      name: customerName.trim() || WALK_IN_CUSTOMER_NAME,
-      phone: customerPhone.trim(),
+      name: nameArg.trim() || WALK_IN_CUSTOMER_NAME,
+      phone: phoneArg.trim(),
       party_type: 'customer'
     }
 
@@ -1885,7 +1906,7 @@ export default function POSPage() {
         setParties(next)
         await offlineStorage.cacheParties(next)
         selectCustomer(createdParty)
-        return
+        return createdParty
       }
     } catch (err) {
       console.error('Failed to create customer online, using local party')
@@ -1902,12 +1923,83 @@ export default function POSPage() {
     setParties(next)
     await offlineStorage.putParty(localParty)
     selectCustomer(localParty)
+    return localParty
   }
 
-  const handleCheckout = async (shouldPrint: boolean) => {
+  const openCheckoutCustomerPrompt = (shouldPrint: boolean) => {
+    setCheckoutPrompt({ shouldPrint })
+    setPromptName('')
+    setPromptPhone('')
+  }
+
+  const closeCheckoutCustomerPrompt = () => {
+    setCheckoutPrompt(null)
+    setPromptName('')
+    setPromptPhone('')
+  }
+
+  const checkoutWithParty = (party: Party) => {
+    const shouldPrint = checkoutPrompt?.shouldPrint ?? false
+    closeCheckoutCustomerPrompt()
+    selectCustomer(party)
+    void handleCheckout(shouldPrint, party)
+  }
+
+  const submitCheckoutCustomer = async () => {
+    if (promptBusy) return
+    const phone = promptPhone.trim()
+    if (!phone) {
+      notifyError('Enter the customer mobile number, or use Walk-in Customer')
+      return
+    }
+    const existing = parties.find((p) => (p.phone || '').trim() === phone)
+    if (existing) {
+      checkoutWithParty(existing)
+      return
+    }
+    setPromptBusy(true)
+    try {
+      const created = await createQuickCustomer(promptName, phone)
+      if (created) checkoutWithParty(created)
+    } finally {
+      setPromptBusy(false)
+    }
+  }
+
+  const checkoutAsWalkIn = async () => {
+    let party = walkInCustomer
+    if (!party) {
+      const { party: ensured, parties: next } = await ensureWalkInCustomer(parties)
+      setParties(next)
+      setWalkInCustomer(ensured)
+      party = ensured
+    }
+    if (party) checkoutWithParty(party)
+  }
+
+  const promptSuggestions = useMemo(() => {
+    const name = promptName.trim().toLowerCase()
+    const phone = promptPhone.trim()
+    if (!name && !phone) return []
+    return parties
+      .filter((p) => p.id !== walkInCustomer?.id)
+      .filter((p) =>
+        (phone && (p.phone || '').includes(phone)) ||
+        (name && (p.name || '').toLowerCase().includes(name))
+      )
+      .slice(0, 5)
+  }, [parties, promptName, promptPhone, walkInCustomer?.id])
+
+  const handleCheckout = async (shouldPrint: boolean, partyOverride?: Party) => {
     if (activeTab.cart.length === 0) return
-    if (!activeTab.selectedParty) {
-      notifyError('Please select a customer')
+    const checkoutParty = partyOverride ?? activeTab.selectedParty
+    if (!checkoutParty) {
+      // No customer yet: ask for their details first; walk-in is the fallback.
+      openCheckoutCustomerPrompt(shouldPrint)
+      return
+    }
+    if (discountLimitError) {
+      notifyError(discountLimitError)
       return
     }
     if (checkoutInFlightRef.current) return
@@ -1930,7 +2022,7 @@ export default function POSPage() {
     const loyaltyIsCash = isCashLoyalty(loyaltySettings)
     const loyaltyEarned = getLoyaltyEarnEstimate(saleDiscount)
     const loyaltyBalanceAfter =
-      partyLoyaltyActive() && activeTab.selectedParty
+      partyLoyaltyActive() && activeTab.selectedParty && !partyOverride
         ? Math.max(
             0,
             Math.round(
@@ -1939,7 +2031,7 @@ export default function POSPage() {
           )
         : undefined
     const cartSnapshot = [...activeTab.cart]
-    const partySnapshot = activeTab.selectedParty
+    const partySnapshot = checkoutParty
     const clientSaleId = crypto.randomUUID()
 
     try {
@@ -1968,7 +2060,7 @@ export default function POSPage() {
         ...(saleDiscount > 0 ? { invoice_discount: saleDiscount } : {}),
         ...(getAdditionalCharges() > 0 ? { additional_charges: getAdditionalCharges() } : {}),
         ...(chargeItems.length > 0 ? { additional_charge_items: chargeItems } : {}),
-        ...(partyLoyaltyActive() ? loyaltyRedeemPayload(loyaltySettings, loyaltyPointsToRedeem) : {}),
+        ...(partyLoyaltyActive() && !partyOverride ? loyaltyRedeemPayload(loyaltySettings, loyaltyPointsToRedeem) : {}),
         items: cartSnapshot.map((item) => ({
           product_id: item.product.id,
           description: item.product.name,
@@ -2001,7 +2093,7 @@ export default function POSPage() {
         await offlineStorage.decrementLocalStock(item.product.id, item.quantity, item.batch_no, allowNegativeStock)
       }
 
-      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', autoDiscountApplied: false, autoDiscountValue: '', additionalChargeItems: [] })
+      updateTab(activeTabId, { cart: [], selectedParty: null, discountType: 'amount', discountValue: '', autoDiscountApplied: false, autoDiscountValue: '', additionalChargeItems: [] })
       setIsEditingCustomer(false)
       setEditingQty(null)
       setPaymentSplits([{ mode: 'upi', amount: '' }])
@@ -2134,7 +2226,7 @@ export default function POSPage() {
   return (
     <KeyboardShortcutsProvider>
     <POSCheckoutShortcuts
-      enabled={!showSessionModal && !showDraftModal && activeTab.cart.length > 0 && !!activeTab.selectedParty}
+      enabled={!showSessionModal && !showDraftModal && !checkoutPrompt && activeTab.cart.length > 0}
       onCheckout={() => { void handleCheckout(false) }}
       onCheckoutAndPrint={() => { void handleCheckout(true) }}
     />
@@ -2741,7 +2833,7 @@ export default function POSPage() {
                   onFocus={() => setShowCustomerSuggestions(true)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && customerPhone.trim()) {
-                      createQuickCustomer()
+                      void createQuickCustomer()
                     }
                   }}
                   className="h-8 text-xs"
@@ -2764,7 +2856,7 @@ export default function POSPage() {
                   <div className="absolute z-10 mt-1 w-full border rounded bg-white shadow-lg p-2">
                     <Button
                       size="sm"
-                      onClick={createQuickCustomer}
+                      onClick={() => { void createQuickCustomer() }}
                       className="w-full h-7 text-xs"
                       disabled={!customerPhone.trim()}
                     >
@@ -3068,8 +3160,9 @@ export default function POSPage() {
                                   inputMode="decimal"
                                   value={activeTab.autoDiscountValue || ''}
                                   onChange={(e) => updateAutoDiscountValue(e.target.value)}
-                                  className="h-7 w-16 px-1 text-right text-xs"
+                                  className={`h-7 w-16 px-1 text-right text-xs ${discountLimitError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                                   aria-label="Applied discount amount"
+                                  aria-invalid={!!discountLimitError}
                                 />
                                 <button
                                   type="button"
@@ -3127,8 +3220,10 @@ export default function POSPage() {
                             placeholder={(activeTab.discountType || 'amount') === 'percent' ? '%' : '0.00'}
                             value={activeTab.discountValue || ''}
                             onChange={(e) => applyPosDiscountChange(limitDecimalInput(e.target.value))}
-                            className="h-7 w-14 px-1 text-right text-xs"
+                            className={`h-7 w-14 px-1 text-right text-xs ${discountLimitError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                             aria-label="Sale discount"
+                            aria-invalid={!!discountLimitError}
+                            title={maxSaleDiscount > 0 ? `Max discount ${formatCurrency(maxSaleDiscount)}` : undefined}
                           />
                         </div>
                       )}
@@ -3156,6 +3251,11 @@ export default function POSPage() {
                       </Popover>
                     </div>
                   </div>
+                  {discountLimitError && (
+                    <p className="text-[11px] font-medium text-red-600" role="alert">
+                      {discountLimitError}
+                    </p>
+                  )}
                   {getAdditionalCharges() > 0 && (
                     <div className="flex justify-between text-xs">
                       <span className="text-gray-600">Additional Charges</span>
@@ -3338,7 +3438,7 @@ export default function POSPage() {
                 variant="outline"
                 className="h-11 w-full min-w-0 gap-1.5 text-xs sm:h-10 sm:text-sm"
                 onClick={() => handleCheckout(false)}
-                disabled={activeTab.cart.length === 0 || !activeTab.selectedParty}
+                disabled={activeTab.cart.length === 0}
                 aria-keyshortcuts="Alt+Enter"
               >
                 <CheckCircle className="h-4 w-4 shrink-0" />
@@ -3355,7 +3455,7 @@ export default function POSPage() {
               <Button
                 className="h-11 w-full min-w-0 gap-1.5 text-xs sm:h-10 sm:text-sm"
                 onClick={() => handleCheckout(true)}
-                disabled={activeTab.cart.length === 0 || !activeTab.selectedParty}
+                disabled={activeTab.cart.length === 0}
                 aria-keyshortcuts="Shift+Enter"
               >
                 <Printer className="h-4 w-4 shrink-0" />
@@ -3404,6 +3504,81 @@ export default function POSPage() {
                 className="flex-1 h-8 text-sm"
               >
                 Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Checkout without a customer: ask for details, walk-in only as fallback */}
+      {checkoutPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Customer details</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeCheckoutCustomerPrompt}
+                className="h-7 w-7 p-0 text-gray-500"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="mb-3 text-xs text-gray-500">
+              Add the customer's details for this bill.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                void submitCheckoutCustomer()
+              }}
+              className="space-y-2"
+            >
+              <Input
+                autoFocus
+                type="tel"
+                placeholder="Mobile number *"
+                value={promptPhone}
+                onChange={(e) => setPromptPhone(e.target.value)}
+                className="h-9 text-sm"
+              />
+              <Input
+                placeholder="Customer name"
+                value={promptName}
+                onChange={(e) => setPromptName(e.target.value)}
+                className="h-9 text-sm"
+              />
+              {promptSuggestions.length > 0 && (
+                <div className="max-h-40 overflow-y-auto rounded border">
+                  {promptSuggestions.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => checkoutWithParty(p)}
+                      className="w-full border-b px-2 py-1.5 text-left last:border-0 hover:bg-blue-50"
+                    >
+                      <p className="text-xs font-medium text-gray-900">{p.name}</p>
+                      <p className="text-xs text-gray-500">{p.phone || '—'}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Button type="submit" className="h-9 w-full text-sm" disabled={promptBusy || !promptPhone.trim()}>
+                {promptBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                {checkoutPrompt.shouldPrint ? 'Save & Checkout & Print' : 'Save & Checkout'}
+              </Button>
+            </form>
+            <div className="mt-3 border-t pt-3 text-center">
+              <p className="mb-1.5 text-xs text-gray-500">Customer didn't share details?</p>
+              <Button
+                variant="outline"
+                onClick={() => { void checkoutAsWalkIn() }}
+                disabled={promptBusy}
+                className="h-8 w-full text-sm"
+              >
+                Use Walk-in Customer
               </Button>
             </div>
           </div>

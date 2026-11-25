@@ -43,8 +43,11 @@ import {
   TrendingUp,
   Wallet,
   AlertTriangle,
+  Send,
 } from 'lucide-react'
 import BrandLoader from '@/components/BrandLoader'
+import SendStatementDialog from '@/components/parties/SendStatementDialog'
+import TelegramLinkDialog from '@/components/parties/TelegramLinkPanel'
 
 const FAVOURITE_KEY = 'party-ledger'
 
@@ -96,6 +99,8 @@ export default function PartyLedgerPage() {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<'excel' | 'pdf' | null>(null)
   const [favourites, setFavourites] = useState<Set<string>>(new Set())
+  const [sendOpen, setSendOpen] = useState(false)
+  const [telegramOpen, setTelegramOpen] = useState(false)
 
   useEffect(() => {
     setFavourites(new Set(loadReportFavourites()))
@@ -158,6 +163,14 @@ export default function PartyLedgerPage() {
   const balanceLabel = (ledger?.closing_balance ?? 0) < 0 ? 'Total Payable Amount' : 'Total Receivable Amount'
   const docLabel = isVendor ? 'Total Purchase Amount' : 'Total Sales Amount'
   const moneyLabel = isVendor ? 'Total Paid Amount' : 'Total Received Amount'
+
+  const statementTarget = useMemo(
+    () =>
+      ledger
+        ? ({ kind: 'single', party: { id: ledger.party.id, name: ledger.party.name, phone: ledger.party.phone } } as const)
+        : null,
+    [ledger]
+  )
 
   const shareText = ledger ? buildPartyLedgerShareText(ledger) : ''
 
@@ -222,9 +235,23 @@ export default function PartyLedgerPage() {
                 />
                 Favourite
               </Button>
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700"
+                onClick={() => setSendOpen(true)}
+                disabled={!ledger || !fromDate || !toDate}
+                title={!fromDate || !toDate ? 'Pick a period with a start and end date to send a statement' : undefined}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Send Statement
+              </Button>
               <Button variant="outline" size="sm" onClick={shareWhatsApp} disabled={!ledger}>
                 <MessageCircle className="mr-2 h-4 w-4" />
                 WhatsApp
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setTelegramOpen(true)} disabled={!ledger}>
+                <Send className="mr-2 h-4 w-4 text-sky-600" />
+                Telegram Link
               </Button>
               <Button variant="outline" size="sm" onClick={shareEmail} disabled={!ledger}>
                 <Mail className="mr-2 h-4 w-4" />
@@ -384,6 +411,13 @@ export default function PartyLedgerPage() {
           </CardContent>
         </Card>
       </div>
+      <SendStatementDialog
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        target={statementTarget}
+        initialRange={fromDate && toDate ? { from_date: fromDate, to_date: toDate } : undefined}
+      />
+      <TelegramLinkDialog open={telegramOpen} onOpenChange={setTelegramOpen} party={statementTarget?.party ?? null} />
     </DashboardLayout>
   )
 }

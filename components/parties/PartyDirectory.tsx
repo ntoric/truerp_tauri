@@ -31,13 +31,21 @@ import {
 } from '@/lib/partyValidation'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { Plus, Search, Phone, ArrowUp, ArrowDown, Trash2, Edit, MoreVertical, Download, BarChart3, ChevronUp, ChevronDown, FileText } from 'lucide-react'
+import { Plus, Search, Phone, ArrowUp, ArrowDown, Trash2, Edit, MoreVertical, Download, BarChart3, ChevronUp, ChevronDown, FileText, Send, UserCheck, UserX } from 'lucide-react'
 import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import BrandLoader from '@/components/BrandLoader'
+import SendStatementDialog from '@/components/parties/SendStatementDialog'
+import TelegramLinkDialog from '@/components/parties/TelegramLinkPanel'
+import {
+  excludeFromStatements,
+  fetchStatementExclusions,
+  includeInStatements,
+  type BulkStatementSelection,
+} from '@/lib/partyStatement'
 
 export type PartyDirectoryType = 'customer' | 'vendor'
 
@@ -105,6 +113,14 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
   const [rowContextMenu, setRowContextMenu] = useState<{ party: Party; x: number; y: number } | null>(null)
   const [isBulkCategoryModalOpen, setIsBulkCategoryModalOpen] = useState(false)
   const [bulkCategory, setBulkCategory] = useState('')
+  const [statementTarget, setStatementTarget] = useState<
+    | { kind: 'single'; party: { id: string; name: string; phone?: string } }
+    | { kind: 'bulk'; selection: BulkStatementSelection; count: number }
+    | null
+  >(null)
+  const [telegramParty, setTelegramParty] = useState<{ id: string; name: string; phone?: string } | null>(null)
+  // Parties left out of bulk / scheduled statements.
+  const [statementExcluded, setStatementExcluded] = useState<Set<string>>(new Set())
   const [isCategoryUpdateConfirmOpen, setIsCategoryUpdateConfirmOpen] = useState(false)
   const [formData, setFormData] = useState({ ...EMPTY_PARTY_FORM, party_type: partyType ?? EMPTY_PARTY_FORM.party_type })
 
@@ -126,6 +142,50 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
   useEffect(() => {
     fetchParties()
   }, [debouncedSearch, categoryFilter, balanceFilter, page])
+
+  const loadStatementExclusions = () =>
+    fetchStatementExclusions()
+      .then((rows) => setStatementExcluded(new Set(rows.map((r) => r.party_id))))
+      .catch(() => {})
+
+  useEffect(() => {
+    void loadStatementExclusions()
+  }, [])
+
+  const toggleStatementExclusion = async (p: Party) => {
+    const excluded = statementExcluded.has(p.id)
+    try {
+      if (excluded) await includeInStatements(p.id)
+      else await excludeFromStatements({ party_ids: [p.id] })
+      notifySuccess(
+        excluded
+          ? `${p.name} will get bulk and scheduled statements again`
+          : `${p.name} won't get bulk or scheduled statements`
+      )
+      void loadStatementExclusions()
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : 'Failed to update excluded parties')
+    }
+  }
+
+  const handleBulkExcludeFromStatements = async () => {
+    if (
+      !(await confirm({
+        title: `Exclude ${selectedCount} ${selectedCount === 1 ? 'party' : 'parties'} from statements?`,
+        description:
+          'They will be skipped by bulk statement sends and schedules. You can include them again from Settings → Customer Messaging → Party statements.',
+        confirmLabel: 'Exclude',
+      }))
+    )
+      return
+    try {
+      const res = await excludeFromStatements(bulkSelectionPayload() as BulkStatementSelection)
+      notifySuccess(`${res.excluded} ${res.excluded === 1 ? 'party' : 'parties'} excluded from statements`)
+      void loadStatementExclusions()
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : 'Failed to exclude parties')
+    }
+  }
 
   useEffect(() => {
     fetchStats()
@@ -459,6 +519,27 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
       <DropdownMenuItem onClick={() => router.push(`/parties/ledger?party_id=${p.id}`)}>
         <FileText className="mr-2 h-4 w-4" />
         View Ledger
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setStatementTarget({ kind: 'single', party: { id: p.id, name: p.name, phone: p.phone } })}>
+        <Send className="mr-2 h-4 w-4" />
+        Send Statement
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => void toggleStatementExclusion(p)}>
+        {statementExcluded.has(p.id) ? (
+          <>
+            <UserCheck className="mr-2 h-4 w-4" />
+            Include in Statements
+          </>
+        ) : (
+          <>
+            <UserX className="mr-2 h-4 w-4" />
+            Exclude from Statements
+          </>
+        )}
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setTelegramParty({ id: p.id, name: p.name, phone: p.phone })}>
+        <Send className="mr-2 h-4 w-4 text-sky-600" />
+        Telegram Link
       </DropdownMenuItem>
       <DropdownMenuItem onClick={() => handleEditParty(p)}>
         <Edit className="mr-2 h-4 w-4" />
@@ -848,6 +929,18 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
               </div>
               {selectedCount > 0 && (
                 <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setStatementTarget({ kind: 'bulk', selection: bulkSelectionPayload() as BulkStatementSelection, count: selectedCount })
+                    }
+                  >
+                    <Send className="h-4 w-4 mr-2" /> Send Statement ({selectedCount})
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void handleBulkExcludeFromStatements()}>
+                    <UserX className="h-4 w-4 mr-2" /> Exclude from Statements
+                  </Button>
                   <Dialog open={isBulkCategoryModalOpen} onOpenChange={setIsBulkCategoryModalOpen}>
                     <DialogTrigger asChild>
                       <Button variant="outline" size="sm">Update Category</Button>
@@ -1052,6 +1145,20 @@ export default function PartyDirectory({ partyType }: { partyType?: PartyDirecto
         </Card>
       </div>
       {confirmDialog}
+      <SendStatementDialog
+        open={statementTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setStatementTarget(null)
+        }}
+        target={statementTarget}
+      />
+      <TelegramLinkDialog
+        open={telegramParty !== null}
+        onOpenChange={(open) => {
+          if (!open) setTelegramParty(null)
+        }}
+        party={telegramParty}
+      />
     </DashboardLayout>
   )
 }

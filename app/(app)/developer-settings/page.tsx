@@ -23,15 +23,17 @@ import {
 } from '@/lib/pageFeatures'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  Mail, MessageSquare, Send, Loader2, CheckCircle, XCircle,
+  Mail, Send, Loader2, CheckCircle, XCircle,
   Smartphone, Save, LayoutGrid, Sparkles, Clock,
   DatabaseBackup, Upload, FileArchive, FileUp, FileDown, AlertTriangle, Store,
-  Database, Download, Trash2, CloudUpload, Palette,
+  Database, Download, Trash2, CloudUpload, Palette, Plug, MessageCircle,
 } from 'lucide-react'
 import PremiumEmpty from '@/components/ui/premium-empty'
 import { getServerTime, type ServerTimeInfo } from '@/lib/dailyReport'
 import { downloadBlob } from '@/lib/accountingExport'
 import BrandLoader from '@/components/BrandLoader'
+import WhatsAppGatewayCard from '@/components/developer-settings/WhatsAppGatewayCard'
+import AIProvidersCard from '@/components/developer-settings/AIProvidersCard'
 
 // -----------------------------------------------------------------------------
 // Data Migration types & config
@@ -496,11 +498,28 @@ interface MigrationJob {
   finished_at?: string
 }
 
-interface AiBusinessSettings {
-  enable_ai_hsn_search: boolean
-  enable_ai_bill_parsing: boolean
-  gemini_api_key: string
-  [key: string]: unknown
+// Sub-sections of the Integrations tab. Every integration is configured
+// per store: the backend scopes these endpoints to the active store.
+// WhatsApp is one connection per store, shared by every WhatsApp feature.
+type IntegrationSection = 'email' | 'whatsapp' | 'sms' | 'ai'
+
+const INTEGRATION_SECTIONS: IntegrationSection[] = ['email', 'whatsapp', 'sms', 'ai']
+const DEVELOPER_TABS = ['general', 'integrations', 'migration', 'pages', 'maintenance']
+
+interface IntegrationStatus {
+  configured: boolean
+  enabled: boolean
+  provider?: string
+}
+
+// GET /developer-settings/integrations
+interface IntegrationsOverview {
+  store_id?: string
+  store_name?: string
+  email: IntegrationStatus
+  whatsapp: IntegrationStatus
+  sms: IntegrationStatus
+  ai: IntegrationStatus
 }
 
 interface DeveloperSettings {
@@ -660,11 +679,8 @@ export default function DeveloperSettingsPage() {
     bulk_download_limit: 25,
   })
   const [pageFeatures, setPageFeatures] = useState<PageFeaturesMap>(defaultPageFeatures)
-  const [aiSettings, setAiSettings] = useState<AiBusinessSettings>({
-    enable_ai_hsn_search: false,
-    enable_ai_bill_parsing: false,
-    gemini_api_key: '',
-  })
+  const [integrationSection, setIntegrationSection] = useState<IntegrationSection>('email')
+  const [integrations, setIntegrations] = useState<IntegrationsOverview | null>(null)
   const [dbMaint, setDbMaint] = useState<DBMaintenanceSettings>({
     id: '',
     is_enabled: false,
@@ -711,9 +727,31 @@ export default function DeveloperSettingsPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState<'email' | 'whatsapp' | 'sms' | null>(null)
+  const [testing, setTesting] = useState<'email' | 'sms' | null>(null)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
   const [serverTime, setServerTime] = useState<ServerTimeInfo | null>(null)
+
+  // Deep links: /developer-settings?tab=integrations&section=whatsapp-gateway
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tab = params.get('tab')
+    const rawSection = params.get('section')
+    const section = (rawSection === 'whatsapp-gateway' ? 'whatsapp' : rawSection) as IntegrationSection | null
+    if (tab && DEVELOPER_TABS.includes(tab)) setActiveTab(tab)
+    if (section && INTEGRATION_SECTIONS.includes(section)) {
+      setActiveTab('integrations')
+      setIntegrationSection(section)
+    }
+  }, [])
+
+  const refreshIntegrations = async () => {
+    try {
+      const res = await apiFetch('/developer-settings/integrations')
+      if (res.ok) setIntegrations(await res.json())
+    } catch {
+      // status badges are non-critical
+    }
+  }
 
   useEffect(() => {
     if (!authLoading && user && isSuperAdmin(user.role)) {
@@ -746,13 +784,16 @@ export default function DeveloperSettingsPage() {
 
   const fetchSettings = async () => {
     try {
-      const [settingsRes, pagesRes, businessRes, maintRes, backupRes] = await Promise.all([
+      const [settingsRes, pagesRes, maintRes, backupRes, integrationsRes] = await Promise.all([
         apiFetch('/developer-settings'),
         apiFetch('/page-features'),
-        apiFetch('/business'),
         apiFetch('/developer-settings/db-maintenance'),
         apiFetch('/developer-settings/db-backup'),
+        apiFetch('/developer-settings/integrations'),
       ])
+      if (integrationsRes.ok) {
+        setIntegrations(await integrationsRes.json())
+      }
       if (settingsRes.ok) {
         const data = await settingsRes.json()
         setSettings(data)
@@ -760,10 +801,6 @@ export default function DeveloperSettingsPage() {
       if (pagesRes.ok) {
         const data = await pagesRes.json()
         setPageFeatures(mergePageFeatures(data.pages))
-      }
-      if (businessRes.ok) {
-        const data = await businessRes.json()
-        setAiSettings(data)
       }
       if (maintRes.ok) {
         const data: DBMaintenanceInfo = await maintRes.json()
@@ -800,17 +837,6 @@ export default function DeveloperSettingsPage() {
           notifySuccess('Page features saved successfully')
         } else {
           notifyError('Failed to save page features')
-        }
-      } else if (activeTab === 'ai') {
-        const res = await apiFetch('/business', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(aiSettings),
-        })
-        if (res.ok) {
-          notifySuccess('AI settings saved successfully')
-        } else {
-          notifyError('Failed to save AI settings')
         }
       } else if (activeTab === 'maintenance') {
         // The maintenance tab holds two cards — save both settings groups.
@@ -863,6 +889,11 @@ export default function DeveloperSettingsPage() {
         })
         if (res.ok) {
           notifySuccess('Settings saved successfully')
+          if (activeTab === 'integrations') {
+            // Reload so write-only secret fields reset to their saved state.
+            const fresh = await apiFetch('/developer-settings')
+            if (fresh.ok) setSettings(await fresh.json())
+          }
         } else {
           const data = await res.json().catch(() => ({}))
           notifyError(data.error || 'Failed to save settings')
@@ -873,12 +904,11 @@ export default function DeveloperSettingsPage() {
       notifyError(
         activeTab === 'pages'
           ? 'Failed to save page features'
-          : activeTab === 'ai'
-            ? 'Failed to save AI settings'
-            : 'Failed to save settings'
+          : 'Failed to save settings'
       )
     } finally {
       setSaving(false)
+      if (activeTab === 'integrations') void refreshIntegrations()
     }
   }
 
@@ -912,23 +942,6 @@ export default function DeveloperSettingsPage() {
       })
     } catch (err) {
       setTestResult({ success: false, message: 'Email connection failed' })
-    } finally {
-      setTesting(null)
-    }
-  }
-
-  const testWhatsAppConnection = async () => {
-    setTesting('whatsapp')
-    setTestResult(null)
-    try {
-      const res = await apiFetch('/developer-settings/test-whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      const data = await res.json()
-      setTestResult({ success: res.ok, message: data.message || (res.ok ? 'WhatsApp connection successful' : 'WhatsApp connection failed') })
-    } catch (err) {
-      setTestResult({ success: false, message: 'WhatsApp connection failed' })
     } finally {
       setTesting(null)
     }
@@ -1145,14 +1158,17 @@ export default function DeveloperSettingsPage() {
                 Design Kit
               </Link>
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              {activeTab === 'pages'
-                ? 'Save Page Features'
-                : activeTab === 'ai'
-                  ? 'Save AI Settings'
-                  : 'Save Settings'}
-            </Button>
+            {/* WhatsApp and AI sections have their own Save buttons. */}
+            {!(activeTab === 'integrations' && (integrationSection === 'whatsapp' || integrationSection === 'ai')) && (
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {activeTab === 'pages'
+                  ? 'Save Page Features'
+                  : activeTab === 'integrations'
+                    ? 'Save Integration'
+                    : 'Save Settings'}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1164,26 +1180,14 @@ export default function DeveloperSettingsPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-8">
+          <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
               General
             </TabsTrigger>
-            <TabsTrigger value="email" className="flex items-center gap-2">
-              <Mail className="h-4 w-4" />
-              Email
-            </TabsTrigger>
-            <TabsTrigger value="whatsapp" className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4" />
-              WhatsApp
-            </TabsTrigger>
-            <TabsTrigger value="sms" className="flex items-center gap-2">
-              <Smartphone className="h-4 w-4" />
-              SMS
-            </TabsTrigger>
-            <TabsTrigger value="ai" className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              AI Features
+            <TabsTrigger value="integrations" className="flex items-center gap-2">
+              <Plug className="h-4 w-4" />
+              Integrations
             </TabsTrigger>
             <TabsTrigger value="migration" className="flex items-center gap-2">
               <DatabaseBackup className="h-4 w-4" />
@@ -1368,6 +1372,47 @@ export default function DeveloperSettingsPage() {
 
           </TabsContent>
 
+          <TabsContent value="integrations" className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+              <Store className="h-4 w-4 text-muted-foreground" />
+              <span>
+                Configuring integrations for{' '}
+                <span className="font-semibold">{integrations?.store_name || activeStore?.name || 'the current store'}</span>.
+              </span>
+              <span className="text-muted-foreground">
+                Each store has its own connections.
+                {canSwitchStores ? ' Switch store from the header to configure another one.' : ''}
+              </span>
+            </div>
+
+            <Tabs
+              value={integrationSection}
+              onValueChange={(v) => {
+                setIntegrationSection(v as IntegrationSection)
+                setTestResult(null)
+              }}
+            >
+              <TabsList className="grid h-auto w-full grid-cols-2 lg:grid-cols-4">
+                {([
+                  { key: 'email', label: 'Email', icon: Mail, status: integrations?.email },
+                  { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, status: integrations?.whatsapp },
+                  { key: 'sms', label: 'SMS', icon: Smartphone, status: integrations?.sms },
+                  { key: 'ai', label: 'AI', icon: Sparkles, status: integrations?.ai },
+                ] as const).map(({ key, label, icon: Icon, status }) => (
+                  <TabsTrigger key={key} value={key} className="flex items-center gap-2">
+                    <Icon className="h-4 w-4" />
+                    {label}
+                    {status && (
+                      <span
+                        className={`h-2 w-2 rounded-full ${status.configured ? 'bg-green-500' : 'bg-gray-300'}`}
+                        title={status.configured ? 'Configured' : 'Not configured'}
+                        aria-label={status.configured ? 'Configured' : 'Not configured'}
+                      />
+                    )}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
           <TabsContent value="email">
             <Card>
               <CardHeader>
@@ -1476,88 +1521,7 @@ export default function DeveloperSettingsPage() {
           </TabsContent>
 
           <TabsContent value="whatsapp">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  WhatsApp Service Configuration
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>WhatsApp Provider</Label>
-                  <Select
-                    value={settings.whatsapp_provider}
-                    onValueChange={(value) => setSettings({ ...settings, whatsapp_provider: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="meta">Meta (WhatsApp Business API)</SelectItem>
-                      <SelectItem value="twilio">Twilio</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {settings.whatsapp_provider === 'meta' && (
-                  <>
-                    <div className="space-y-2">
-                      <Label>WhatsApp API Key</Label>
-                      <Input
-                        type="password"
-                        onChange={(e) => setSettings({ ...settings, whatsapp_api_key: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Phone Number ID</Label>
-                      <Input
-                        value={settings.whatsapp_phone_number_id}
-                        onChange={(e) => setSettings({ ...settings, whatsapp_phone_number_id: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Business Account ID</Label>
-                      <Input
-                        value={settings.whatsapp_business_account_id}
-                        onChange={(e) => setSettings({ ...settings, whatsapp_business_account_id: e.target.value })}
-                      />
-                    </div>
-                  </>
-                )}
-
-                {settings.whatsapp_provider === 'twilio' && (
-                  <>
-                    <div className="space-y-2">
-                      <Label>Twilio Account SID</Label>
-                      <Input
-                        value={settings.twilio_account_sid}
-                        onChange={(e) => setSettings({ ...settings, twilio_account_sid: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Twilio Auth Token</Label>
-                      <Input
-                        type="password"
-                        onChange={(e) => setSettings({ ...settings, twilio_auth_token: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Twilio Phone Number</Label>
-                      <Input
-                        value={settings.twilio_phone_number}
-                        onChange={(e) => setSettings({ ...settings, twilio_phone_number: e.target.value })}
-                      />
-                    </div>
-                  </>
-                )}
-
-                <Button onClick={testWhatsAppConnection} disabled={testing === 'whatsapp'} variant="outline">
-                  {testing === 'whatsapp' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  Test WhatsApp Connection
-                </Button>
-              </CardContent>
-            </Card>
+            <WhatsAppGatewayCard onSaved={() => void refreshIntegrations()} />
           </TabsContent>
 
           <TabsContent value="sms">
@@ -1700,73 +1664,9 @@ export default function DeveloperSettingsPage() {
           </TabsContent>
 
           <TabsContent value="ai">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5" />
-                  AI Features
-                </CardTitle>
-                <CardDescription>
-                  Configure Gemini-powered HSN search and purchase bill parsing for this business.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2.5">
-                    <Switch
-                      id="enable_ai_hsn_search"
-                      checked={!!aiSettings.enable_ai_hsn_search}
-                      onCheckedChange={(checked) =>
-                        setAiSettings((prev) => ({ ...prev, enable_ai_hsn_search: !!checked }))
-                      }
-                    />
-                    <Label htmlFor="enable_ai_hsn_search">Enable AI-powered HSN code search using Gemini</Label>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    When enabled, you can use AI to find HSN codes based on product descriptions
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2.5">
-                    <Switch
-                      id="enable_ai_bill_parsing"
-                      checked={!!aiSettings.enable_ai_bill_parsing}
-                      onCheckedChange={(checked) =>
-                        setAiSettings((prev) => ({ ...prev, enable_ai_bill_parsing: !!checked }))
-                      }
-                    />
-                    <Label htmlFor="enable_ai_bill_parsing">Enable AI-powered purchase bill parsing using Gemini</Label>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    When enabled, you can upload bill images and AI will extract vendor details, items, and amounts
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="gemini_api_key">Gemini API Key</Label>
-                  <Input
-                    id="gemini_api_key"
-                    type="password"
-                    value={String(aiSettings.gemini_api_key || '')}
-                    onChange={(e) =>
-                      setAiSettings((prev) => ({ ...prev, gemini_api_key: e.target.value }))
-                    }
-                    placeholder="Enter your Gemini API key"
-                    disabled={!aiSettings.enable_ai_hsn_search && !aiSettings.enable_ai_bill_parsing}
-                  />
-                  <p className="text-xs text-gray-500">
-                    Get your API key from{' '}
-                    <a
-                      href="https://makersuite.google.com/app/apikey"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
-                    >
-                      Google AI Studio
-                    </a>
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <AIProvidersCard onSaved={() => void refreshIntegrations()} />
+          </TabsContent>
+            </Tabs>
           </TabsContent>
 
           <TabsContent value="migration">

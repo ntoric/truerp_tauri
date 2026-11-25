@@ -54,8 +54,13 @@ export interface WhatsAppInvoiceSettings {
   max_link_ttl_minutes?: number;
 }
 
+// Gateway credentials (provider, key, sender, Account SID) are edited only
+// in Developer Settings → Integrations; the save endpoint ignores them.
 export interface WhatsAppInvoiceSettingsPayload extends Omit<
   WhatsAppInvoiceSettings,
+  | "provider"
+  | "phone_number_id"
+  | "account_sid"
   | "has_api_key"
   | "api_key_hint"
   | "has_phone_number_id"
@@ -70,13 +75,7 @@ export interface WhatsAppInvoiceSettingsPayload extends Omit<
   | "can_edit_link_ttl"
   | "min_link_ttl_minutes"
   | "max_link_ttl_minutes"
-> {
-  /** Empty = keep the stored Phone Number ID. */
-  phone_number_id: string;
-  /** Empty = keep the stored key. */
-  api_key?: string;
-  clear_api_key?: boolean;
-}
+> {}
 
 export interface WhatsAppInvoiceLog {
   id: string;

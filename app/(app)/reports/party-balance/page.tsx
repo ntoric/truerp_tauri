@@ -51,6 +51,7 @@ import {
 } from 'lucide-react'
 import PremiumEmpty from '@/components/ui/premium-empty'
 import BrandLoader from '@/components/BrandLoader'
+import ReportTelegramToggle from '@/components/ReportTelegramToggle'
 
 const PARTY_TYPE_OPTIONS: { value: PartyBalanceType; label: string }[] = [
   { value: 'all', label: 'All parties' },
@@ -97,6 +98,7 @@ function PartyBalanceEmailCard() {
 
   const [isEnabled, setIsEnabled] = useState(false)
   const [recipients, setRecipients] = useState('')
+  const [sendTelegram, setSendTelegram] = useState(false)
   const [reportDay, setReportDay] = useState<PartyBalanceReportDay>('today')
   const [partyType, setPartyType] = useState<PartyBalanceType>('all')
   const [sendTime, setSendTime] = useState('21:00')
@@ -106,6 +108,7 @@ function PartyBalanceEmailCard() {
     setSettings(s)
     setIsEnabled(s.is_enabled)
     setRecipients(s.recipient_emails || '')
+    setSendTelegram(!!s.send_telegram)
     setReportDay(s.report_day || 'today')
     setPartyType(s.party_type || 'all')
     setSendTime(s.send_time || '21:00')
@@ -140,6 +143,7 @@ function PartyBalanceEmailCard() {
         await updatePartyBalanceEmailSettings({
           is_enabled: isEnabled,
           recipient_emails: recipients,
+          send_telegram: sendTelegram,
           report_day: reportDay,
           party_type: partyType,
           send_time: sendTime,
@@ -162,7 +166,7 @@ function PartyBalanceEmailCard() {
       if (result.warning) {
         notifyError(`Sent ${result.sent_count} of ${result.total}. ${result.warning_msg || ''}`)
       } else {
-        notifySuccess(`Report email sent to ${result.sent_count} recipient(s)`)
+        notifySuccess(`Report sent to ${result.sent_count} recipient(s)`)
       }
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Failed to send report email')
@@ -272,6 +276,8 @@ function PartyBalanceEmailCard() {
               </p>
             </div>
 
+            <ReportTelegramToggle id="party-balance-report-telegram" checked={sendTelegram} onChange={setSendTelegram} />
+
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-gray-50 px-3 py-2">
               <div className="space-y-0.5 text-xs text-gray-600">
                 <div>
@@ -303,7 +309,7 @@ function PartyBalanceEmailCard() {
                   variant="outline"
                   size="sm"
                   onClick={() => void sendNow()}
-                  disabled={sending || !settings?.recipient_emails}
+                  disabled={sending || (!settings?.recipient_emails && !settings?.send_telegram)}
                 >
                   <Mail className="mr-2 h-4 w-4" />
                   {sending ? 'Sending…' : 'Send now (test)'}

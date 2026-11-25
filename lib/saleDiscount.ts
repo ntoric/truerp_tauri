@@ -16,6 +16,10 @@ export interface SaleDiscountSettings {
   discount_type: 'percent' | 'amount'
   discount_value: number
   min_sale_amount: number
+  // Upper limit on the invoice-level discount a single sale may carry,
+  // applied to manual entry and the auto rule alike. 0 = no limit.
+  // Configurable by super admins only.
+  max_discount_amount: number
 }
 
 export const DEFAULT_SALE_DISCOUNT_SETTINGS: SaleDiscountSettings = {
@@ -24,6 +28,7 @@ export const DEFAULT_SALE_DISCOUNT_SETTINGS: SaleDiscountSettings = {
   discount_type: 'percent',
   discount_value: 0,
   min_sale_amount: 0,
+  max_discount_amount: 0,
 }
 
 export function normalizeSaleDiscountSettings(data: unknown): SaleDiscountSettings {
@@ -34,6 +39,7 @@ export function normalizeSaleDiscountSettings(data: unknown): SaleDiscountSettin
     discount_type: raw.discount_type === 'amount' ? 'amount' : 'percent',
     discount_value: Math.max(0, parseMoney(raw.discount_value ?? 0)),
     min_sale_amount: Math.max(0, parseMoney(raw.min_sale_amount ?? 0)),
+    max_discount_amount: Math.max(0, parseMoney(raw.max_discount_amount ?? 0)),
   }
 }
 
@@ -49,6 +55,14 @@ export async function fetchSaleDiscountSettings(timeoutMs = 5000): Promise<SaleD
   return { ...DEFAULT_SALE_DISCOUNT_SETTINGS }
 }
 
+// Clamp an invoice-level discount to the configured maximum (no-op when no
+// maximum is set).
+export function capSaleDiscount(settings: SaleDiscountSettings | null, discount: number): number {
+  const limit = settings?.max_discount_amount ?? 0
+  if (limit <= 0) return discount
+  return Math.min(discount, limit)
+}
+
 // Whether a sale of `saleBase` qualifies for the auto discount, i.e. it
 // reaches the configured threshold and the rule grants something.
 export function autoDiscountEligible(settings: SaleDiscountSettings | null, saleBase: number): boolean {
@@ -61,10 +75,11 @@ export function autoDiscountEligible(settings: SaleDiscountSettings | null, sale
 // when the sale is not eligible.
 export function computeAutoDiscount(settings: SaleDiscountSettings | null, saleBase: number): number {
   if (!autoDiscountEligible(settings, saleBase) || saleBase <= 0) return 0
-  if (settings!.discount_type === 'percent') {
-    return parseMoney(Math.min(saleBase, saleBase * (Math.min(settings!.discount_value, 100) / 100)))
-  }
-  return parseMoney(Math.min(saleBase, settings!.discount_value))
+  const raw =
+    settings!.discount_type === 'percent'
+      ? Math.min(saleBase, saleBase * (Math.min(settings!.discount_value, 100) / 100))
+      : Math.min(saleBase, settings!.discount_value)
+  return parseMoney(capSaleDiscount(settings, raw))
 }
 
 export function describeAutoDiscount(settings: SaleDiscountSettings | null): string {
@@ -73,5 +88,6 @@ export function describeAutoDiscount(settings: SaleDiscountSettings | null): str
     settings.discount_type === 'percent'
       ? `${settings.discount_value}% off`
       : `-${settings.discount_value}`
-  return `${grant} on sales ≥ ${settings.min_sale_amount}`
+  const cap = settings.max_discount_amount > 0 ? ` (max ${settings.max_discount_amount})` : ''
+  return `${grant} on sales ≥ ${settings.min_sale_amount}${cap}`
 }
