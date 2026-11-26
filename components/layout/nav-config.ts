@@ -230,6 +230,7 @@ export const navItems: NavItem[] = [
     icon: Megaphone,
     accent: '#ca8a04',
     children: [
+      { name: 'Campaigns', href: '/marketing', icon: Megaphone },
       { name: 'SMS Marketing', href: '/sms-marketing', icon: ChatCircleText },
       { name: 'Email Marketing', href: '/email-marketing', icon: EnvelopeSimple },
       { name: 'WhatsApp Marketing', href: '/whatsapp-marketing', icon: WhatsappLogo },
