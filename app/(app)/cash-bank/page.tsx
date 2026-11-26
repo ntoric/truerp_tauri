@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
@@ -19,6 +20,7 @@ import { notifyError, notifySuccess } from '@/lib/notify'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import {
   PaymentMethodMapping,
   savePaymentMethodMappings,
@@ -42,6 +44,7 @@ import {
   ChevronUp,
   Landmark,
   Banknote,
+  Wallet,
 } from 'lucide-react'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
 import { isSuperAdmin } from '@/lib/roles'
@@ -178,7 +181,7 @@ export default function CashBankPage() {
   const [mappingAccounts, setMappingAccounts] = useState<Record<string, string>>({})
   const [savingMappings, setSavingMappings] = useState(false)
   const [activeTab, setActiveTab] = useState<'accounts' | 'transactions' | 'settings'>('accounts')
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
 
   useEffect(() => {
     const next: Record<string, string> = {}
@@ -212,6 +215,22 @@ export default function CashBankPage() {
   useEffect(() => {
     setPage(1)
   }, [filterUnlinked, filterType, filterAccount, startDate, endDate])
+
+  // Open the Transactions tab showing only this account's movements, clearing
+  // other filters so nothing (e.g. "Unlinked only") hides its rows.
+  const openAccountTransactions = (accountId: string) => {
+    setFilterUnlinked(false)
+    setFilterType('all')
+    setFilterAccount(accountId)
+    setActiveTab('transactions')
+  }
+
+  const selectedAccountLabel =
+    filterAccount === 'all'
+      ? null
+      : filterAccount === CASH_IN_HAND_VALUE
+        ? 'Cash in-hand'
+        : summary?.bank_accounts.find((acc) => acc.id === filterAccount)?.account_name ?? null
 
   const buildTransactionParams = (targetPage: number, perPage: number) => {
     const params = new URLSearchParams()
@@ -921,9 +940,28 @@ export default function CashBankPage() {
           <TabsContent value="accounts" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Bank Accounts</CardTitle>
+                <CardTitle>Accounts</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
+                <div
+                  className="flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40"
+                  title="View cash in-hand transactions"
+                  onClick={() => openAccountTransactions(CASH_IN_HAND_VALUE)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-blue-50 p-2.5">
+                      <Wallet className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">Cash in-hand</p>
+                      <p className="text-sm text-gray-500">Cash</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-base font-bold text-gray-900">{formatCurrency(summary?.cash_in_hand || 0)}</p>
+                    <p className="text-xs text-gray-500">Balance</p>
+                  </div>
+                </div>
                 {summary?.bank_accounts.length === 0 ? (
                   <p className="text-center text-gray-500 py-8">No bank accounts yet. Add one to get started.</p>
                 ) : (
@@ -933,10 +971,7 @@ export default function CashBankPage() {
                         key={account.id}
                         className="flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40"
                         title="View transactions for this account"
-                        onClick={() => {
-                          setFilterAccount(account.id)
-                          setActiveTab('transactions')
-                        }}
+                        onClick={() => openAccountTransactions(account.id)}
                       >
                         <div className="flex items-center gap-3">
                           <div className="rounded-lg bg-blue-50 p-2.5">
@@ -994,9 +1029,24 @@ export default function CashBankPage() {
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
                 <div>
-                  <CardTitle>Account Transactions</CardTitle>
+                  <CardTitle>
+                    {selectedAccountLabel ? `${selectedAccountLabel} Transactions` : 'Account Transactions'}
+                  </CardTitle>
                   <p className="mt-1 text-sm text-gray-500">
-                    Cash and bank movements across all accounts
+                    {selectedAccountLabel ? (
+                      <>
+                        Showing movements for this account only ·{' '}
+                        <button
+                          type="button"
+                          className="font-medium text-blue-600 hover:underline"
+                          onClick={() => setFilterAccount('all')}
+                        >
+                          View all accounts
+                        </button>
+                      </>
+                    ) : (
+                      'Cash and bank movements across all accounts'
+                    )}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1102,8 +1152,12 @@ export default function CashBankPage() {
                       ))}
                       {transactions.length === 0 && (
                         <tr>
-                          <td colSpan={canDeleteTransactions ? 8 : 7} className="py-8 text-center text-gray-500">
-                            No transactions found.
+                          <td colSpan={canDeleteTransactions ? 8 : 7} className="px-4 py-4">
+                            <PremiumEmpty
+                              icon={Landmark}
+                              title="No transactions found"
+                              hint="Cash and bank movements will appear here."
+                            />
                           </td>
                         </tr>
                       )}

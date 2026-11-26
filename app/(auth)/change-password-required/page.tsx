@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { CheckCircle2, KeyRound, Loader2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
+import BrandLoader from '@/components/BrandLoader'
 
 export default function ChangePasswordRequiredPage() {
   const { user, loading, logout, refreshProfile } = useAuth()
@@ -85,7 +86,7 @@ export default function ChangePasswordRequiredPage() {
   if (loading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <BrandLoader />
       </div>
     )
   }

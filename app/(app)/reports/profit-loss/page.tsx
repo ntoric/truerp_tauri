@@ -35,12 +35,14 @@ import {
   Package,
   Wallet,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import BrandLoader from '@/components/BrandLoader'
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -125,6 +127,22 @@ function statementRows(r: ProfitLossReport): StatementRow[] {
       label: l.name,
       kind: 'detail' as const,
       amount: l.amount,
+      details: `${l.count} postings`,
+    })),
+    {
+      key: 'indirect-expenses',
+      label: 'Indirect Expenses',
+      kind: 'item',
+      amount: r.indirect_expenses.total_amount,
+      negative: true,
+      details: `${r.indirect_expenses.count} postings`,
+    },
+    ...(r.indirect_expense_lines ?? []).map((l) => ({
+      key: `ie-${l.name}`,
+      label: l.name,
+      kind: 'detail' as const,
+      amount: l.amount,
+      negative: true,
       details: `${l.count} postings`,
     })),
     {
@@ -396,7 +414,7 @@ export default function ProfitLossReportPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-48 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : report ? (
               <>
@@ -419,15 +437,17 @@ export default function ProfitLossReportPage() {
                     tone="warning"
                     icon={Wallet}
                     label="Total expenses"
-                    value={formatCurrency(report.expenses.total_amount)}
-                    hint={`${report.expenses.count} expenses`}
+                    value={formatCurrency(
+                      report.expenses.total_amount + report.indirect_expenses.total_amount
+                    )}
+                    hint={`${report.expenses.count} expenses + ${report.indirect_expenses.count} postings`}
                   />
                   <SummaryStat
                     tone={(report.net_profit ?? 0) >= 0 ? 'success' : 'danger'}
                     icon={CircleDollarSign}
                     label="Net profit"
                     value={formatCurrency(report.net_profit)}
-                    hint="Gross profit + other income − expenses"
+                    hint="Gross profit + other income − indirect expenses − expenses"
                   />
                 </div>
 
@@ -500,18 +520,21 @@ export default function ProfitLossReportPage() {
                 <p className="mt-4 text-xs text-gray-500">
                   Gross profit = net sales − net purchases + closing stock −
                   opening stock. Net
-                  profit = gross profit + other income − expenses. Opening and
+                  profit = gross profit + other income − indirect expenses −
+                  expenses. Opening and
                   closing stock are valued at weighted average cost replayed from the stock ledger.
-                  Other income comes from non-sales ledger postings (e.g. manual
-                  journal entries); cancelled documents are excluded from counts.
+                  Other income and indirect expenses come from non-module ledger
+                  postings (e.g. manual journal entries, cash reductions);
+                  cancelled documents are excluded from counts.
                 </p>
               </>
             ) : (
-              <p className="py-10 text-center text-sm text-gray-500">
-                {generated
-                  ? 'No report data for this period.'
-                  : 'Choose a period and click Generate report to view results.'}
-              </p>
+              <PremiumEmpty
+                compact
+                icon={TrendingUp}
+                title={generated ? 'No report data for this period' : 'Nothing generated yet'}
+                hint={generated ? 'Try a different period.' : 'Choose a period and click Generate report to view results.'}
+              />
             )}
           </CardContent>
         </Card>

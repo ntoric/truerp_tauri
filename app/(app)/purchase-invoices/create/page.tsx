@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, Fragment } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { useDiscount } from '@/hooks/useDiscount'
 import { isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton, { FormPageSkeleton } from '@/components/layout/PageSkeleton'
@@ -34,9 +35,12 @@ import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import {
   PAYMENT_METHODS,
+  RECEIPT_PAYMENT_METHODS,
+  UNPAID_METHOD,
   appendPaymentSplit,
   formatPaymentMethod,
   isInitialInvestmentMethod,
+  isUnpaidMethod,
   splitsFromInvoice,
   sumPaymentSplits,
 } from '@/lib/paymentSplits'
@@ -163,6 +167,7 @@ export default function CreatePurchaseInvoicePage() {
   const searchParams = useSearchParams()
   const editId = searchParams.get('id')
   const { user } = useAuth()
+  const { isDiscountEnabled } = useDiscount()
   const canScanInvoice = isSuperAdmin(user?.role)
   const {
     fieldErrors,
@@ -630,7 +635,7 @@ export default function CreatePurchaseInvoicePage() {
   const calcItemTotals = (item: PurchaseBillItem, exempt = taxExempt): PurchaseBillItem => {
     const qty = parseItemNumber(item.quantity)
     const price = parseItemNumber(item.unit_price)
-    const disc = parseItemNumber(item.discount)
+    const disc = isDiscountEnabled ? parseItemNumber(item.discount) : 0
     const tax = exempt ? 0 : parseItemNumber(item.tax_rate)
 
     const itemTotal = qty * price
@@ -1290,11 +1295,14 @@ export default function CreatePurchaseInvoicePage() {
   }
 
   const subTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
-  const discountTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price * (item.discount / 100)), 0)
+  const discountTotal = isDiscountEnabled
+    ? items.reduce((sum, item) => sum + (item.quantity * item.unit_price * (item.discount / 100)), 0)
+    : 0
   const taxTotal = items.reduce((sum, item) => sum + item.tax_amount, 0)
   const additionalCharges = sumAdditionalChargeItems(chargeItems)
+  const effectiveInvoiceDiscount = isDiscountEnabled ? invoiceDiscount : 0
 
-  let totalBeforeRound = subTotal - discountTotal + taxTotal - invoiceDiscount + additionalCharges
+  let totalBeforeRound = subTotal - discountTotal + taxTotal - effectiveInvoiceDiscount + additionalCharges
   let roundOff = 0
   if (autoRoundOff) {
     const rounded = Math.round(totalBeforeRound)
@@ -1304,17 +1312,34 @@ export default function CreatePurchaseInvoicePage() {
   const totalAmount = totalBeforeRound
   // An untouched single tender auto-follows the bill total; once the user
   // edits an amount or adds a tender, the paid amount is the split sum.
-  const effectiveAmountPaid = !amountPaidEdited && paymentSplits.length === 1
+  const isUnpaid = paymentSplits.length === 1 && isUnpaidMethod(paymentSplits[0]?.mode)
+  const effectiveAmountPaid = isUnpaid
+    ? 0
+    : !amountPaidEdited && paymentSplits.length === 1
     ? totalAmount
     : sumPaymentSplits(paymentSplits)
   const balance = totalAmount - effectiveAmountPaid
+  const isFullyPaid = effectiveAmountPaid >= totalAmount
 
   const splitAmountValue = (index: number) => {
+    if (isUnpaid) return 0
     if (paymentSplits.length === 1 && !amountPaidEdited) return totalAmount
     return paymentSplits[index]?.amount || 0
   }
 
   const updateSplit = (index: number, patch: Partial<{ mode: string; amount: number; bank_account_id: string | null }>) => {
+    if (patch.mode !== undefined && isUnpaidMethod(patch.mode)) {
+      // Unpaid means nothing paid: collapse to a single zero split.
+      setAmountPaidEdited(true)
+      setPaymentSplits([{ mode: UNPAID_METHOD, amount: 0, bank_account_id: null }])
+      return
+    }
+    if (patch.mode !== undefined && isUnpaidMethod(paymentSplits[index]?.mode) && paymentSplits.length === 1) {
+      // Leaving Unpaid: default back to paying the full amount.
+      setAmountPaidEdited(false)
+      setPaymentSplits([{ mode: patch.mode, amount: totalAmount, bank_account_id: null }])
+      return
+    }
     if ('amount' in patch) setAmountPaidEdited(true)
     setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
@@ -1347,7 +1372,12 @@ export default function CreatePurchaseInvoicePage() {
   const markFullyPaid = () => {
     if (paymentSplits.length <= 1) {
       setAmountPaidEdited(false)
-      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'cash', amount: totalAmount, bank_account_id: paymentSplits[0]?.bank_account_id ?? null }])
+      const currentMode = paymentSplits[0]?.mode || 'cash'
+      setPaymentSplits([{
+        mode: isUnpaidMethod(currentMode) ? 'cash' : currentMode,
+        amount: totalAmount,
+        bank_account_id: paymentSplits[0]?.bank_account_id ?? null,
+      }])
       return
     }
     setAmountPaidEdited(true)
@@ -1356,6 +1386,15 @@ export default function CreatePurchaseInvoicePage() {
       const last = Math.max(0, parseMoney(totalAmount - sumPaymentSplits(others)))
       return [...others, { ...prev[prev.length - 1], amount: last }]
     })
+  }
+
+  const handleFullyPaidToggle = (checked: boolean) => {
+    if (checked) {
+      markFullyPaid()
+      return
+    }
+    setAmountPaidEdited(true)
+    setPaymentSplits((prev) => prev.map((row) => ({ ...row, amount: 0 })))
   }
 
   // Human-readable destination for a split: explicit account, method-mapped
@@ -1389,7 +1428,7 @@ export default function CreatePurchaseInvoicePage() {
       quantity: parseItemNumber(item.quantity),
       unit: item.unit,
       unit_price: parseMoney(item.unit_price),
-      discount: parseItemNumber(item.discount),
+      discount: isDiscountEnabled ? parseItemNumber(item.discount) : 0,
       tax_rate: taxExempt ? 0 : parseItemNumber(item.tax_rate),
       mrp: parseMoney(item.mrp),
       sale_price: parseMoney(item.sale_price),
@@ -1408,8 +1447,9 @@ export default function CreatePurchaseInvoicePage() {
   const paymentSplitsPayload = () =>
     paymentSplits.map((split, index) => ({
       mode: split.mode || 'cash',
-      amount:
-        paymentSplits.length === 1 && !amountPaidEdited && index === 0
+      amount: isUnpaid
+        ? 0
+        : paymentSplits.length === 1 && !amountPaidEdited && index === 0
           ? totalAmount
           : Math.max(0, Number(split.amount) || 0),
       bank_account_id: split.bank_account_id || null,
@@ -1449,7 +1489,7 @@ export default function CreatePurchaseInvoicePage() {
         terms,
         signature,
         tax_exempt: taxExempt,
-        invoice_discount: parseMoney(invoiceDiscount),
+        invoice_discount: isDiscountEnabled ? parseMoney(invoiceDiscount) : 0,
         additional_charges: parseMoney(additionalCharges),
         additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
         // client_bill_id makes creation idempotent (also sent via
@@ -1519,7 +1559,7 @@ export default function CreatePurchaseInvoicePage() {
           terms,
           signature,
           tax_exempt: taxExempt,
-          invoice_discount: parseMoney(invoiceDiscount),
+          invoice_discount: isDiscountEnabled ? parseMoney(invoiceDiscount) : 0,
           additional_charges: parseMoney(additionalCharges),
           additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
           client_bill_id: clientBillIdRef.current,
@@ -2018,7 +2058,7 @@ export default function CreatePurchaseInvoicePage() {
                 </div>
               )}
               <div className="hidden min-w-0 overflow-x-auto xl:block">
-                <table className={cn('w-full text-sm', taxExempt ? 'min-w-[44rem]' : 'min-w-[48rem]')}>
+                <table className={cn('w-full text-sm', taxExempt ? 'min-w-[58rem]' : 'min-w-[62rem]')}>
                   <thead>
                     <tr className="border-b text-left text-gray-500">
                       <th className="w-8 min-w-8 whitespace-nowrap pb-2 pr-0"></th>
@@ -2032,11 +2072,15 @@ export default function CreatePurchaseInvoicePage() {
                       <th className="min-w-[12rem] whitespace-nowrap pb-2 pr-2 font-medium">Item</th>
                       <th className="min-w-[6rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Quantity</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Unit Price</th>
-                      <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
+                      <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Sale Price</th>
+                      {isDiscountEnabled && (
+                        <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
+                      )}
                       {!taxExempt && (
                         <th className="min-w-[5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Tax %</th>
                       )}
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium">Batch No</th>
+                      <th className="min-w-[9rem] whitespace-nowrap pb-2 px-1 font-medium">Expiry Date</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Amount</th>
                       <th className="w-12 min-w-12 pb-2 pl-1 font-medium"></th>
                     </tr>
@@ -2062,7 +2106,7 @@ export default function CreatePurchaseInvoicePage() {
                           return next
                         })
                       }
-                      const detailColSpan = taxExempt ? 9 : 10
+                      const detailColSpan = (taxExempt ? 11 : 12) - (isDiscountEnabled ? 0 : 1)
 
                       if (isNewProduct) {
                         return (
@@ -2131,12 +2175,27 @@ export default function CreatePurchaseInvoicePage() {
                             <Input
                               type="number"
                               min="0"
-                              max="100"
-                              value={item.discount}
-                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                              step="0.01"
+                              inputMode="decimal"
+                              value={item.sale_price}
+                              onChange={(e) => updateItem(index, 'sale_price', limitDecimalInput(e.target.value, 2))}
+                              onBlur={() => updateItem(index, 'sale_price', parseMoney(item.sale_price))}
                               className="h-8 w-full min-w-0 text-right"
+                              aria-label="Sale price"
                             />
                           </td>
+                          {isDiscountEnabled && (
+                            <td className="px-1 py-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={item.discount}
+                                onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                                className="h-8 w-full min-w-0 text-right"
+                              />
+                            </td>
+                          )}
                           {!taxExempt && (
                             <td className="px-1 py-2">
                               <Input
@@ -2155,6 +2214,15 @@ export default function CreatePurchaseInvoicePage() {
                               placeholder={needsBatch ? 'Required' : 'Optional'}
                               className={cn('h-8 w-full min-w-0', needsBatch && !item.batch_no && 'border-amber-500')}
                               required={needsBatch}
+                            />
+                          </td>
+                          <td className="px-1 py-2">
+                            <Input
+                              type="date"
+                              value={item.exp_date}
+                              onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
+                              className="h-8 w-full min-w-0"
+                              aria-label="Expiry date (optional)"
                             />
                           </td>
                           <td className="whitespace-nowrap px-1 py-2 text-right font-medium tabular-nums">
@@ -2181,15 +2249,6 @@ export default function CreatePurchaseInvoicePage() {
                                     value={item.hsn_code}
                                     onChange={(e) => updateItem(index, 'hsn_code', e.target.value)}
                                     className="h-8 w-full min-w-0 xl:w-32"
-                                  />
-                                </div>
-                                <div className="min-w-0 space-y-1">
-                                  <Label className="text-xs text-gray-500">Expiry Date</Label>
-                                  <Input
-                                    type="date"
-                                    value={item.exp_date}
-                                    onChange={(e) => updateItem(index, 'exp_date', e.target.value)}
-                                    className="h-8 w-full min-w-0 xl:w-40"
                                   />
                                 </div>
                                 <div className="min-w-0 space-y-1">
@@ -2283,16 +2342,31 @@ export default function CreatePurchaseInvoicePage() {
                             />
                           </div>
                           <div className="min-w-0 space-y-1">
-                            <Label className="text-xs text-gray-500">Discount %</Label>
+                            <Label className="text-xs text-gray-500">Sale Price</Label>
                             <Input
                               type="number"
                               min="0"
-                              max="100"
-                              value={item.discount}
-                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                              step="0.01"
+                              inputMode="decimal"
+                              value={item.sale_price}
+                              onChange={(e) => updateItem(index, 'sale_price', limitDecimalInput(e.target.value, 2))}
+                              onBlur={() => updateItem(index, 'sale_price', parseMoney(item.sale_price))}
                               className="h-8 w-full min-w-0 text-right"
                             />
                           </div>
+                          {isDiscountEnabled && (
+                            <div className="min-w-0 space-y-1">
+                              <Label className="text-xs text-gray-500">Discount %</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={item.discount}
+                                onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                                className="h-8 w-full min-w-0 text-right"
+                              />
+                            </div>
+                          )}
                           {!taxExempt && (
                             <div className="min-w-0 space-y-1">
                               <Label className="text-xs text-gray-500">Tax %</Label>
@@ -2328,7 +2402,7 @@ export default function CreatePurchaseInvoicePage() {
                             />
                           </div>
                           <div className="min-w-0 space-y-1">
-                            <Label className="text-xs text-gray-500">Expiry Date</Label>
+                            <Label className="text-xs text-gray-500">Expiry Date (optional)</Label>
                             <Input
                               type="date"
                               value={item.exp_date}
@@ -2357,172 +2431,26 @@ export default function CreatePurchaseInvoicePage() {
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <Card className="space-y-4 xl:col-span-2">
               <CardHeader>
-                <CardTitle>Additional Charges & Discount</CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="min-w-0 space-y-2 sm:col-span-2">
-                  <Label>Additional Charges</Label>
-                  <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} />
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Invoice Discount</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={invoiceDiscount}
-                    onChange={(e) => setInvoiceDiscount(Number(e.target.value))}
-                    className="w-full min-w-0"
-                  />
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <Label>Auto Round Off</Label>
-                  <select
-                    value={autoRoundOff ? 'true' : 'false'}
-                    onChange={(e) => setAutoRoundOff(e.target.value === 'true')}
-                    className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
-                  >
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
-                </div>
-              </CardContent>
-
-              <CardHeader>
-                <CardTitle>Payment Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {paymentSplits.map((split, index) => {
-                  const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
-                  const initialInvestment = isInitialInvestmentMethod(split.mode)
-                  return (
-                    <div key={index} className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
-                      <div className="min-w-0 space-y-2">
-                        <Label>{index === 0 ? 'Payment Method' : `Method ${index + 1}`}</Label>
-                        <select
-                          value={split.mode}
-                          onChange={(e) => updateSplit(index, { mode: e.target.value })}
-                          className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
-                        >
-                          {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
-                            <option key={method.value} value={method.value}>
-                              {method.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="min-w-0 space-y-2">
-                        <Label>Paid From</Label>
-                        {initialInvestment ? (
-                          <div className="flex h-8 min-w-0 items-center rounded-md border border-input bg-gray-50 px-2.5 text-sm text-muted-foreground">
-                            Owner&apos;s Equity
-                          </div>
-                        ) : bankAccountsLoading ? (
-                          <Skeleton className="h-8" />
-                        ) : (
-                          <select
-                            value={split.bank_account_id || ''}
-                            onChange={(e) => updateSplit(index, { bank_account_id: e.target.value || null })}
-                            className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
-                          >
-                            <option value="">
-                              {split.mode === 'cash' ? 'Cash in-hand' : `Auto — ${getDepositHint(split.mode, bankAccounts)}`}
-                            </option>
-                            {bankAccounts
-                              .filter((a) => a.is_active || a.id === split.bank_account_id)
-                              .map((account) => (
-                                <option key={account.id} value={account.id}>
-                                  {account.account_name}
-                                  {account.bank_name ? ` (${account.bank_name})` : ''}
-                                  {' — '}
-                                  {formatCurrency(account.balance)}
-                                </option>
-                              ))}
-                          </select>
-                        )}
-                      </div>
-                      <div className="min-w-0 space-y-2">
-                        <Label>{index === 0 ? 'Amount Paid' : 'Amount'}</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={splitAmountValue(index)}
-                          onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
-                          className="w-full min-w-0"
-                        />
-                      </div>
-                      {paymentSplits.length > 1 ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => removePaymentSplit(index)}
-                          aria-label="Remove payment method"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      ) : (
-                        <div className="h-8 w-8" />
-                      )}
-                    </div>
-                  )
-                })}
-                <p className="text-xs text-muted-foreground">
-                  {paymentSplits.length === 1
-                    ? isInitialInvestmentMethod(paymentSplits[0]?.mode)
-                      ? `${formatCurrency(effectiveAmountPaid)} will be recorded as owner's capital (Initial Investment) and will not affect cash or bank balances.`
-                      : `${formatCurrency(effectiveAmountPaid)} will be deducted from ${splitAccountLabel(paymentSplits[0] || { mode: 'cash', bank_account_id: null })}.`
-                    : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${splitAccountLabel(split)}`).join(' · ')}
-                </p>
-                {PAYMENT_METHODS.length > paymentSplits.length && (
-                  <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
-                    <Plus className="h-4 w-4" />
-                    Add payment method
-                  </Button>
-                )}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="min-w-0 space-y-2">
-                    <Label>Balance</Label>
-                    <Input value={formatCurrency(balance)} readOnly className="w-full min-w-0 bg-gray-50" />
-                  </div>
-                  <div className="min-w-0 space-y-2">
-                    <Label>Mark as Fully Paid</Label>
-                    <Button
-                      type="button"
-                      variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
-                      className="h-8 w-full"
-                      onClick={markFullyPaid}
-                    >
-                      {effectiveAmountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-
-              <CardHeader>
                 <CardTitle>Signature</CardTitle>
               </CardHeader>
               <CardContent>
-                {signature && (
-                  <div className="mb-3">
-                    <img src={signature} alt="Signature" className="max-h-[150px] max-w-full rounded border bg-white object-contain" />
-                  </div>
+                {signature ? (
+                  <img src={signature} alt="Signature" className="max-h-[150px] max-w-full rounded border bg-white object-contain" />
+                ) : (
+                  <canvas
+                    ref={canvasRef}
+                    width={400}
+                    height={150}
+                    className="max-w-full cursor-crosshair touch-none rounded border"
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                  />
                 )}
-                <canvas
-                  ref={canvasRef}
-                  width={400}
-                  height={150}
-                  className="max-w-full cursor-crosshair touch-none rounded border"
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDrawing}
-                />
                 <div className="mt-2 flex gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={clearSignature}>Clear</Button>
                   {businessSignature && signature !== businessSignature && (
@@ -2557,26 +2485,72 @@ export default function CreatePurchaseInvoicePage() {
             </Card>
 
             <Card>
+              <CardHeader className="flex-row items-center justify-between space-y-0">
+                <CardTitle>{isDiscountEnabled ? 'Charges & Discount' : 'Charges'}</CardTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => setChargeItems([...chargeItems, { label: '', amount: 0 }])}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Charge
+                </Button>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 gap-4">
+                {chargeItems.length > 0 && (
+                  <div className="min-w-0 space-y-2">
+                    <Label>Additional Charges</Label>
+                    <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} hideAddButton />
+                  </div>
+                )}
+                {isDiscountEnabled && (
+                  <div className="min-w-0 space-y-2">
+                    <Label>Invoice Discount</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={invoiceDiscount}
+                      onChange={(e) => setInvoiceDiscount(Number(e.target.value))}
+                      className="w-full min-w-0"
+                    />
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="auto-round-off">Auto Round Off</Label>
+                  <Switch
+                    id="auto-round-off"
+                    checked={autoRoundOff}
+                    onCheckedChange={setAutoRoundOff}
+                  />
+                </div>
+              </CardContent>
               <CardContent className="space-y-3 p-6">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Taxable Amount</span>
-                  <span className="font-medium">{formatCurrency(subTotal - discountTotal)}</span>
+                  <span className="text-gray-600">Subtotal</span>
+                  <span className="font-medium">{formatCurrency(subTotal)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Item Discount</span>
-                  <span className="font-medium text-red-600">-{formatCurrency(discountTotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Invoice Discount</span>
-                  <span className="font-medium text-red-600">-{formatCurrency(invoiceDiscount)}</span>
-                </div>
+                {discountTotal > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Item Discount</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(discountTotal)}</span>
+                  </div>
+                )}
+                {effectiveInvoiceDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Invoice Discount</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(effectiveInvoiceDiscount)}</span>
+                  </div>
+                )}
                 {chargeItems.filter((c) => Number(c.amount) > 0).map((charge, index) => (
                   <div key={index} className="flex justify-between text-sm">
                     <span className="text-gray-600">{charge.label.trim() || 'Additional Charge'}</span>
                     <span className="font-medium">{formatCurrency(charge.amount)}</span>
                   </div>
                 ))}
-                {!taxExempt && (
+                {!taxExempt && taxTotal > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Tax Total</span>
                     <span className="font-medium">{formatCurrency(taxTotal)}</span>
@@ -2593,6 +2567,120 @@ export default function CreatePurchaseInvoicePage() {
                     <span>Total Amount</span>
                     <span>{formatCurrency(totalAmount)}</span>
                   </div>
+                </div>
+              </CardContent>
+              <CardHeader className="flex-row items-center justify-between space-y-0 pt-0">
+                <CardTitle>Payment Details</CardTitle>
+                {!isUnpaid && RECEIPT_PAYMENT_METHODS.length > paymentSplits.length && (
+                  <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
+                    <Plus className="h-4 w-4" />
+                    Split Payment
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {paymentSplits.map((split, index) => {
+                  const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
+                  const initialInvestment = isInitialInvestmentMethod(split.mode)
+                  return (
+                    <div key={index} className="space-y-3">
+                      <div className="min-w-0 space-y-2">
+                        <Label>{index === 0 ? 'Payment Method' : `Method ${index + 1}`}</Label>
+                        <select
+                          value={split.mode}
+                          onChange={(e) => updateSplit(index, { mode: e.target.value })}
+                          className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
+                        >
+                          {PAYMENT_METHODS.filter((method) => method.value === split.mode || (!usedModes.includes(method.value) && (method.value !== UNPAID_METHOD || paymentSplits.length === 1))).map((method) => (
+                            <option key={method.value} value={method.value}>
+                              {method.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="min-w-0 space-y-2">
+                        <Label>Paid From</Label>
+                        {initialInvestment || isUnpaidMethod(split.mode) ? (
+                          <div className="flex h-8 min-w-0 items-center rounded-md border border-input bg-gray-50 px-2.5 text-sm text-muted-foreground">
+                            {initialInvestment ? <>Owner&apos;s Equity</> : 'Not applicable — nothing paid'}
+                          </div>
+                        ) : bankAccountsLoading ? (
+                          <Skeleton className="h-8" />
+                        ) : (
+                          <select
+                            value={split.bank_account_id || ''}
+                            onChange={(e) => updateSplit(index, { bank_account_id: e.target.value || null })}
+                            className="flex h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"
+                          >
+                            <option value="">
+                              {split.mode === 'cash' ? 'Cash in-hand' : `Auto — ${getDepositHint(split.mode, bankAccounts)}`}
+                            </option>
+                            {bankAccounts
+                              .filter((a) => a.is_active || a.id === split.bank_account_id)
+                              .map((account) => (
+                                <option key={account.id} value={account.id}>
+                                  {account.account_name}
+                                  {account.bank_name ? ` (${account.bank_name})` : ''}
+                                  {' — '}
+                                  {formatCurrency(account.balance)}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                      </div>
+                      <div className="flex items-end gap-3">
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <Label>{index === 0 ? 'Amount Paid' : 'Amount'}</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={splitAmountValue(index)}
+                            disabled={isUnpaidMethod(split.mode)}
+                            onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
+                            className="w-full min-w-0"
+                          />
+                        </div>
+                        {paymentSplits.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => removePaymentSplit(index)}
+                            aria-label="Remove payment method"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+                <p className="text-xs text-muted-foreground">
+                  {isUnpaid
+                    ? 'Bill will be saved as unpaid; the full amount stays payable to the supplier.'
+                    : paymentSplits.length === 1
+                    ? isInitialInvestmentMethod(paymentSplits[0]?.mode)
+                      ? `${formatCurrency(effectiveAmountPaid)} will be recorded as owner's capital (Initial Investment) and will not affect cash or bank balances.`
+                      : `${formatCurrency(effectiveAmountPaid)} will be deducted from ${splitAccountLabel(paymentSplits[0] || { mode: 'cash', bank_account_id: null })}.`
+                    : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${splitAccountLabel(split)}`).join(' · ')}
+                </p>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="fully-paid-toggle">Mark as Fully Paid</Label>
+                    <Switch
+                      id="fully-paid-toggle"
+                      checked={isFullyPaid}
+                      onCheckedChange={handleFullyPaidToggle}
+                    />
+                  </div>
+                  {!isFullyPaid && (
+                    <div className="space-y-2">
+                      <Label>Balance</Label>
+                      <Input value={formatCurrency(balance)} readOnly className="w-full min-w-0 bg-gray-50" />
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

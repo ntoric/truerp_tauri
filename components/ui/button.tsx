@@ -3,25 +3,35 @@ import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
+/*
+  Gooseroot button family (gooseroot-ui .gr-btn):
+  primary  — Red → Crimson gradient, lifts 1px with the accent shadow on hover
+  outline  — "secondary" in the kit: surface + strong hairline, accent on hover
+  secondary— "soft": tint fill with the strong accent text
+  ghost    — muted text, tint on hover
+  ink      — Deep Wine strong neutral (replaces black buttons)
+*/
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-all duration-150 ease-out outline-none focus-visible:outline-none focus-visible:ring-0 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none",
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-[transform,box-shadow,background-color,border-color,color] duration-150 ease-out outline-none focus-visible:outline-none focus-visible:ring-0 active:translate-y-0 disabled:pointer-events-none disabled:opacity-45 disabled:shadow-none",
   {
     variants: {
       variant: {
         default:
-          "bg-primary bg-[linear-gradient(180deg,rgba(255,255,255,0.14)_0%,rgba(0,0,0,0.18)_100%)] text-primary-foreground shadow-[0_1px_2px_rgba(16,24,40,0.12),0_4px_12px_-4px_hsl(var(--primary)/0.6),inset_0_1px_0_rgba(255,255,255,0.2)] hover:brightness-105 hover:shadow-[0_1px_2px_rgba(16,24,40,0.12),0_8px_18px_-6px_hsl(var(--primary)/0.65),inset_0_1px_0_rgba(255,255,255,0.2)]",
+          "bg-primary bg-button-gradient text-primary-foreground hover:-translate-y-px hover:shadow-gr-accent",
         destructive:
-          "bg-destructive bg-[linear-gradient(180deg,rgba(255,255,255,0.12)_0%,rgba(0,0,0,0.18)_100%)] text-destructive-foreground shadow-[0_1px_2px_rgba(16,24,40,0.12),0_4px_12px_-4px_hsl(var(--destructive)/0.55),inset_0_1px_0_rgba(255,255,255,0.18)] hover:brightness-105",
+          "bg-destructive text-destructive-foreground hover:-translate-y-px hover:shadow-[0_10px_24px_hsl(var(--destructive)/0.28)]",
         outline:
-          "border border-slate-300 bg-white text-[#20212b] shadow-[0_1px_2px_rgba(16,24,40,0.06),inset_0_-1px_0_rgba(16,24,40,0.05)] hover:border-slate-400 hover:bg-slate-100 hover:text-[#20212b]",
-        secondary: "bg-slate-200/90 text-[#20212b] shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] hover:bg-slate-300/80",
-        ghost: "hover:bg-slate-200/80 hover:text-[#20212b]",
-        link: "text-primary underline-offset-4 hover:text-[hsl(var(--theme-700))] hover:underline active:scale-100",
+          "border border-input bg-card text-heading hover:border-primary hover:text-primary",
+        secondary:
+          "bg-tint text-[hsl(var(--theme-700))] hover:bg-[hsl(var(--theme-100))] dark:bg-[hsl(var(--theme-500)/0.15)] dark:text-[hsl(var(--theme-300))] dark:hover:bg-[hsl(var(--theme-500)/0.24)]",
+        ghost: "text-muted-foreground hover:bg-accent hover:text-primary",
+        ink: "bg-[hsl(var(--theme-900))] text-white hover:-translate-y-px hover:shadow-gr-md dark:bg-[#fff4f4] dark:text-[#161314]",
+        link: "text-primary underline-offset-4 hover:text-[hsl(var(--theme-700))] hover:underline",
       },
       size: {
-        default: "h-8 px-3.5 text-sm",
-        sm: "h-7 rounded-md px-2.5 text-xs",
-        lg: "h-9 px-4 text-sm",
+        default: "h-9 px-4 text-sm",
+        sm: "h-8 rounded-md px-3 text-[13px]",
+        lg: "h-11 rounded-xl px-6 text-[15px]",
         icon: "h-8 w-8",
       },
     },

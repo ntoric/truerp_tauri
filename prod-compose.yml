@@ -1,7 +1,7 @@
 # TruERP web UI — standalone container, independent of backend/docker-compose.yml.
 
 # API wiring (same-origin proxy, default):
-#   Browser  ->  web:3000  ->  Next.js rewrite  ->  TRUERP_API_PROXY
+#   Browser  ->  web:3000  ->  middleware proxy  ->  TRUERP_API_PROXY
 #   /api/v1/*, /uploads/*, /health are proxied to the backend, so only
 #   port 3000 needs to be exposed publicly.
 #
@@ -9,6 +9,10 @@ services:
   web:
     image: ntoric/truerp-web:latest
     container_name: truerp-web
+    environment:
+      # Server-side proxy target — runtime env var read by middleware.ts,
+      # no rebuild needed. Must be reachable from this container.
+      TRUERP_API_PROXY: ${TRUERP_API_PROXY:-https://truerp-backend.ntoric.com}
     ports:
       - "${WEB_PUBLISH_PORT:-3000}:3000"
     extra_hosts:
@@ -30,6 +34,6 @@ services:
     networks:
       - generic-network
 
-  networks:
-    generic-network:
-      external: true
+networks:
+  generic-network:
+    external: true

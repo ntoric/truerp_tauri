@@ -47,3 +47,29 @@ export function pickDefaultBatch(batches: ProductBatchStock[]): ProductBatchStoc
   if (!batches.length) return null
   return batches[0]
 }
+
+/** Batches with available qty for several products in one request, grouped by product id (FEFO order kept). */
+export async function fetchBatchesForProducts(productIds: string[]): Promise<Record<string, ProductBatchStock[]>> {
+  const ids = Array.from(new Set(productIds.filter(Boolean)))
+  const grouped: Record<string, ProductBatchStock[]> = {}
+  if (!ids.length) return grouped
+  ids.forEach((id) => { grouped[id] = [] })
+
+  try {
+    const res = await apiFetch(
+      `/inventory/stocks?product_ids=${encodeURIComponent(ids.join(','))}&available_only=true`,
+      { timeoutMs: 5000 }
+    )
+    if (!res.ok) throw new Error(String(res.status))
+    const data = await res.json()
+    for (const row of Array.isArray(data) ? (data as ProductBatchStock[]) : []) {
+      if (grouped[row.product_id]) grouped[row.product_id].push(row)
+    }
+  } catch {
+    // Offline / older backend: fall back to the POS cache per product.
+    await Promise.all(ids.map(async (id) => {
+      grouped[id] = (await offlineStorage.getCachedBatchesForProduct(id)) as ProductBatchStock[]
+    }))
+  }
+  return grouped
+}

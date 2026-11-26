@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
@@ -14,6 +15,7 @@ import { formatCurrency } from '@/lib/utils'
 import { ArrowLeft, Loader2, Send, Trash2, Pencil } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 
 interface Party {
   id: string
@@ -70,6 +72,9 @@ export default function CreditNoteDetailPage() {
   const router = useRouter()
   const params = useParams()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { requestCancelReason, cancelReasonDialog } = useCancelReasonDialog()
+  const { user } = useAuth()
+  const canDelete = isSuperAdmin(user?.role)
   const [creditNote, setCreditNote] = useState<CreditNote | null>(null)
   const [loading, setLoading] = useState(true)
   const [issuing, setIssuing] = useState(false)
@@ -117,6 +122,28 @@ export default function CreditNoteDetailPage() {
       notifyError('An error occurred')
     } finally {
       setIssuing(false)
+    }
+  }
+
+  const handleCancel = async () => {
+    const reason = await requestCancelReason({
+      title: 'Cancel credit note?',
+      description: 'The credit note will be kept for reference but no longer counts in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      const res = await apiFetch(`/credit-notes/${params.id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
+      if (res.ok) {
+        fetchCreditNote()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        notifyError(data.error || 'Failed to cancel credit note')
+      }
+    } catch (err) {
+      notifyError('An error occurred')
     }
   }
 
@@ -170,14 +197,21 @@ export default function CreditNoteDetailPage() {
             </div>
           </div>
           <div className="flex gap-2">
+            {creditNote.status !== 'cancelled' && (
+              <Button variant="outline" onClick={handleCancel}>
+                Cancel
+              </Button>
+            )}
             {creditNote.status === 'draft' && (
               <>
                 <Button variant="outline" onClick={() => router.push(`/credit-notes/${creditNote.id}/edit`)}>
                   <Pencil className="mr-2 h-4 w-4" /> Edit
                 </Button>
-                <Button variant="destructive" onClick={handleDelete}>
-                  <Trash2 className="mr-2 h-4 w-4" /> Delete
-                </Button>
+                {canDelete && (
+                  <Button variant="destructive" onClick={handleDelete}>
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                  </Button>
+                )}
                 <Button onClick={handleIssue} disabled={issuing}>
                   {issuing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                   Issue Credit Note
@@ -347,6 +381,7 @@ export default function CreditNoteDetailPage() {
         </Card>
       </div>
       {confirmDialog}
+      {cancelReasonDialog}
     </DashboardLayout>
   )
 }

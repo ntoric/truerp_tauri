@@ -23,6 +23,7 @@ import {
   type StoreFormValues,
 } from '@/lib/storeValidation'
 import { ExternalLink, Loader2, MonitorSmartphone, Plus, RotateCcw, Store, Trash2, Users } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import {
   StoreResetDialog,
   type StoreResetScopeId,
@@ -83,6 +84,7 @@ export default function StoresPage() {
   const [storeForm, setStoreForm] = useState(emptyStoreForm)
   const [editForm, setEditForm] = useState(emptyStoreForm)
   const [editActive, setEditActive] = useState(true)
+  const [editForceUpdate, setEditForceUpdate] = useState(false)
   const [activeTab, setActiveTab] = useState('manage')
 
   const selectedStore = stores.find((s) => s.id === selectedStoreId) || null
@@ -144,6 +146,7 @@ export default function StoresPage() {
         email: selectedStore.email || '',
       })
       setEditActive(selectedStore.is_active)
+      setEditForceUpdate(selectedStore.force_update === true)
       clearErrors()
     }
   }, [selectedStore, clearErrors])
@@ -207,7 +210,7 @@ export default function StoresPage() {
     try {
       const res = await apiFetch(`/stores/${selectedStore.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ ...editForm, is_active: editActive }),
+        body: JSON.stringify({ ...editForm, is_active: editActive, force_update: editForceUpdate }),
       })
       if (!res.ok) {
         const { fields } = await handleApiError(res, { toastTitle: 'Unable to update store' })
@@ -439,7 +442,7 @@ export default function StoresPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               {stores.length === 0 && (
-                <p className="text-sm text-slate-500">No stores yet. Create one to get started.</p>
+                <PremiumEmpty compact icon={Store} title="No stores yet" hint="Create a store to get started." />
               )}
               {stores.map((store) => (
                 <button
@@ -520,6 +523,15 @@ export default function StoresPage() {
                           <p className="text-xs text-slate-500">Inactive stores cannot be selected</p>
                         </div>
                         <Switch checked={editActive} onCheckedChange={setEditActive} />
+                      </div>
+                      <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                        <div>
+                          <p className="text-sm font-medium">Force software update</p>
+                          <p className="text-xs text-slate-500">
+                            Desktop app updates download and install automatically
+                          </p>
+                        </div>
+                        <Switch checked={editForceUpdate} onCheckedChange={setEditForceUpdate} />
                       </div>
                       <div className="flex flex-wrap gap-2 md:col-span-2">
                         <Button type="submit" disabled={saving || resetting}>

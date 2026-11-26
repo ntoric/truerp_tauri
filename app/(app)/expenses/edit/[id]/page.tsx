@@ -24,6 +24,7 @@ import {
 import { Save, Loader2, Plus, Trash2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
+import BrandLoader from '@/components/BrandLoader'
 
 interface Category {
   id: string
@@ -248,7 +249,7 @@ export default function EditExpensePage() {
         {loading ? (
           <Card>
             <CardContent className="flex h-32 items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              <BrandLoader />
             </CardContent>
           </Card>
         ) : (

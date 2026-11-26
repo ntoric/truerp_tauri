@@ -1,22 +1,32 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
+import { useEffect, useState, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { apiFetch } from '@/hooks/useAuth'
+import { usePageFeatures } from '@/hooks/usePageFeatures'
 import { useOfflineSync } from '@/hooks/useOfflineSync'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { formatCurrency, asArray } from '@/lib/utils'
+import { matchesSearch } from '@/lib/search'
 import { offlineStorage, POS_META_KEYS, type POSSaleRecord } from '@/lib/offlineStorage'
 import Link from 'next/link'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, ChevronDown, Percent, Wifi, WifiOff, Eye, User } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Printer, CheckCircle, AlertCircle, Save, X, FileText, Copy, Scale, History, ChevronLeft, ChevronRight, ChevronDown, Percent, Wifi, WifiOff, Eye, User, Tag } from 'lucide-react'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
-import { computeLoyaltyDiscount, estimatePointsEarned } from '@/lib/loyalty'
+import {
+  computeLoyaltyDiscount,
+  estimateLoyaltyEarnedOnSale,
+  formatLoyaltyValue,
+  isCashLoyalty,
+  loyaltyAvailable,
+  loyaltyRedeemPayload,
+  parseLoyaltyRedeemInput,
+} from '@/lib/loyalty'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
-import { Gift } from 'lucide-react'
+import { Gift, Loader2, UserPlus } from 'lucide-react'
 import { useWeighingScale } from '@/hooks/useWeighingScale'
 import WeighingScalePanel from '@/components/WeighingScalePanel'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
@@ -39,20 +49,37 @@ import { hydratePOSSnapshot, getCachedPrintSettings, getCachedBusiness } from '@
 import { buildPOSReceiptContent, receiptPaperWidthMm } from '@/lib/posReceipt'
 import {
   PAYMENT_METHODS,
+  RECEIPT_PAYMENT_METHODS,
+  UNPAID_METHOD,
   appendPaymentSplit,
   formatPaymentMethod,
+  isUnpaidMethod,
   materializePaymentSplits,
   clampPaymentSplitsToTotal,
   numericSplitAmount,
   sumPaymentSplits,
 } from '@/lib/paymentSplits'
 import { AdditionalChargeItemsInput } from '@/components/AdditionalChargeItemsInput'
+import AttendanceReminderDialog from '@/components/AttendanceReminderDialog'
 import {
   type AdditionalChargeItem,
   hydrateAdditionalCharges,
   sanitizeAdditionalChargeItems,
   sumAdditionalChargeItems,
 } from '@/lib/additionalCharges'
+import {
+  type SaleDiscountSettings,
+  autoDiscountEligible,
+  computeAutoDiscount,
+  describeAutoDiscount,
+  normalizeSaleDiscountSettings,
+} from '@/lib/saleDiscount'
+import BrandLoader from '@/components/BrandLoader'
+import LoyaltyCardAssignField, {
+  assignNextLoyaltyCard,
+  resolveScannedLoyaltyCard,
+  type LoyaltyCardAssignMode,
+} from '@/components/loyalty/LoyaltyCardAssignField'
 
 interface Product {
   id: string
@@ -63,6 +90,7 @@ interface Product {
   sale_price: number
   sale_price_with_tax?: boolean
   purchase_price?: number
+  mrp?: number
   stock_qty: number
   unit: string
   tax_rate: number
@@ -77,6 +105,8 @@ interface Party {
   phone: string
   gstin: string
   loyalty_points?: number
+  loyalty_cash?: number
+  loyalty_excluded?: boolean
   local_only?: boolean
 }
 
@@ -115,6 +145,8 @@ interface POSTab {
   draftId?: string
   discountType: 'amount' | 'percent'
   discountValue: string
+  autoDiscountApplied?: boolean
+  autoDiscountValue?: string
   additionalChargeItems: AdditionalChargeItem[]
 }
 
@@ -359,10 +391,12 @@ export default function POSPage() {
   const [parties, setParties] = useState<Party[]>([])
   const [walkInCustomer, setWalkInCustomer] = useState<Party | null>(null)
   const [tabs, setTabs] = useState<POSTab[]>([
-    { id: 'tab-1', title: 'New Order', cart: [], selectedParty: null, notes: '', isDraft: false, discountType: 'amount', discountValue: '', additionalChargeItems: [] }
+    { id: 'tab-1', title: 'New Order', cart: [], selectedParty: null, notes: '', isDraft: false, discountType: 'amount', discountValue: '', autoDiscountApplied: false, autoDiscountValue: '', additionalChargeItems: [] }
   ])
   const [activeTabId, setActiveTabId] = useState('tab-1')
   const [searchTerm, setSearchTerm] = useState('')
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
+  const [searchHighlight, setSearchHighlight] = useState(0)
   const barcodeInputRef = useRef<BarcodeScannerInputHandle>(null)
   const tabListRef = useRef<HTMLDivElement>(null)
   const [canScrollTabsLeft, setCanScrollTabsLeft] = useState(false)
@@ -378,20 +412,28 @@ export default function POSPage() {
   const [customerSuggestions, setCustomerSuggestions] = useState<Party[]>([])
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
   const [isEditingCustomer, setIsEditingCustomer] = useState(false)
+  // Set when checkout was pressed without a customer: asks for details first.
+  const [checkoutPrompt, setCheckoutPrompt] = useState<{ shouldPrint: boolean } | null>(null)
+  const [promptName, setPromptName] = useState('')
+  const [promptPhone, setPromptPhone] = useState('')
+  const [promptBusy, setPromptBusy] = useState(false)
   const [customerPanelOpen, setCustomerPanelOpen] = useState(false)
-  const [totalsExpanded, setTotalsExpanded] = useState(false)
+  const [totalsExpanded, setTotalsExpanded] = useState(true)
   const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: string }[]>([
     { mode: 'upi', amount: '' },
   ])
   const [receivedEdited, setReceivedEdited] = useState(false)
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
+  const [saleDiscount, setSaleDiscount] = useState<SaleDiscountSettings | null>(null)
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0)
+  const [redeemPtsOpen, setRedeemPtsOpen] = useState(false)
   const [editingQty, setEditingQty] = useState<{ productId: string; value: string } | null>(null)
   const qtyEditCancelledRef = useRef(false)
   const prevLoyaltyDiscountRef = useRef(0)
   const checkoutInFlightRef = useRef(false)
   const { accounts: bankAccounts } = useBankAccounts()
   const { getDepositHint } = usePaymentMethodMappings()
+  const { isPageEnabled } = usePageFeatures()
   const [mounted, setMounted] = useState(false)
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
@@ -420,6 +462,7 @@ export default function POSPage() {
         loadSession(),
         loadDrafts(),
         loadLoyaltySettings(),
+        loadSaleDiscountSettings(),
         loadBusinessSettings(),
       ])
       await hydratePOSSnapshot()
@@ -429,6 +472,7 @@ export default function POSPage() {
 
   useEffect(() => {
     setLoyaltyPointsToRedeem(0)
+    setRedeemPtsOpen(false)
     prevLoyaltyDiscountRef.current = 0
   }, [activeTab.selectedParty?.id])
 
@@ -456,6 +500,43 @@ export default function POSPage() {
     }
     const cached = await offlineStorage.getMeta<LoyaltySettings>(POS_META_KEYS.LOYALTY)
     if (cached) setLoyaltySettings(cached)
+    // Prime the card→customer map so scans still resolve while offline.
+    void loadLoyaltyCardMap()
+  }
+
+  /** card_number → party_id map cached for offline lookups. */
+  const loadLoyaltyCardMap = async () => {
+    try {
+      const res = await apiFetch('/loyalty/cards', { timeoutMs: 5000 })
+      if (!res.ok) return
+      const data = await res.json()
+      const map: Record<string, string> = {}
+      for (const card of data.cards || []) {
+        if (card.party_id) map[card.card_number] = card.party_id
+      }
+      await offlineStorage.setMeta(POS_META_KEYS.LOYALTY_CARDS, map)
+    } catch {
+      /* offline — keep whatever is cached */
+    }
+  }
+
+  const normalizeCardNumber = (raw: string) =>
+    raw.trim().toUpperCase().replace(/\s+/g, '-').replace(/-+/g, '-')
+
+  const loadSaleDiscountSettings = async () => {
+    try {
+      const res = await apiFetch('/sale-discount-settings', { timeoutMs: 5000 })
+      if (res.ok) {
+        const settings = normalizeSaleDiscountSettings(await res.json())
+        setSaleDiscount(settings)
+        await offlineStorage.setMeta(POS_META_KEYS.SALE_DISCOUNT, settings)
+        return
+      }
+    } catch {
+      /* offline — use cache */
+    }
+    const cached = await offlineStorage.getMeta<SaleDiscountSettings>(POS_META_KEYS.SALE_DISCOUNT)
+    if (cached) setSaleDiscount(normalizeSaleDiscountSettings(cached))
   }
 
   const loadBusinessSettings = async () => {
@@ -492,10 +573,9 @@ export default function POSPage() {
 
   const applyDefaultCustomer = (party: Party | null) => {
     if (!party) return
+    // Kept for the "Use Walk-in" fallback only — tabs start with no customer so
+    // checkout asks for the buyer's details first.
     setWalkInCustomer(party)
-    setTabs((prev) =>
-      prev.map((tab) => (tab.selectedParty ? tab : { ...tab, selectedParty: party }))
-    )
   }
 
   const ensureWalkInCustomer = async (list: Party[]): Promise<{ party: Party | null; parties: Party[] }> => {
@@ -690,7 +770,7 @@ export default function POSPage() {
     const finishClose = async () => {
       await offlineStorage.closePOSSession(session.id)
       setSession(null)
-      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', additionalChargeItems: [] })
+      updateTab(activeTabId, { cart: [], selectedParty: null, discountType: 'amount', discountValue: '', autoDiscountApplied: false, autoDiscountValue: '', additionalChargeItems: [] })
       setIsEditingCustomer(false)
       resetPayment()
       window.location.href = '/dashboard'
@@ -993,16 +1073,47 @@ export default function POSPage() {
     return Math.min(cartTotal, raw)
   }
 
-  const getSaleDiscount = () =>
-    computeSaleDiscount(getCartTotal(), activeTab.discountType || 'amount', activeTab.discountValue || '')
+  // Off when the Discount page is hidden in Pages & Menus or the store's own
+  // discount switch is off.
+  const discountsEnabled = saleDiscount?.is_enabled !== false && isPageEnabled('/discount')
+  const autoDiscountMode = discountsEnabled && saleDiscount?.mode === 'auto'
+
+  const getSaleDiscount = () => {
+    if (!discountsEnabled) return 0
+    if (autoDiscountMode) {
+      if (!activeTab.autoDiscountApplied) return 0
+      const cap = computeAutoDiscount(saleDiscount, getCartTotal() + getAdditionalCharges())
+      return Math.min(parseMoney(activeTab.autoDiscountValue || '0'), cap)
+    }
+    return computeSaleDiscount(getCartTotal(), activeTab.discountType || 'amount', activeTab.discountValue || '')
+  }
 
   const getAdditionalCharges = () => Math.max(0, sumAdditionalChargeItems(activeTab.additionalChargeItems || []))
 
+  // Super-admin max-discount limit (0 = none) and the validation error shown
+  // when the discount the cashier entered goes over it.
+  const maxSaleDiscount = discountsEnabled ? (saleDiscount?.max_discount_amount ?? 0) : 0
+  const getEnteredSaleDiscount = () => {
+    if (!discountsEnabled) return 0
+    if (autoDiscountMode) {
+      return activeTab.autoDiscountApplied ? parseMoney(activeTab.autoDiscountValue || '0') : 0
+    }
+    return computeSaleDiscount(getCartTotal(), activeTab.discountType || 'amount', activeTab.discountValue || '')
+  }
+  const discountLimitError =
+    maxSaleDiscount > 0 && getEnteredSaleDiscount() > maxSaleDiscount + 0.005
+      ? `Discount cannot exceed the maximum allowed amount of ${formatCurrency(maxSaleDiscount)}`
+      : ''
+
+  /** Loyalty applies to the selected customer: program on and customer not excluded. */
+  const partyLoyaltyActive = () =>
+    !!(loyaltySettings?.is_enabled && activeTab.selectedParty && !activeTab.selectedParty.loyalty_excluded)
+
   const getLoyaltyDiscount = (saleDiscount = getSaleDiscount()) => {
-    if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+    if (!partyLoyaltyActive()) return 0
     const { discount } = computeLoyaltyDiscount(
       loyaltySettings,
-      activeTab.selectedParty.loyalty_points ?? 0,
+      loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
       Math.max(0, getCartTotal() - saleDiscount + getAdditionalCharges()),
       loyaltyPointsToRedeem
     )
@@ -1012,6 +1123,23 @@ export default function POSPage() {
   const getExactTotal = () => {
     const saleDiscount = getSaleDiscount()
     return getCartTotal() - saleDiscount + getAdditionalCharges() - getLoyaltyDiscount(saleDiscount)
+  }
+
+  /** Reward the current cart earns (bill or margin basis), in the active loyalty unit. */
+  const getLoyaltyEarnEstimate = (saleDiscount = getSaleDiscount()) => {
+    if (!loyaltySettings?.is_enabled || activeTab.selectedParty?.loyalty_excluded) return 0
+    const loyaltyDisc = getLoyaltyDiscount(saleDiscount)
+    return estimateLoyaltyEarnedOnSale(
+      loyaltySettings,
+      Math.max(0, getCartTotal() - saleDiscount + getAdditionalCharges() - loyaltyDisc),
+      activeTab.cart.map((item) => ({
+        has_product: true,
+        quantity: item.quantity,
+        unit_price: productSaleUnitPrice(item.product),
+        unit_cost: Number(item.product.purchase_price || 0),
+      })),
+      saleDiscount + loyaltyDisc
+    )
   }
 
   const getRoundedTotal = () => Math.max(0, Math.round(getExactTotal()))
@@ -1040,10 +1168,10 @@ export default function POSPage() {
     const nextSale = computeSaleDiscount(cartTotal, nextType, nextValue)
     const prevLoyalty = getLoyaltyDiscount(prevSale)
     const nextLoyalty = (() => {
-      if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+      if (!partyLoyaltyActive()) return 0
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
-        activeTab.selectedParty.loyalty_points ?? 0,
+        loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
         Math.max(0, cartTotal - nextSale + addCharges),
         loyaltyPointsToRedeem
       )
@@ -1058,6 +1186,63 @@ export default function POSPage() {
     )
   }
 
+  const toggleAutoDiscount = (applied: boolean) => {
+    const cartTotal = getCartTotal()
+    const addCharges = getAdditionalCharges()
+    const prevSale = getSaleDiscount()
+    const nextSale = applied ? computeAutoDiscount(saleDiscount, cartTotal + addCharges) : 0
+    const prevLoyalty = getLoyaltyDiscount(prevSale)
+    const nextLoyalty = (() => {
+      if (!partyLoyaltyActive()) return 0
+      const { discount } = computeLoyaltyDiscount(
+        loyaltySettings,
+        loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
+        Math.max(0, cartTotal - nextSale + addCharges),
+        loyaltyPointsToRedeem
+      )
+      return discount
+    })()
+    prevLoyaltyDiscountRef.current = nextLoyalty
+    updateTab(activeTabId, applied
+      ? { autoDiscountApplied: true, autoDiscountValue: String(nextSale) }
+      : { autoDiscountApplied: false })
+    syncReceivedToPayable(
+      Math.max(0, Math.round(cartTotal - prevSale + addCharges - prevLoyalty)),
+      Math.max(0, Math.round(cartTotal - nextSale + addCharges - nextLoyalty)),
+      nextSale - prevSale + (nextLoyalty - prevLoyalty)
+    )
+  }
+
+  const updateAutoDiscountValue = (raw: string) => {
+    const next = limitDecimalInput(raw)
+    const cartTotal = getCartTotal()
+    const addCharges = getAdditionalCharges()
+    const cap = computeAutoDiscount(saleDiscount, cartTotal + addCharges)
+    // Over the max-discount limit: keep as typed so validation flags it.
+    const overLimit = maxSaleDiscount > 0 && parseMoney(next || '0') > maxSaleDiscount
+    const clamped = !overLimit && parseMoney(next || '0') > cap ? String(cap) : next
+    const prevSale = getSaleDiscount()
+    const nextSale = Math.min(parseMoney(clamped || '0'), cap)
+    const prevLoyalty = getLoyaltyDiscount(prevSale)
+    const nextLoyalty = (() => {
+      if (!partyLoyaltyActive()) return 0
+      const { discount } = computeLoyaltyDiscount(
+        loyaltySettings,
+        loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
+        Math.max(0, cartTotal - nextSale + addCharges),
+        loyaltyPointsToRedeem
+      )
+      return discount
+    })()
+    prevLoyaltyDiscountRef.current = nextLoyalty
+    updateTab(activeTabId, { autoDiscountValue: clamped })
+    syncReceivedToPayable(
+      Math.max(0, Math.round(cartTotal - prevSale + addCharges - prevLoyalty)),
+      Math.max(0, Math.round(cartTotal - nextSale + addCharges - nextLoyalty)),
+      nextSale - prevSale + (nextLoyalty - prevLoyalty)
+    )
+  }
+
   const applyPosLoyaltyChange = (nextPoints: number) => {
     const cartTotal = getCartTotal()
     const saleDiscount = getSaleDiscount()
@@ -1065,7 +1250,7 @@ export default function POSPage() {
     const billTotal = Math.max(0, cartTotal - saleDiscount + addCharges)
     const { discount: nextDiscount } = computeLoyaltyDiscount(
       loyaltySettings,
-      activeTab.selectedParty?.loyalty_points ?? 0,
+      loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
       billTotal,
       nextPoints
     )
@@ -1087,10 +1272,10 @@ export default function POSPage() {
     const nextAddCharges = Math.max(0, sumAdditionalChargeItems(nextItems))
     const prevLoyalty = getLoyaltyDiscount(saleDiscount)
     const nextLoyalty = (() => {
-      if (!activeTab.selectedParty || !loyaltySettings?.is_enabled) return 0
+      if (!partyLoyaltyActive()) return 0
       const { discount } = computeLoyaltyDiscount(
         loyaltySettings,
-        activeTab.selectedParty.loyalty_points ?? 0,
+        loyaltyAvailable(loyaltySettings, activeTab.selectedParty),
         Math.max(0, cartTotal - saleDiscount + nextAddCharges),
         loyaltyPointsToRedeem
       )
@@ -1105,7 +1290,10 @@ export default function POSPage() {
     )
   }
 
+  const isUnpaid = paymentSplits.length === 1 && isUnpaidMethod(paymentSplits[0]?.mode)
+
   const getReceivedNumeric = () => {
+    if (isUnpaid) return 0
     if (paymentSplits.length === 1 && !receivedEdited) return getRoundedTotal()
     return sumPaymentSplits(paymentSplits)
   }
@@ -1113,6 +1301,7 @@ export default function POSPage() {
   const getBalance = () => getRoundedTotal() - getReceivedNumeric()
 
   const splitAmountValue = (index: number) => {
+    if (isUnpaid) return '0'
     if (paymentSplits.length === 1 && !receivedEdited) {
       const total = getRoundedTotal()
       return total > 0 ? String(total) : ''
@@ -1121,7 +1310,19 @@ export default function POSPage() {
   }
 
   const updatePaymentSplit = (index: number, patch: Partial<{ mode: string; amount: string }>) => {
-    setReceivedEdited(true)
+    if (patch.mode !== undefined && isUnpaidMethod(patch.mode)) {
+      // Unpaid means nothing received: collapse to a single zero split.
+      setReceivedEdited(true)
+      setPaymentSplits([{ mode: UNPAID_METHOD, amount: '0' }])
+      return
+    }
+    if (patch.mode !== undefined && isUnpaid) {
+      // Leaving Unpaid: default back to receiving the full amount.
+      setReceivedEdited(false)
+      setPaymentSplits([{ mode: patch.mode, amount: '' }])
+      return
+    }
+    if (patch.amount !== undefined) setReceivedEdited(true)
     setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
@@ -1161,7 +1362,8 @@ export default function POSPage() {
   const setFullyPaid = () => {
     if (paymentSplits.length <= 1) {
       setReceivedEdited(false)
-      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'upi', amount: '' }])
+      const currentMode = paymentSplits[0]?.mode || 'upi'
+      setPaymentSplits([{ mode: isUnpaidMethod(currentMode) ? 'upi' : currentMode, amount: '' }])
       return
     }
     setReceivedEdited(true)
@@ -1184,11 +1386,12 @@ export default function POSPage() {
       id: `tab-${Date.now()}`,
       title: `Order ${tabs.length + 1}`,
       cart: [],
-      selectedParty: walkInCustomer,
+      selectedParty: null,
       notes: '',
       isDraft: false,
       discountType: 'amount',
       discountValue: '',
+      autoDiscountApplied: false, autoDiscountValue: '',
       additionalChargeItems: [],
     }
     setTabs([...tabs, newTab])
@@ -1226,6 +1429,8 @@ export default function POSPage() {
         items: activeTab.cart,
         discountType: activeTab.discountType || 'amount',
         discountValue: activeTab.discountValue || '',
+        autoDiscountApplied: activeTab.autoDiscountApplied === true,
+        autoDiscountValue: activeTab.autoDiscountValue || '',
         additionalChargeItems: sanitizeAdditionalChargeItems(activeTab.additionalChargeItems || []),
       }),
       party_id: activeTab.selectedParty?.id,
@@ -1261,7 +1466,7 @@ export default function POSPage() {
 
   const loadDraft = async (draft: POSDraft) => {
     try {
-      const parsed = JSON.parse(draft.cart_data) as CartItem[] | { items?: CartItem[]; discountType?: string; discountValue?: string; additionalCharges?: string; additionalChargeItems?: AdditionalChargeItem[] }
+      const parsed = JSON.parse(draft.cart_data) as CartItem[] | { items?: CartItem[]; discountType?: string; discountValue?: string; autoDiscountApplied?: boolean; autoDiscountValue?: string; additionalCharges?: string; additionalChargeItems?: AdditionalChargeItem[] }
       const rawItems = Array.isArray(parsed) ? parsed : (parsed.items || [])
       const cartData = rawItems.map((item) => ({
         ...item,
@@ -1278,12 +1483,14 @@ export default function POSPage() {
         id: `draft-${draft.id}`,
         title: draft.title,
         cart: cartData,
-        selectedParty: party || walkInCustomer,
+        selectedParty: party || null,
         notes: draft.notes,
         isDraft: true,
         draftId: draft.id,
         discountType,
         discountValue,
+        autoDiscountApplied: !Array.isArray(parsed) && parsed.autoDiscountApplied === true,
+        autoDiscountValue: !Array.isArray(parsed) && typeof parsed.autoDiscountValue === 'string' ? parsed.autoDiscountValue : '',
         additionalChargeItems,
       }
       
@@ -1318,6 +1525,341 @@ export default function POSPage() {
     setShowCustomerSuggestions(false)
     setIsEditingCustomer(false)
     setCustomerPanelOpen(false)
+    setCardNumber('')
+    setLinkCardCandidate(null)
+  }
+
+  // Loyalty card scan/type → resolve to linked customer
+  const [cardNumber, setCardNumber] = useState('')
+  const [cardLookupBusy, setCardLookupBusy] = useState(false)
+  const [linkCardCandidate, setLinkCardCandidate] = useState<{ id: string; card_number: string } | null>(null)
+
+  /** Offline path — resolve the card through the cached card→customer map. */
+  const lookupLoyaltyCardOffline = async (num: string): Promise<boolean> => {
+    const normalized = normalizeCardNumber(num)
+    const candidates = [normalized]
+    // Scanner may drop the dash — also try inserting one before the digit run.
+    if (!normalized.includes('-')) {
+      const m = normalized.match(/^(.*?)(\d+)$/)
+      if (m) candidates.push(`${m[1]}-${m[2]}`)
+    }
+    const map =
+      (await offlineStorage.getMeta<Record<string, string>>(POS_META_KEYS.LOYALTY_CARDS)) || {}
+    const partyId = candidates.map((c) => map[c]).find(Boolean)
+    if (!partyId) return false
+    let party =
+      parties.find((p) => p.id === partyId) ||
+      (await offlineStorage.getCachedParties()).find((p) => p.id === partyId)
+    if (!party) return false
+    selectCustomer(party)
+    notifySuccess(`Card scanned → ${party.name} (offline)`)
+    setCardNumber('')
+    return true
+  }
+
+  const lookupLoyaltyCard = async () => {
+    const num = cardNumber.trim()
+    if (!num) return
+    setCardLookupBusy(true)
+    setLinkCardCandidate(null)
+    try {
+      // 1) Try as a loyalty card number first.
+      if (/^[0-9\s-]{4,}$/.test(num)) {
+        try {
+          const res = await apiFetch(`/loyalty/cards/lookup?number=${encodeURIComponent(num)}`, {
+            timeoutMs: 5000,
+          })
+          const data = await res.json().catch(() => ({}))
+          if (res.ok) {
+            if (data.party) {
+              selectCustomer(data.party as Party)
+              notifySuccess(`Card ${data.card.card_number} → ${data.party.name}`)
+              setCardNumber('')
+              return
+            }
+            if (activeTab.selectedParty) {
+              // Card exists but isn't linked — offer to link it to the selected customer.
+              setLinkCardCandidate({ id: data.card.id, card_number: data.card.card_number })
+            } else {
+              notifyError(`Card ${data.card.card_number} is not linked to a customer`)
+            }
+            return
+          }
+          // 404 → fall through to customer search below.
+        } catch {
+          // Network failure → cached card map, then fall through to customer search.
+          if (await lookupLoyaltyCardOffline(num)) return
+        }
+      }
+
+      // 2) Mobile/name match — selects the customer if one exists.
+      const lq = num.toLowerCase()
+      const match =
+        parties.find((p) => p.phone === num) ||
+        parties.find((p) => p.phone?.includes(num)) ||
+        parties.find((p) => p.name?.toLowerCase() === lq) ||
+        parties.find((p) => p.name?.toLowerCase().includes(lq))
+      if (match) {
+        selectCustomer(match)
+        notifySuccess(`${match.name} selected`)
+        setCardNumber('')
+      } else {
+        notifyError('No card or customer found')
+      }
+    } finally {
+      setCardLookupBusy(false)
+    }
+  }
+
+  const linkCardToCustomer = async () => {
+    if (!linkCardCandidate || !activeTab.selectedParty) return
+    try {
+      const res = await apiFetch(`/loyalty/cards/${linkCardCandidate.id}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({ party_id: activeTab.selectedParty.id }),
+      })
+      if (res.ok) {
+        notifySuccess(`Card ${linkCardCandidate.card_number} linked to ${activeTab.selectedParty.name}`)
+        setLinkCardCandidate(null)
+        setCardNumber('')
+      } else {
+        notifyError('Failed to link card')
+      }
+    } catch {
+      notifyError('Failed to link card')
+    }
+  }
+
+  // Quick customer search — card number or mobile, from the cart header icon.
+  const [quickSearchOpen, setQuickSearchOpen] = useState(false)
+  const [quickQuery, setQuickQuery] = useState('')
+  const [quickBusy, setQuickBusy] = useState(false)
+  const [quickMatches, setQuickMatches] = useState<Party[]>([])
+  const [quickCardUnlinked, setQuickCardUnlinked] = useState<string | null>(null)
+  const [quickSearched, setQuickSearched] = useState(false)
+
+  const doQuickSearch = async (raw: string, autoSelect = false) => {
+    const q = raw.trim()
+    if (!q) {
+      setQuickMatches([])
+      setQuickSearched(false)
+      setQuickCardUnlinked(null)
+      return
+    }
+    setQuickBusy(true)
+    setQuickCardUnlinked(null)
+    setQuickSearched(true)
+    try {
+      const matches: Party[] = []
+      const seen = new Set<string>()
+      const push = (p: Party | null | undefined) => {
+        if (p?.id && !seen.has(p.id)) {
+          seen.add(p.id)
+          matches.push(p)
+        }
+      }
+
+      const isNumericish = /^[0-9\s-]{4,}$/.test(q)
+
+      // 1) Loyalty card lookup when the input could be a card number.
+      if (isNumericish && loyaltySettings?.is_enabled) {
+        try {
+          const res = await apiFetch(
+            `/loyalty/cards/lookup?number=${encodeURIComponent(q)}`,
+            { timeoutMs: 5000 }
+          )
+          const data = await res.json().catch(() => ({}))
+          if (res.ok) {
+            if (data.party) push(data.party as Party)
+            else setQuickCardUnlinked(data.card?.card_number || normalizeCardNumber(q))
+          }
+        } catch {
+          // Offline → resolve via the cached card→customer map.
+          const normalized = normalizeCardNumber(q)
+          const map =
+            (await offlineStorage.getMeta<Record<string, string>>(POS_META_KEYS.LOYALTY_CARDS)) || {}
+          const candidates = [normalized]
+          if (!normalized.includes('-')) {
+            const m = normalized.match(/^(.*?)(\d+)$/)
+            if (m) candidates.push(`${m[1]}-${m[2]}`)
+          }
+          const pid = candidates.map((c) => map[c]).find(Boolean)
+          if (pid) {
+            const p =
+              parties.find((x) => x.id === pid) ||
+              (await offlineStorage.getCachedParties()).find((x) => x.id === pid)
+            push(p)
+          }
+        }
+      }
+
+      // 2) Mobile/name matches from the loaded parties list (top 5).
+      const lq = q.toLowerCase()
+      parties
+        .filter((p) => p.phone?.includes(q) || p.name?.toLowerCase().includes(lq))
+        .slice(0, 5)
+        .forEach(push)
+
+      setQuickMatches(matches)
+      // Enter pressed → pick the first (often only) match directly.
+      if (autoSelect && matches.length > 0) {
+        pickQuickResult(matches[0])
+      }
+    } finally {
+      setQuickBusy(false)
+    }
+  }
+
+  const quickSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const runQuickSearch = () => doQuickSearch(quickQuery, true)
+
+  // Live search-as-you-type — debounced so card lookups don't fire per keystroke.
+  const handleQuickQuery = (v: string) => {
+    setQuickQuery(v)
+    if (quickSearchTimer.current) clearTimeout(quickSearchTimer.current)
+    if (!v.trim()) {
+      setQuickMatches([])
+      setQuickSearched(false)
+      setQuickCardUnlinked(null)
+      return
+    }
+    quickSearchTimer.current = setTimeout(() => doQuickSearch(v), 300)
+  }
+
+  const pickQuickResult = (party: Party) => {
+    selectCustomer(party)
+    setQuickQuery('')
+    setQuickMatches([])
+    setQuickSearched(false)
+    setQuickSearchOpen(false)
+  }
+
+  const startAddFromQuick = () => {
+    // Pre-fill the customer form — digits go to phone, text to name.
+    const q = quickQuery.trim()
+    if (/^\d+$/.test(q)) {
+      setCustomerPhone(q)
+      setCustomerName('')
+    } else {
+      setCustomerName(q)
+      setCustomerPhone('')
+    }
+    setIsEditingCustomer(true)
+    setCustomerPanelOpen(true)
+    setQuickSearchOpen(false)
+  }
+
+  // "Add & link card" modal — creates the customer and links a loyalty card.
+  const [linkModalOpen, setLinkModalOpen] = useState(false)
+  const [linkCardInput, setLinkCardInput] = useState('')
+  const [linkCardMode, setLinkCardMode] = useState<LoyaltyCardAssignMode>('scan')
+  const [linkNameInput, setLinkNameInput] = useState('')
+  const [linkPhoneInput, setLinkPhoneInput] = useState('')
+  const [linkModalError, setLinkModalError] = useState('')
+  const [linkModalBusy, setLinkModalBusy] = useState(false)
+  // Inline confirm — shown when the entered mobile already belongs to a customer.
+  const [linkAsk, setLinkAsk] = useState<{
+    party: Party
+    cardId: string | null
+    cardNum: string | null
+    autoAssign: boolean
+  } | null>(null)
+
+  const finishLinkFlow = (party: Party) => {
+    selectCustomer(party)
+    setLinkAsk(null)
+    setLinkModalOpen(false)
+  }
+
+  const linkCardToParty = async (cardId: string, cardNum: string, party: Party) => {
+    const res = await apiFetch(`/loyalty/cards/${cardId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ party_id: party.id }),
+    })
+    if (res.ok) notifySuccess(`Card ${cardNum} linked to ${party.name}`)
+    else notifyError('Failed to link card')
+    finishLinkFlow(party)
+  }
+
+  /** Auto-assign mode — the server hands out the next unassigned card. */
+  const autoAssignCardToParty = async (party: Party) => {
+    const r = await assignNextLoyaltyCard(party.id)
+    if ('error' in r) notifyError(r.error)
+    else notifySuccess(`Card ${r.card_number} assigned to ${party.name}`)
+  }
+
+  const submitLinkCustomer = async () => {
+    const phone = linkPhoneInput.trim()
+    if (!/^[0-9+\-\s]{6,15}$/.test(phone)) {
+      setLinkModalError('Mobile number is required')
+      return
+    }
+    setLinkModalBusy(true)
+    setLinkModalError('')
+    try {
+      // Validate the card first — it must exist as a generated card.
+      let cardId: string | null = null
+      let cardNum: string | null = null
+      const autoAssign = linkCardMode === 'auto'
+      const rawCard = linkCardInput.trim()
+      if (!autoAssign && rawCard) {
+        if (!/^[0-9\s-]{3,}$/.test(rawCard)) {
+          setLinkModalError('Card number can only contain digits')
+          return
+        }
+        const r = await resolveScannedLoyaltyCard(rawCard)
+        if ('error' in r) {
+          setLinkModalError(r.error)
+          return
+        }
+        cardId = r.card.id
+        cardNum = r.card.card_number
+      }
+
+      // Customer already exists → ask before linking instead of duplicating.
+      const existing = parties.find((p) => p.phone === phone)
+      if (existing) {
+        setLinkAsk({ party: existing, cardId, cardNum, autoAssign })
+        return
+      }
+
+      let party: Party | undefined
+      {
+        const res = await apiFetch('/parties', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: linkNameInput.trim() || phone,
+            phone,
+            party_type: 'customer',
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          setLinkModalError(data.error || 'Failed to create customer')
+          return
+        }
+        party = (data.id ? data : data.party) as Party
+        setParties((prev) => [party as Party, ...prev])
+      }
+
+      if (autoAssign) {
+        await autoAssignCardToParty(party)
+      } else if (cardId && cardNum) {
+        await apiFetch(`/loyalty/cards/${cardId}/assign`, {
+          method: 'POST',
+          body: JSON.stringify({ party_id: party.id }),
+        })
+        notifySuccess(`Card ${cardNum} linked to ${party.name}`)
+      }
+
+      notifySuccess(`${party.name} added`)
+      finishLinkFlow(party as Party)
+    } catch {
+      setLinkModalError('Something went wrong')
+    } finally {
+      setLinkModalBusy(false)
+    }
   }
 
   const cancelEditingCustomer = () => {
@@ -1326,9 +1868,6 @@ export default function POSPage() {
     setCustomerPhone('')
     setCustomerSuggestions([])
     setShowCustomerSuggestions(false)
-    if (!activeTab.selectedParty && walkInCustomer) {
-      updateTab(activeTabId, { selectedParty: walkInCustomer })
-    }
   }
 
   const useWalkInCustomer = () => {
@@ -1339,15 +1878,18 @@ export default function POSPage() {
     cancelEditingCustomer()
   }
 
-  const createQuickCustomer = async () => {
-    if (!customerPhone.trim()) {
+  const createQuickCustomer = async (
+    nameArg: string = customerName,
+    phoneArg: string = customerPhone,
+  ): Promise<Party | null> => {
+    if (!phoneArg.trim()) {
       notifyError('Phone number is required')
-      return
+      return null
     }
 
     const newCustomer = {
-      name: customerName.trim() || WALK_IN_CUSTOMER_NAME,
-      phone: customerPhone.trim(),
+      name: nameArg.trim() || WALK_IN_CUSTOMER_NAME,
+      phone: phoneArg.trim(),
       party_type: 'customer'
     }
 
@@ -1364,7 +1906,7 @@ export default function POSPage() {
         setParties(next)
         await offlineStorage.cacheParties(next)
         selectCustomer(createdParty)
-        return
+        return createdParty
       }
     } catch (err) {
       console.error('Failed to create customer online, using local party')
@@ -1381,19 +1923,90 @@ export default function POSPage() {
     setParties(next)
     await offlineStorage.putParty(localParty)
     selectCustomer(localParty)
+    return localParty
   }
 
-  const handleCheckout = async (shouldPrint: boolean) => {
+  const openCheckoutCustomerPrompt = (shouldPrint: boolean) => {
+    setCheckoutPrompt({ shouldPrint })
+    setPromptName('')
+    setPromptPhone('')
+  }
+
+  const closeCheckoutCustomerPrompt = () => {
+    setCheckoutPrompt(null)
+    setPromptName('')
+    setPromptPhone('')
+  }
+
+  const checkoutWithParty = (party: Party) => {
+    const shouldPrint = checkoutPrompt?.shouldPrint ?? false
+    closeCheckoutCustomerPrompt()
+    selectCustomer(party)
+    void handleCheckout(shouldPrint, party)
+  }
+
+  const submitCheckoutCustomer = async () => {
+    if (promptBusy) return
+    const phone = promptPhone.trim()
+    if (!phone) {
+      notifyError('Enter the customer mobile number, or use Walk-in Customer')
+      return
+    }
+    const existing = parties.find((p) => (p.phone || '').trim() === phone)
+    if (existing) {
+      checkoutWithParty(existing)
+      return
+    }
+    setPromptBusy(true)
+    try {
+      const created = await createQuickCustomer(promptName, phone)
+      if (created) checkoutWithParty(created)
+    } finally {
+      setPromptBusy(false)
+    }
+  }
+
+  const checkoutAsWalkIn = async () => {
+    let party = walkInCustomer
+    if (!party) {
+      const { party: ensured, parties: next } = await ensureWalkInCustomer(parties)
+      setParties(next)
+      setWalkInCustomer(ensured)
+      party = ensured
+    }
+    if (party) checkoutWithParty(party)
+  }
+
+  const promptSuggestions = useMemo(() => {
+    const name = promptName.trim().toLowerCase()
+    const phone = promptPhone.trim()
+    if (!name && !phone) return []
+    return parties
+      .filter((p) => p.id !== walkInCustomer?.id)
+      .filter((p) =>
+        (phone && (p.phone || '').includes(phone)) ||
+        (name && (p.name || '').toLowerCase().includes(name))
+      )
+      .slice(0, 5)
+  }, [parties, promptName, promptPhone, walkInCustomer?.id])
+
+  const handleCheckout = async (shouldPrint: boolean, partyOverride?: Party) => {
     if (activeTab.cart.length === 0) return
-    if (!activeTab.selectedParty) {
-      notifyError('Please select a customer')
+    const checkoutParty = partyOverride ?? activeTab.selectedParty
+    if (!checkoutParty) {
+      // No customer yet: ask for their details first; walk-in is the fallback.
+      openCheckoutCustomerPrompt(shouldPrint)
+      return
+    }
+    if (discountLimitError) {
+      notifyError(discountLimitError)
       return
     }
     if (checkoutInFlightRef.current) return
     checkoutInFlightRef.current = true
 
     const roundedTotal = getRoundedTotal()
-    const checkoutSplits = clampPaymentSplitsToTotal(
+    const checkoutSplits = isUnpaid ? [] : clampPaymentSplitsToTotal(
       materializePaymentSplits(paymentSplits, {
         implicitFullAmount: roundedTotal,
         edited: receivedEdited,
@@ -1406,15 +2019,19 @@ export default function POSPage() {
     const saleDiscount = getSaleDiscount()
     const chargeItems = sanitizeAdditionalChargeItems(activeTab.additionalChargeItems || [])
     const loyaltyDiscountValue = getLoyaltyDiscount(saleDiscount)
-    const loyaltyEarned = loyaltySettings?.is_enabled
-      ? estimatePointsEarned(loyaltySettings, Math.max(0, getCartTotal() - saleDiscount + getAdditionalCharges() - loyaltyDiscountValue))
-      : 0
+    const loyaltyIsCash = isCashLoyalty(loyaltySettings)
+    const loyaltyEarned = getLoyaltyEarnEstimate(saleDiscount)
     const loyaltyBalanceAfter =
-      loyaltySettings?.is_enabled && activeTab.selectedParty
-        ? Math.max(0, (activeTab.selectedParty.loyalty_points ?? 0) - loyaltyPointsToRedeem + loyaltyEarned)
+      partyLoyaltyActive() && activeTab.selectedParty && !partyOverride
+        ? Math.max(
+            0,
+            Math.round(
+              (loyaltyAvailable(loyaltySettings, activeTab.selectedParty) - loyaltyPointsToRedeem + loyaltyEarned) * 100
+            ) / 100
+          )
         : undefined
     const cartSnapshot = [...activeTab.cart]
-    const partySnapshot = activeTab.selectedParty
+    const partySnapshot = checkoutParty
     const clientSaleId = crypto.randomUUID()
 
     try {
@@ -1443,7 +2060,7 @@ export default function POSPage() {
         ...(saleDiscount > 0 ? { invoice_discount: saleDiscount } : {}),
         ...(getAdditionalCharges() > 0 ? { additional_charges: getAdditionalCharges() } : {}),
         ...(chargeItems.length > 0 ? { additional_charge_items: chargeItems } : {}),
-        ...(loyaltyPointsToRedeem > 0 ? { loyalty_points_redeemed: loyaltyPointsToRedeem } : {}),
+        ...(partyLoyaltyActive() && !partyOverride ? loyaltyRedeemPayload(loyaltySettings, loyaltyPointsToRedeem) : {}),
         items: cartSnapshot.map((item) => ({
           product_id: item.product.id,
           description: item.product.name,
@@ -1476,7 +2093,7 @@ export default function POSPage() {
         await offlineStorage.decrementLocalStock(item.product.id, item.quantity, item.batch_no, allowNegativeStock)
       }
 
-      updateTab(activeTabId, { cart: [], selectedParty: walkInCustomer, discountType: 'amount', discountValue: '', additionalChargeItems: [] })
+      updateTab(activeTabId, { cart: [], selectedParty: null, discountType: 'amount', discountValue: '', autoDiscountApplied: false, autoDiscountValue: '', additionalChargeItems: [] })
       setIsEditingCustomer(false)
       setEditingQty(null)
       setPaymentSplits([{ mode: 'upi', amount: '' }])
@@ -1531,6 +2148,7 @@ export default function POSPage() {
               ...(loyaltyBalanceAfter !== undefined
                 ? { loyalty_points_balance: loyaltyBalanceAfter }
                 : {}),
+              ...(loyaltyIsCash ? { loyalty_is_cash: true } : {}),
             },
             printSize
           )
@@ -1566,15 +2184,41 @@ export default function POSPage() {
 
   const filteredProducts = products.filter(p =>
     (allowNegativeStock || Number(p.stock_qty || 0) > 0) &&
-    (p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (matchesSearch(p.name, searchTerm) ||
     p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.item_code?.toLowerCase().includes(searchTerm.toLowerCase()))
   )
+  const searchSuggestions = filteredProducts.slice(0, 12)
+
+  const selectSearchSuggestion = (product: Product) => {
+    addToCart(product)
+    setSearchTerm('')
+    setSearchHighlight(0)
+    setSearchDropdownOpen(false)
+  }
+
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSearchDropdownOpen(true)
+      setSearchHighlight((i) => Math.min(i + 1, searchSuggestions.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSearchHighlight((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      if (!searchDropdownOpen) return
+      e.preventDefault()
+      const product = searchSuggestions[searchHighlight] ?? searchSuggestions[0]
+      if (product) selectSearchSuggestion(product)
+    } else if (e.key === 'Escape') {
+      setSearchDropdownOpen(false)
+    }
+  }
 
   if (!mounted) {
     return (
       <div className="h-[100dvh] flex items-center justify-center bg-gray-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+        <BrandLoader />
       </div>
     )
   }
@@ -1582,7 +2226,7 @@ export default function POSPage() {
   return (
     <KeyboardShortcutsProvider>
     <POSCheckoutShortcuts
-      enabled={!showSessionModal && !showDraftModal && activeTab.cart.length > 0 && !!activeTab.selectedParty}
+      enabled={!showSessionModal && !showDraftModal && !checkoutPrompt && activeTab.cart.length > 0}
       onCheckout={() => { void handleCheckout(false) }}
       onCheckoutAndPrint={() => { void handleCheckout(true) }}
     />
@@ -1827,8 +2471,58 @@ export default function POSPage() {
                   placeholder="Search products..."
                   className="h-7 pl-8 text-xs"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value)
+                    setSearchHighlight(0)
+                    setSearchDropdownOpen(true)
+                  }}
+                  onFocus={() => setSearchDropdownOpen(true)}
+                  onBlur={() => setSearchDropdownOpen(false)}
+                  onKeyDown={handleSearchKeyDown}
                 />
+                {searchDropdownOpen && (
+                  <div className="absolute right-0 top-full z-50 mt-1 w-[22rem] max-w-[92vw] overflow-hidden rounded-md border bg-white shadow-lg">
+                    <div className="max-h-80 overflow-y-auto p-1">
+                      {searchSuggestions.length === 0 ? (
+                        <p className="px-2 py-4 text-center text-xs text-gray-500">No products found</p>
+                      ) : (
+                        searchSuggestions.map((product, i) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onMouseEnter={() => setSearchHighlight(i)}
+                            onClick={() => selectSearchSuggestion(product)}
+                            className={`flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left ${
+                              i === searchHighlight ? 'bg-blue-50' : 'hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-semibold text-gray-900">{product.name}</p>
+                              {(product.sku || product.item_code) && (
+                                <p className="truncate text-[10px] text-gray-500">
+                                  {product.sku || product.item_code}
+                                </p>
+                              )}
+                            </div>
+                            <div className="shrink-0 space-y-0.5 text-right text-[10px] leading-tight text-gray-500">
+                              <p>
+                                MRP <span className="font-medium text-gray-800">{formatCurrency(Number(product.mrp || 0))}</span>
+                                {' · '}
+                                Sale <span className="font-semibold text-blue-600">{formatCurrency(product.sale_price)}</span>
+                              </p>
+                              <p>
+                                Purchase <span className="font-medium text-gray-800">{formatCurrency(Number(product.purchase_price || 0))}</span>
+                                {' · '}
+                                Stock <span className={Number(product.stock_qty || 0) <= 0 ? 'font-medium text-red-500' : 'font-medium text-gray-800'}>{formatQty(product.stock_qty)}</span>
+                              </p>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1928,6 +2622,34 @@ export default function POSPage() {
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => setQuickSearchOpen((v) => !v)}
+                className={`h-7 w-7 p-0 ${quickSearchOpen ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
+                aria-label={loyaltySettings?.is_enabled ? 'Search customer by card or mobile' : 'Search customer by mobile or name'}
+                title={loyaltySettings?.is_enabled ? 'Search by loyalty card / mobile' : 'Search by mobile / name'}
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+              {loyaltySettings?.is_enabled && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setLinkCardInput('')
+                    setLinkNameInput('')
+                    setLinkPhoneInput('')
+                    setLinkModalError('')
+                    setLinkModalOpen(true)
+                  }}
+                  className="h-7 w-7 p-0 text-gray-600"
+                  aria-label="Add customer & link loyalty card"
+                  title="Add customer & link loyalty card"
+                >
+                  <UserPlus className="h-4 w-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   updateTab(activeTabId, { cart: [] })
                   setReceivedEdited(false)
@@ -1949,6 +2671,67 @@ export default function POSPage() {
               </Button>
             </div>
           </div>
+
+          {/* Quick search — card no. / mobile, toggled from header icon */}
+          {quickSearchOpen && (
+            <div className="p-2 border-b space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <Input
+                  autoFocus
+                  placeholder={loyaltySettings?.is_enabled ? 'Loyalty card no. or mobile…' : 'Mobile or Name'}
+                  value={quickQuery}
+                  onChange={(e) => handleQuickQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      runQuickSearch()
+                    }
+                  }}
+                  className="h-8 text-xs"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={runQuickSearch}
+                  disabled={quickBusy || !quickQuery.trim()}
+                  className="h-8 px-2 text-xs"
+                >
+                  {quickBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Find'}
+                </Button>
+              </div>
+              {quickMatches.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => pickQuickResult(p)}
+                  className="w-full rounded border px-2 py-1.5 text-left hover:border-blue-300 hover:bg-blue-50"
+                >
+                  <p className="text-xs font-medium text-gray-900">{p.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {p.phone || '—'}
+                    {loyaltySettings?.is_enabled
+                      ? p.loyalty_excluded
+                        ? ' · no loyalty'
+                        : ` · ${formatLoyaltyValue(loyaltySettings, loyaltyAvailable(loyaltySettings, p))}`
+                      : ''}
+                  </p>
+                </button>
+              ))}
+              {quickCardUnlinked && quickMatches.length === 0 && (
+                <p className="text-xs text-amber-700">
+                  Card {quickCardUnlinked} exists but isn't linked to a customer
+                </p>
+              )}
+              {quickSearched && !quickBusy && quickMatches.length === 0 && !quickCardUnlinked && (
+                <div className="flex items-center justify-between rounded border border-dashed px-2 py-1.5">
+                  <span className="text-xs text-gray-500">No customer found for “{quickQuery.trim()}”</span>
+                  <Button size="sm" variant="outline" onClick={startAddFromQuick} className="h-6 px-2 text-xs">
+                    <Plus className="mr-1 h-3 w-3" /> Add
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Customer Panel - toggled from header icon */}
           {customerPanelOpen && (
@@ -1989,6 +2772,43 @@ export default function POSPage() {
                   <p className="text-xs text-gray-500">Default customer</p>
                 </button>
               )}
+              {loyaltySettings?.is_enabled && (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      placeholder="Loyalty card no. (e.g. 000142)"
+                      value={cardNumber}
+                      onChange={(e) => setCardNumber(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          lookupLoyaltyCard()
+                        }
+                      }}
+                      className="h-8 text-xs font-mono"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={lookupLoyaltyCard}
+                      disabled={cardLookupBusy || !cardNumber.trim()}
+                      className="h-8 px-2 text-xs"
+                    >
+                      {cardLookupBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Scan'}
+                    </Button>
+                  </div>
+                  {linkCardCandidate && activeTab.selectedParty && (
+                    <div className="flex items-center justify-between rounded border border-amber-200 bg-amber-50 px-2 py-1.5">
+                      <span className="text-xs text-amber-800">
+                        Link {linkCardCandidate.card_number} to {activeTab.selectedParty.name}?
+                      </span>
+                      <Button size="sm" onClick={linkCardToCustomer} className="h-6 px-2 text-xs">
+                        Link
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
               <Input
                 placeholder="Customer name"
                 value={customerName}
@@ -2013,7 +2833,7 @@ export default function POSPage() {
                   onFocus={() => setShowCustomerSuggestions(true)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && customerPhone.trim()) {
-                      createQuickCustomer()
+                      void createQuickCustomer()
                     }
                   }}
                   className="h-8 text-xs"
@@ -2036,7 +2856,7 @@ export default function POSPage() {
                   <div className="absolute z-10 mt-1 w-full border rounded bg-white shadow-lg p-2">
                     <Button
                       size="sm"
-                      onClick={createQuickCustomer}
+                      onClick={() => { void createQuickCustomer() }}
                       className="w-full h-7 text-xs"
                       disabled={!customerPhone.trim()}
                     >
@@ -2292,52 +3112,125 @@ export default function POSPage() {
                     <span className="font-medium">{formatCurrency(getCartTotal() - getTaxTotal())}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-600">Tax</span>
-                    <span className="font-medium">{formatCurrency(getTaxTotal())}</span>
+                    <span className="text-gray-600">Total Qty</span>
+                    <span className="font-medium">
+                      {formatQty(activeTab.cart.reduce((sum, item) => sum + item.quantity, 0))}
+                    </span>
                   </div>
+                  {getSaleDiscount() > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-green-700">
+                        Invoice Discount
+                        {!autoDiscountMode && activeTab.discountType === 'percent' ? ` (${parseMoney(activeTab.discountValue)}%)` : ''}
+                      </span>
+                      <span className="font-medium text-green-700">−{formatCurrency(getSaleDiscount())}</span>
+                    </div>
+                  )}
+                  {getLoyaltyDiscount() > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-green-700">
+                        {isCashLoyalty(loyaltySettings)
+                          ? 'Cashback Used'
+                          : `Points Discount${loyaltyPointsToRedeem > 0 ? ` (${loyaltyPointsToRedeem.toLocaleString()} pts)` : ''}`}
+                      </span>
+                      <span className="font-medium text-green-700">−{formatCurrency(getLoyaltyDiscount())}</span>
+                    </div>
+                  )}
+                  {getTaxTotal() > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600">Tax</span>
+                      <span className="font-medium">{formatCurrency(getTaxTotal())}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm font-bold pt-1 border-t">
-                    <span>Total</span>
-                    <span className="text-blue-600">{formatCurrency(getCartTotal())}</span>
+                    <span>Amount Payable</span>
+                    <span className="text-blue-600">{formatCurrency(getRoundedTotal())}</span>
                   </div>
                   <div className="flex items-center gap-2">
+                    {discountsEnabled && (
                     <div className="flex min-w-0 flex-1 items-center gap-1">
                       <span className="text-xs text-gray-600 shrink-0">Discount</span>
-                      <div className="ml-auto flex items-center gap-1">
-                        <div className="flex overflow-hidden rounded border border-gray-300">
-                          <button
-                            type="button"
-                            onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'amount')}
-                            className={`h-7 px-1.5 text-[10px] font-medium ${
-                              (activeTab.discountType || 'amount') === 'amount' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
-                            }`}
-                            aria-label="Discount as amount"
-                          >
-                            ₹
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'percent')}
-                            className={`h-7 px-1.5 text-[10px] font-medium ${
-                              activeTab.discountType === 'percent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
-                            }`}
-                            aria-label="Discount as percent"
-                          >
-                            <Percent className="h-3 w-3" />
-                          </button>
+                      {autoDiscountMode ? (
+                        <div className="ml-auto flex items-center gap-1">
+                          {autoDiscountEligible(saleDiscount, getCartTotal() + getAdditionalCharges()) ? (
+                            activeTab.autoDiscountApplied ? (
+                              <>
+                                <Input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={activeTab.autoDiscountValue || ''}
+                                  onChange={(e) => updateAutoDiscountValue(e.target.value)}
+                                  className={`h-7 w-16 px-1 text-right text-xs ${discountLimitError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                                  aria-label="Applied discount amount"
+                                  aria-invalid={!!discountLimitError}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAutoDiscount(false)}
+                                  className="flex h-7 w-7 items-center justify-center rounded border border-gray-300 bg-white text-gray-500 hover:border-red-300 hover:text-red-600"
+                                  aria-label="Remove discount"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => toggleAutoDiscount(true)}
+                                className="flex h-7 items-center gap-1 rounded border border-dashed border-green-500 bg-green-50 px-1.5 text-[10px] font-medium text-green-700 hover:border-green-600 hover:bg-green-100"
+                                aria-label="Apply discount"
+                              >
+                                <Tag className="h-3 w-3" />
+                                Apply −{formatCurrency(computeAutoDiscount(saleDiscount, getCartTotal() + getAdditionalCharges()))}
+                              </button>
+                            )
+                          ) : (
+                            <span className="text-[10px] text-gray-400" title={describeAutoDiscount(saleDiscount)}>
+                              No discount
+                            </span>
+                          )}
                         </div>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder={(activeTab.discountType || 'amount') === 'percent' ? '%' : '0.00'}
-                          value={activeTab.discountValue || ''}
-                          onChange={(e) => applyPosDiscountChange(limitDecimalInput(e.target.value))}
-                          className="h-7 w-14 px-1 text-right text-xs"
-                          aria-label="Sale discount"
-                        />
-                      </div>
+                      ) : (
+                        <div className="ml-auto flex items-center gap-1">
+                          <div className="flex overflow-hidden rounded border border-gray-300">
+                            <button
+                              type="button"
+                              onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'amount')}
+                              className={`h-7 px-1.5 text-[10px] font-medium ${
+                                (activeTab.discountType || 'amount') === 'amount' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
+                              }`}
+                              aria-label="Discount as amount"
+                            >
+                              ₹
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyPosDiscountChange(activeTab.discountValue || '', 'percent')}
+                              className={`h-7 px-1.5 text-[10px] font-medium ${
+                                activeTab.discountType === 'percent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
+                              }`}
+                              aria-label="Discount as percent"
+                            >
+                              <Percent className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder={(activeTab.discountType || 'amount') === 'percent' ? '%' : '0.00'}
+                            value={activeTab.discountValue || ''}
+                            onChange={(e) => applyPosDiscountChange(limitDecimalInput(e.target.value))}
+                            className={`h-7 w-14 px-1 text-right text-xs ${discountLimitError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                            aria-label="Sale discount"
+                            aria-invalid={!!discountLimitError}
+                            title={maxSaleDiscount > 0 ? `Max discount ${formatCurrency(maxSaleDiscount)}` : undefined}
+                          />
+                        </div>
+                      )}
                     </div>
-                    <div className="flex min-w-0 flex-1 items-center gap-1">
-                      <span className="text-xs text-gray-600 shrink-0">Addl Charges</span>
+                    )}
+                    <div className={`flex min-w-0 flex-1 items-center gap-1 ${discountsEnabled ? 'border-l border-gray-200 pl-2' : ''}`}>
+                      <span className="text-xs text-gray-600 shrink-0">Charges</span>
                       <Popover modal={false}>
                         <PopoverTrigger asChild>
                           <button
@@ -2358,23 +3251,15 @@ export default function POSPage() {
                       </Popover>
                     </div>
                   </div>
-                  {(getSaleDiscount() > 0 || getAdditionalCharges() > 0) && (
+                  {discountLimitError && (
+                    <p className="text-[11px] font-medium text-red-600" role="alert">
+                      {discountLimitError}
+                    </p>
+                  )}
+                  {getAdditionalCharges() > 0 && (
                     <div className="flex justify-between text-xs">
-                      {getSaleDiscount() > 0 ? (
-                        <span className="text-green-700">
-                          {activeTab.discountType === 'percent' ? `${parseMoney(activeTab.discountValue)}% off` : 'Discount'}
-                        </span>
-                      ) : (
-                        <span />
-                      )}
-                      <div className="flex gap-3">
-                        {getSaleDiscount() > 0 && (
-                          <span className="text-green-700">−{formatCurrency(getSaleDiscount())}</span>
-                        )}
-                        {getAdditionalCharges() > 0 && (
-                          <span className="text-gray-600">+{formatCurrency(getAdditionalCharges())}</span>
-                        )}
-                      </div>
+                      <span className="text-gray-600">Additional Charges</span>
+                      <span className="text-gray-600">+{formatCurrency(getAdditionalCharges())}</span>
                     </div>
                   )}
                   {getRoundOff() !== 0 && (
@@ -2386,29 +3271,66 @@ export default function POSPage() {
                       </span>
                     </div>
                   )}
-                  {loyaltySettings?.is_enabled && activeTab.selectedParty && (
+                  {loyaltySettings?.is_enabled && activeTab.selectedParty?.loyalty_excluded && (
+                    <div className="flex items-center gap-1 rounded border border-dashed px-2 py-1 text-[10px] text-gray-500">
+                      <Gift className="h-3 w-3" />
+                      Excluded from loyalty — no earn or redeem
+                    </div>
+                  )}
+                  {partyLoyaltyActive() && (
                     <div className="rounded border border-amber-100 bg-amber-50/80 p-2 space-y-1">
-                      <div className="flex items-center gap-1 text-[10px] font-medium text-amber-900">
-                        <Gift className="h-3 w-3" />
-                        {(activeTab.selectedParty.loyalty_points ?? 0).toLocaleString()} pts
+                      <div className="flex items-center justify-between gap-1 text-[10px] font-medium text-amber-900">
+                        <span className="flex items-center gap-1">
+                          <Gift className="h-3 w-3" />
+                          {formatLoyaltyValue(loyaltySettings, loyaltyAvailable(loyaltySettings, activeTab.selectedParty))}
+                        </span>
+                        {redeemPtsOpen ? (
+                          <button
+                            type="button"
+                            aria-label="Close redeem"
+                            onClick={() => {
+                              setRedeemPtsOpen(false)
+                              applyPosLoyaltyChange(0)
+                            }}
+                            className="rounded p-0.5 text-amber-700 hover:bg-amber-100"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        ) : (
+                          loyaltyAvailable(loyaltySettings, activeTab.selectedParty) > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setRedeemPtsOpen(true)}
+                              className="h-5 px-1.5 text-[10px] border-amber-300 text-amber-800 hover:bg-amber-100"
+                            >
+                              Redeem
+                            </Button>
+                          )
+                        )}
                       </div>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={activeTab.selectedParty.loyalty_points ?? 0}
-                        placeholder="Redeem pts"
-                        className="h-7 text-xs"
-                        value={loyaltyPointsToRedeem || ''}
-                        onChange={(e) => applyPosLoyaltyChange(parseInt(e.target.value, 10) || 0)}
-                      />
+                      {redeemPtsOpen && (
+                        <Input
+                          type="number"
+                          autoFocus
+                          min={0}
+                          step={isCashLoyalty(loyaltySettings) ? 0.01 : 1}
+                          max={loyaltyAvailable(loyaltySettings, activeTab.selectedParty)}
+                          placeholder={isCashLoyalty(loyaltySettings) ? 'Redeem ₹' : 'Redeem pts'}
+                          className="h-7 text-xs"
+                          value={loyaltyPointsToRedeem || ''}
+                          onChange={(e) => applyPosLoyaltyChange(parseLoyaltyRedeemInput(loyaltySettings, e.target.value))}
+                        />
+                      )}
                       {getLoyaltyDiscount() > 0 && (
                         <p className="text-[10px] text-green-700">
                           −{formatCurrency(getLoyaltyDiscount())} loyalty discount
                         </p>
                       )}
-                      {estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() + getAdditionalCharges() - getLoyaltyDiscount()) > 0 && (
+                      {getLoyaltyEarnEstimate() > 0 && (
                         <p className="text-[10px] text-amber-800">
-                          Earn ~{estimatePointsEarned(loyaltySettings, getCartTotal() - getSaleDiscount() + getAdditionalCharges() - getLoyaltyDiscount())} pts
+                          Earn ~{formatLoyaltyValue(loyaltySettings, getLoyaltyEarnEstimate())}
+                          {isCashLoyalty(loyaltySettings) ? ' cashback' : ''}
                         </p>
                       )}
                     </div>
@@ -2423,14 +3345,15 @@ export default function POSPage() {
             <div className="p-2 border-t space-y-2">
               {paymentSplits.map((split, index) => {
                 const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
+                const isLastSplit = index === paymentSplits.length - 1
                 return (
                   <div key={`${split.mode}-${index}`} className="flex gap-1 items-center">
                     <select
-                      className="h-8 min-w-0 flex-1 text-xs rounded border border-gray-300 bg-white px-2"
+                      className="h-8 min-w-0 flex-1 text-xs rounded border border-gray-300 bg-white px-1.5"
                       value={split.mode}
                       onChange={(e) => updatePaymentSplit(index, { mode: e.target.value })}
                     >
-                      {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
+                      {PAYMENT_METHODS.filter((method) => method.value === split.mode || (!usedModes.includes(method.value) && (method.value !== UNPAID_METHOD || paymentSplits.length === 1))).map((method) => (
                         <option key={method.value} value={method.value}>
                           {method.label}
                         </option>
@@ -2442,10 +3365,11 @@ export default function POSPage() {
                       step="0.01"
                       placeholder="Received"
                       value={splitAmountValue(index)}
+                      disabled={isUnpaidMethod(split.mode)}
                       onChange={(e) => updatePaymentSplit(index, { amount: e.target.value })}
-                      className="h-8 w-[5.5rem] text-xs"
+                      className="h-8 w-20 min-w-0 text-xs"
                     />
-                    {paymentSplits.length > 1 ? (
+                    {paymentSplits.length > 1 && (
                       <Button
                         type="button"
                         variant="outline"
@@ -2456,44 +3380,41 @@ export default function POSPage() {
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
-                    ) : (
-                      <Button
-                        variant={getBalance() <= 0.01 ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={setFullyPaid}
-                        className="h-8 px-2 text-xs"
-                      >
-                        Full
-                      </Button>
+                    )}
+                    {isLastSplit && (
+                      <>
+                        <Button
+                          variant={getBalance() <= 0.01 ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={setFullyPaid}
+                          className="h-8 px-2 text-xs"
+                        >
+                          Full
+                        </Button>
+                        {!isUnpaid && RECEIPT_PAYMENT_METHODS.length > paymentSplits.length && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2 text-xs"
+                            onClick={addPaymentSplit}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Split
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
                 )
               })}
               <p className="text-[10px] text-gray-500 leading-tight">
-                {paymentSplits.length === 1
+                {isUnpaid
+                  ? 'Sale will be saved as unpaid; full amount stays due from the customer.'
+                  : paymentSplits.length === 1
                   ? `Credited to: ${getDepositHint(paymentSplits[0]?.mode || 'upi', bankAccounts)}`
                   : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${getDepositHint(split.mode, bankAccounts)}`).join(' · ')}
               </p>
-              <div className="flex items-center justify-between gap-2">
-                {PAYMENT_METHODS.length > paymentSplits.length ? (
-                  <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={addPaymentSplit}>
-                    <Plus className="h-3 w-3 mr-1" />
-                    Split
-                  </Button>
-                ) : (
-                  <span />
-                )}
-                {paymentSplits.length > 1 && (
-                  <Button
-                    variant={getBalance() <= 0.01 ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={setFullyPaid}
-                    className="h-7 px-2 text-[11px]"
-                  >
-                    Full
-                  </Button>
-                )}
-              </div>
               <div className="flex justify-between text-xs">
                 <span className="text-gray-600">Balance</span>
                 <span className={`font-medium ${getBalance() > 0.01 ? 'text-orange-600' : getBalance() < -0.01 ? 'text-red-600' : 'text-green-600'}`}>
@@ -2517,7 +3438,7 @@ export default function POSPage() {
                 variant="outline"
                 className="h-11 w-full min-w-0 gap-1.5 text-xs sm:h-10 sm:text-sm"
                 onClick={() => handleCheckout(false)}
-                disabled={activeTab.cart.length === 0 || !activeTab.selectedParty}
+                disabled={activeTab.cart.length === 0}
                 aria-keyshortcuts="Alt+Enter"
               >
                 <CheckCircle className="h-4 w-4 shrink-0" />
@@ -2534,7 +3455,7 @@ export default function POSPage() {
               <Button
                 className="h-11 w-full min-w-0 gap-1.5 text-xs sm:h-10 sm:text-sm"
                 onClick={() => handleCheckout(true)}
-                disabled={activeTab.cart.length === 0 || !activeTab.selectedParty}
+                disabled={activeTab.cart.length === 0}
                 aria-keyshortcuts="Shift+Enter"
               >
                 <Printer className="h-4 w-4 shrink-0" />
@@ -2589,6 +3510,183 @@ export default function POSPage() {
         </div>
       )}
 
+      {/* Checkout without a customer: ask for details, walk-in only as fallback */}
+      {checkoutPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Customer details</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeCheckoutCustomerPrompt}
+                className="h-7 w-7 p-0 text-gray-500"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="mb-3 text-xs text-gray-500">
+              Add the customer's details for this bill.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                void submitCheckoutCustomer()
+              }}
+              className="space-y-2"
+            >
+              <Input
+                autoFocus
+                type="tel"
+                placeholder="Mobile number *"
+                value={promptPhone}
+                onChange={(e) => setPromptPhone(e.target.value)}
+                className="h-9 text-sm"
+              />
+              <Input
+                placeholder="Customer name"
+                value={promptName}
+                onChange={(e) => setPromptName(e.target.value)}
+                className="h-9 text-sm"
+              />
+              {promptSuggestions.length > 0 && (
+                <div className="max-h-40 overflow-y-auto rounded border">
+                  {promptSuggestions.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => checkoutWithParty(p)}
+                      className="w-full border-b px-2 py-1.5 text-left last:border-0 hover:bg-blue-50"
+                    >
+                      <p className="text-xs font-medium text-gray-900">{p.name}</p>
+                      <p className="text-xs text-gray-500">{p.phone || '—'}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Button type="submit" className="h-9 w-full text-sm" disabled={promptBusy || !promptPhone.trim()}>
+                {promptBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                {checkoutPrompt.shouldPrint ? 'Save & Checkout & Print' : 'Save & Checkout'}
+              </Button>
+            </form>
+            <div className="mt-3 border-t pt-3 text-center">
+              <p className="mb-1.5 text-xs text-gray-500">Customer didn't share details?</p>
+              <Button
+                variant="outline"
+                onClick={() => { void checkoutAsWalkIn() }}
+                disabled={promptBusy}
+                className="h-8 w-full text-sm"
+              >
+                Use Walk-in Customer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <AttendanceReminderDialog />
+
+      {linkModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Add customer &amp; link card</h3>
+              <button onClick={() => setLinkModalOpen(false)} aria-label="Close">
+                <X className="h-4 w-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <LoyaltyCardAssignField
+                compact
+                mode={linkCardMode}
+                onModeChange={(m) => {
+                  setLinkCardMode(m)
+                  setLinkModalError('')
+                }}
+                value={linkCardInput}
+                onChange={setLinkCardInput}
+                inputId="pos-link-card-number"
+                label={
+                  <>
+                    Loyalty card number{' '}
+                    {linkCardMode === 'scan' && <span className="text-gray-400">(optional)</span>}
+                  </>
+                }
+              />
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
+                <Input
+                  value={linkNameInput}
+                  onChange={(e) => setLinkNameInput(e.target.value)}
+                  placeholder="Customer name"
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Mobile number <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  type="tel"
+                  value={linkPhoneInput}
+                  onChange={(e) => setLinkPhoneInput(e.target.value)}
+                  placeholder="98765 43210"
+                  className="h-9 text-sm"
+                />
+              </div>
+              {linkModalError && <p className="text-xs text-red-600">{linkModalError}</p>}
+              {linkAsk && (
+                <div className="rounded border border-blue-200 bg-blue-50 px-2.5 py-2 space-y-1.5">
+                  <p className="text-xs text-blue-800">
+                    Customer <b>{linkAsk.party.name}</b> already exists with this mobile.
+                    {linkAsk.cardNum
+                      ? ` Link card ${linkAsk.cardNum} to them?`
+                      : linkAsk.autoAssign
+                        ? ' Assign them the next available card?'
+                        : ' Select them?'}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={async () => {
+                        if (linkAsk.cardId && linkAsk.cardNum) {
+                          await linkCardToParty(linkAsk.cardId, linkAsk.cardNum, linkAsk.party)
+                        } else if (linkAsk.autoAssign) {
+                          await autoAssignCardToParty(linkAsk.party)
+                          finishLinkFlow(linkAsk.party)
+                        } else {
+                          finishLinkFlow(linkAsk.party)
+                        }
+                      }}
+                    >
+                      {linkAsk.cardNum || linkAsk.autoAssign ? 'Link & select' : 'Select'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setLinkAsk(null)}
+                    >
+                      Back
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setLinkModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={submitLinkCustomer} disabled={linkModalBusy}>
+                {linkModalBusy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                Save &amp; select
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </KeyboardShortcutsProvider>
   )

@@ -1,6 +1,7 @@
 import { formatCurrency } from '@/lib/utils'
 import { downloadBlob, downloadJson } from '@/lib/accountingExport'
 import { apiFetch } from '@/hooks/useAuth'
+import { INITIAL_INVESTMENT_METHOD } from '@/lib/paymentSplits'
 
 export interface DailyReportMetric {
   total_amount: number
@@ -63,6 +64,10 @@ export interface LoyaltyReportSummary {
   earn_transactions: number
   redeem_transactions: number
   redemption_value: number
+  /** 'cash' when the store rewards ₹ cashback; then cash_* carry the figures. */
+  reward_type?: 'points' | 'cash'
+  cash_earned?: number
+  cash_redeemed?: number
 }
 
 export type PeriodicReportPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
@@ -161,6 +166,10 @@ export const dailyReportSummaryHelp: Record<string, string> = {
     'Loyalty points credited to customers from sales in this period (earn transactions).',
   loyalty_points_redeemed:
     'Loyalty points customers redeemed against bills in this period. Redemption value is the ₹ discount granted.',
+  loyalty_cash_earned:
+    'Loyalty cashback (₹) credited to customers from sales in this period (earn transactions).',
+  loyalty_cash_redeemed:
+    'Loyalty cashback (₹) customers redeemed as a discount against bills in this period.',
 }
 
 function isMetric(value: unknown): value is DailyReportMetric {
@@ -182,7 +191,34 @@ function methodHasActivity(row: PaymentMethodTotal) {
 }
 
 export function paymentMethodsForReport(report: DailyReport): PaymentMethodTotal[] {
-  return report.payments_by_method ?? []
+  return (report.payments_by_method ?? []).filter(
+    (row) => row.method !== INITIAL_INVESTMENT_METHOD
+  )
+}
+
+const BANK_METHODS = new Set(['upi', 'card', 'bank_transfer', 'cheque'])
+
+export interface CashBankSummary {
+  in: DailyReportMetric
+  out: DailyReportMetric
+}
+
+export function paymentCashBankTotals(methods: PaymentMethodTotal[]): {
+  cash: CashBankSummary
+  bank: CashBankSummary
+} {
+  const blank = (): DailyReportMetric => ({ total_amount: 0, count: 0 })
+  const cash: CashBankSummary = { in: blank(), out: blank() }
+  const bank: CashBankSummary = { in: blank(), out: blank() }
+  for (const row of methods) {
+    const target = row.method === 'cash' ? cash : BANK_METHODS.has(row.method) ? bank : null
+    if (!target) continue
+    target.in.total_amount += row.in.total_amount
+    target.in.count += row.in.count
+    target.out.total_amount += row.out.total_amount
+    target.out.count += row.out.count
+  }
+  return { cash, bank }
 }
 
 function appendPaymentMethodSection(lines: string[], report: DailyReport) {
@@ -194,6 +230,13 @@ function appendPaymentMethodSection(lines: string[], report: DailyReport) {
       `${row.label}: received ${row.in.count} txn · ${formatCurrency(row.in.total_amount)} · paid ${row.out.count} txn · ${formatCurrency(row.out.total_amount)}`
     )
   }
+  const { cash, bank } = paymentCashBankTotals(methods)
+  lines.push(
+    `Total Cash: received ${cash.in.count} txn · ${formatCurrency(cash.in.total_amount)} · paid ${cash.out.count} txn · ${formatCurrency(cash.out.total_amount)}`
+  )
+  lines.push(
+    `Total in Bank: received ${bank.in.count} txn · ${formatCurrency(bank.in.total_amount)} · paid ${bank.out.count} txn · ${formatCurrency(bank.out.total_amount)}`
+  )
 }
 
 function appendExpenseLinesSection(lines: string[], report: DailyReport) {
@@ -214,6 +257,13 @@ function appendExpenseLinesSection(lines: string[], report: DailyReport) {
 function appendLoyaltySection(lines: string[], report: DailyReport) {
   const loyalty = report.loyalty
   if (!loyalty || !loyalty.enabled) return
+  if (loyalty.reward_type === 'cash') {
+    if (!loyalty.cash_earned && !loyalty.cash_redeemed) return
+    lines.push('', 'Loyalty cashback', '--------')
+    lines.push(`Cashback credited: ${loyalty.earn_transactions} txn · ${formatCurrency(loyalty.cash_earned ?? 0)}`)
+    lines.push(`Cashback redeemed: ${loyalty.redeem_transactions} txn · ${formatCurrency(loyalty.cash_redeemed ?? 0)}`)
+    return
+  }
   if (loyalty.points_earned === 0 && loyalty.points_redeemed === 0) return
   lines.push('', 'Loyalty points', '--------')
   lines.push(
@@ -260,7 +310,7 @@ export function buildDailyReportShareText(report: DailyReport, heading = 'Daily 
     '',
     'Note: Purchase expense = full bill total; Payment out = amount paid; AP = unpaid balance.',
     '',
-    'Generated from TruERP'
+    'Generated from TruERP by Gooseroot'
   )
 
   return lines.join('\n')
@@ -301,7 +351,7 @@ export function buildPeriodReportShareText(report: PeriodReport): string {
     `Product Profit: ${formatCurrency(report.product_profit ?? 0)}`,
     `Net Cash Flow: ${formatCurrency(report.net_cash_flow)}`,
     '',
-    'Generated from TruERP'
+    'Generated from TruERP by Gooseroot'
   )
 
   return lines.join('\n')
@@ -385,6 +435,8 @@ export interface DailyReportEmailSettings {
   user_id: string
   is_enabled: boolean
   recipient_emails: string
+  /** Also deliver the PDF to the store's Telegram owner chats. */
+  send_telegram?: boolean
   period: ReportEmailPeriod
   send_time: string
   subject: string

@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Plus, Trash2, LayoutTemplate } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 
@@ -131,7 +132,7 @@ export default function InvoiceTemplatesPage() {
             {loading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
             ) : templates.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No templates yet.</p>
+              <PremiumEmpty compact icon={LayoutTemplate} title="No templates yet" hint="Saved invoice templates will appear here." />
             ) : (
               <ul className="space-y-3">
                 {templates.map((t) => (

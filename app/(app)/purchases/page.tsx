@@ -17,7 +17,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Edit, Trash2, MoreVertical, Eye, CheckCircle } from 'lucide-react'
+import { Plus, Edit, Trash2, MoreVertical, Eye, CheckCircle, ShoppingBag, Receipt, FileText } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
@@ -221,7 +222,13 @@ export default function PurchasesPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {orders.length === 0 && <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">No orders</TableCell></TableRow>}
+                  {orders.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="px-4 py-4">
+                        <PremiumEmpty compact icon={ShoppingBag} title="No orders" hint="Purchase orders will appear here." />
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
               <PaginationControls
@@ -267,7 +274,13 @@ export default function PurchasesPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {receipts.length === 0 && <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">No receipts</TableCell></TableRow>}
+                  {receipts.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="px-4 py-4">
+                        <PremiumEmpty compact icon={Receipt} title="No receipts" hint="Goods receipts will appear here." />
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
               <PaginationControls
@@ -325,7 +338,13 @@ export default function PurchasesPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {bills.length === 0 && <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-500">No bills</TableCell></TableRow>}
+                  {bills.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="px-4 py-4">
+                        <PremiumEmpty compact icon={FileText} title="No bills" hint="Purchase bills will appear here." />
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
               <PaginationControls

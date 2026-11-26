@@ -11,9 +11,11 @@ import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ArrowLeft, Download, Edit, Loader2, ExternalLink, FileText, AlertCircle } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError } from '@/lib/notify'
 import { downloadPurchaseBillPdf } from '@/lib/printDocument'
 import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
+import BrandLoader from '@/components/BrandLoader'
 
 interface PurchaseBillItem {
   id: string
@@ -242,7 +244,9 @@ function PurchaseBillViewContent() {
                     ))}
                     {(bill.items || []).length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-3 py-4 text-center text-gray-500">No items</td>
+                        <td colSpan={6} className="px-3 py-4">
+                          <PremiumEmpty compact icon={FileText} title="No items" hint="This bill has no line items." />
+                        </td>
                       </tr>
                     )}
                   </tbody>
@@ -361,7 +365,7 @@ function PurchaseBillViewContent() {
 
 export default function ViewPurchaseBillPage() {
   return (
-    <Suspense fallback={<div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>}>
+    <Suspense fallback={<div className="flex h-96 items-center justify-center"><BrandLoader /></div>}>
       <PurchaseBillViewContent />
     </Suspense>
   )

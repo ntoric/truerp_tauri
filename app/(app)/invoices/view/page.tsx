@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter, Gift, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Printer as ThermalPrinter, Gift, ExternalLink, MessageCircle, Send } from 'lucide-react'
 import ThermalPrintModal from '@/components/ThermalPrintModal'
 import InvoiceAttachments from '@/components/InvoiceAttachments'
 import InvoiceStatusTracker from '@/components/InvoiceStatusTracker'
@@ -20,9 +20,12 @@ import InvoiceCustomFieldsForm, {
   parseCustomFieldsFromInvoice,
 } from '@/components/InvoiceCustomFieldsForm'
 import { downloadInvoicePdf } from '@/lib/printDocument'
-import { notifyError } from '@/lib/notify'
+import { notifyError, notifySuccess } from '@/lib/notify'
+import { sendInvoiceOnWhatsApp } from '@/lib/whatsappInvoice'
+import { sendInvoiceOnTelegram } from '@/lib/telegram'
 import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
+import BrandLoader from '@/components/BrandLoader'
 
 interface InvoiceItem {
   id: string
@@ -113,6 +116,8 @@ function InvoiceViewContent() {
   const [loading, setLoading] = useState(true)
   const [thermalPrintOpen, setThermalPrintOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false)
+  const [sendingTelegram, setSendingTelegram] = useState(false)
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
 
   useEffect(() => {
@@ -152,11 +157,40 @@ function InvoiceViewContent() {
     if (!invoice?.id || downloading) return
     setDownloading(true)
     try {
-      await downloadInvoicePdf(invoice.id, { invoiceNumber: invoice.invoice_number })
+      await downloadInvoicePdf(invoice.id, {
+        invoiceNumber: invoice.invoice_number,
+        partyName: invoice.party?.name || invoice.customer?.name,
+      })
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Failed to download PDF')
     } finally {
       setDownloading(false)
+    }
+  }
+
+  const handleSendWhatsApp = async () => {
+    if (!invoice?.id || sendingWhatsApp) return
+    setSendingWhatsApp(true)
+    try {
+      await sendInvoiceOnWhatsApp(invoice.id)
+      notifySuccess('Invoice sent on WhatsApp')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to send WhatsApp message')
+    } finally {
+      setSendingWhatsApp(false)
+    }
+  }
+
+  const handleSendTelegram = async () => {
+    if (!invoice?.id || sendingTelegram) return
+    setSendingTelegram(true)
+    try {
+      await sendInvoiceOnTelegram(invoice.id)
+      notifySuccess('Invoice sent on Telegram')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to send on Telegram')
+    } finally {
+      setSendingTelegram(false)
     }
   }
 
@@ -195,7 +229,23 @@ function InvoiceViewContent() {
           <Link href="/invoices">
             <Button variant="outline"><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button>
           </Link>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => void handleSendWhatsApp()} disabled={sendingWhatsApp}>
+              {sendingWhatsApp ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <MessageCircle className="mr-2 h-4 w-4" />
+              )}
+              WhatsApp
+            </Button>
+            <Button variant="outline" onClick={() => void handleSendTelegram()} disabled={sendingTelegram}>
+              {sendingTelegram ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              Telegram
+            </Button>
             <Button variant="outline" onClick={() => setThermalPrintOpen(true)}>
               <ThermalPrinter className="mr-2 h-4 w-4" /> Thermal
             </Button>
@@ -215,7 +265,7 @@ function InvoiceViewContent() {
             <CardContent className="p-8">
               <div className="flex justify-between items-start mb-8">
                 <div>
-                  <h1 className="app-page-title">TAX INVOICE</h1>
+                  <h1 className="app-page-title">BILL OF SUPPLY</h1>
                   <p className="text-gray-500 mt-1">{invoice.invoice_number}</p>
                   {invoice.pdf_template && (
                     <p className="text-xs text-muted-foreground mt-1">Layout: {invoice.pdf_template}</p>
@@ -419,7 +469,7 @@ function InvoiceViewContent() {
 
 export default function ViewInvoicePage() {
   return (
-    <Suspense fallback={<div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>}>
+    <Suspense fallback={<div className="flex h-96 items-center justify-center"><BrandLoader /></div>}>
       <InvoiceViewContent />
     </Suspense>
   )

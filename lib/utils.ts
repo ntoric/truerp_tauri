@@ -16,6 +16,18 @@ export function asArray<T = unknown>(payload: unknown): T[] {
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7077/api/v1"
 
+/**
+ * Public origin for links customers open (B2B shop, customer portal).
+ * The desktop app serves the UI from 127.0.0.1, so its origin is useless
+ * outside this machine — set NEXT_PUBLIC_SITE_URL (e.g. https://truerp.co.in)
+ * at build time. Falls back to the current origin on the web.
+ */
+export function publicSiteUrl(): string {
+  const configured = (process.env.NEXT_PUBLIC_SITE_URL || '').trim().replace(/\/+$/, '')
+  if (configured) return configured
+  return typeof window !== 'undefined' ? window.location.origin : ''
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',

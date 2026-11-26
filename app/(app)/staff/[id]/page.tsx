@@ -26,6 +26,8 @@ import {
   defaultBankAccountSelection,
 } from '@/hooks/useBankAccounts'
 import { ArrowLeft, CalendarDays, HandCoins, Plus, Sparkles, Trash2, Wallet } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
+import BrandLoader from '@/components/BrandLoader'
 
 interface Staff {
   id: string
@@ -76,6 +78,8 @@ interface StaffAdvance {
   recovered_amount: number
   pending_amount: number
   payment_mode: string
+  bank_account_id?: string | null
+  bank_account?: { account_name: string } | null
   status: string
   notes: string
 }
@@ -465,7 +469,7 @@ export default function StaffDetailPage() {
             value={
               <>
                 {formatCurrency(staff.salary)}
-                <span className="text-sm font-normal text-[#5b5c6b]">
+                <span className="text-sm font-normal text-muted-foreground">
                   /{staff.salary_type === 'monthly' ? 'mo' : staff.salary_type === 'daily' ? 'day' : 'hr'}
                 </span>
               </>
@@ -631,8 +635,8 @@ export default function StaffDetailPage() {
                 ))}
                 {payrolls.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-8 text-center text-gray-500">
-                      No salary payments recorded
+                    <TableCell colSpan={10} className="px-4 py-4">
+                      <PremiumEmpty compact icon={Wallet} title="No salary payments recorded" hint="Payroll payouts for this staff member will appear here." />
                     </TableCell>
                   </TableRow>
                 )}
@@ -670,7 +674,10 @@ export default function StaffDetailPage() {
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(a.amount)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums text-green-600">{formatCurrency(a.recovered_amount)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums text-red-600">{formatCurrency(a.pending_amount)}</TableCell>
-                    <TableCell className="whitespace-nowrap">{formatPaymentMethod(a.payment_mode)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {formatPaymentMethod(a.payment_mode)}
+                      {a.bank_account?.account_name ? ` · ${a.bank_account.account_name}` : ''}
+                    </TableCell>
                     <TableCell>
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -684,8 +691,8 @@ export default function StaffDetailPage() {
                 ))}
                 {advances.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-8 text-center text-gray-500">
-                      No advances recorded
+                    <TableCell colSpan={8} className="px-4 py-4">
+                      <PremiumEmpty compact icon={HandCoins} title="No advances recorded" hint="Salary advances given will appear here." />
                     </TableCell>
                   </TableRow>
                 )}
@@ -778,8 +785,8 @@ export default function StaffDetailPage() {
                 ))}
                 {extras.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-8 text-center text-gray-500">
-                      No extra amounts recorded
+                    <TableCell colSpan={8} className="px-4 py-4">
+                      <PremiumEmpty compact icon={Sparkles} title="No extra amounts recorded" hint="Bonuses and extra payments will appear here." />
                     </TableCell>
                   </TableRow>
                 )}
@@ -860,7 +867,7 @@ export default function StaffDetailPage() {
           <CardContent className="p-0">
             {attendanceLoading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <Table>
@@ -897,8 +904,13 @@ export default function StaffDetailPage() {
                   ))}
                   {attendances.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                        No attendance records{attendanceMonth ? ' for this month' : ''}
+                      <TableCell colSpan={6} className="px-4 py-4">
+                        <PremiumEmpty
+                          compact
+                          icon={CalendarDays}
+                          title={`No attendance records${attendanceMonth ? ' for this month' : ''}`}
+                          hint="Marked attendance will appear here."
+                        />
                       </TableCell>
                     </TableRow>
                   )}

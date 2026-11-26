@@ -28,6 +28,7 @@ import {
   downloadPeriodReportJson,
   downloadPeriodReportPdf,
   paymentMethodsForReport,
+  paymentCashBankTotals,
   PERIODIC_REPORT_OPTIONS,
   getDailyReportEmailSettings,
   updateDailyReportEmailSettings,
@@ -69,6 +70,7 @@ import {
   Gift,
   type LucideIcon,
 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   DropdownMenu,
@@ -79,6 +81,8 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
+import BrandLoader from '@/components/BrandLoader'
+import ReportTelegramToggle from '@/components/ReportTelegramToggle'
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -173,6 +177,7 @@ function methodAppearance(method: string): { icon: LucideIcon; className: string
 
 function PaymentsByMethodTable({ report }: { report: DailyReport }) {
   const methods = paymentMethodsForReport(report)
+  const { cash, bank } = paymentCashBankTotals(methods)
   if (methods.length === 0) return null
 
   return (
@@ -222,6 +227,38 @@ function PaymentsByMethodTable({ report }: { report: DailyReport }) {
                 </tr>
               )
             })}
+            <tr className="border-t border-blue-200 bg-emerald-50/60">
+              <td className="px-4 py-3">
+                <span className="inline-flex items-center gap-2 font-semibold text-emerald-900">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-800">
+                    <Banknote className="h-3.5 w-3.5" />
+                  </span>
+                  Total Cash
+                </span>
+              </td>
+              <td className="px-4 py-3 text-right">
+                <p className="font-semibold text-emerald-800">
+                  {formatCurrency(cash.in.total_amount)}
+                </p>
+                <p className="text-xs text-emerald-700">{cash.in.count} txn</p>
+              </td>
+            </tr>
+            <tr className="border-t border-blue-100 bg-indigo-50/60">
+              <td className="px-4 py-3">
+                <span className="inline-flex items-center gap-2 font-semibold text-indigo-900">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 text-indigo-800">
+                    <Landmark className="h-3.5 w-3.5" />
+                  </span>
+                  Total in Bank
+                </span>
+              </td>
+              <td className="px-4 py-3 text-right">
+                <p className="font-semibold text-indigo-800">
+                  {formatCurrency(bank.in.total_amount)}
+                </p>
+                <p className="text-xs text-indigo-700">{bank.in.count} txn</p>
+              </td>
+            </tr>
             <tr className="border-t border-blue-200 bg-blue-50">
               <td className="px-4 py-3 font-semibold text-blue-900">Total</td>
               <td className="px-4 py-3 text-right">
@@ -338,6 +375,51 @@ function ExpensesTable({ report }: { report: DailyReport }) {
 function LoyaltySummaryTable({ report }: { report: DailyReport }) {
   const loyalty = report.loyalty
   if (!loyalty || !loyalty.enabled) return null
+  if (loyalty.reward_type === 'cash') {
+    if (!loyalty.cash_earned && !loyalty.cash_redeemed) return null
+    return (
+      <div className="mt-6 overflow-hidden rounded-lg border border-amber-200">
+        <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3">
+          <Gift className="h-4 w-4 text-amber-700" />
+          <h3 className="text-sm font-semibold text-amber-900">Loyalty cashback</h3>
+          <span className="text-xs text-amber-700">
+            {formatCurrency(loyalty.cash_earned ?? 0)} credited · {formatCurrency(loyalty.cash_redeemed ?? 0)} redeemed
+          </span>
+        </div>
+        <div className="table-scroll">
+          <table className="w-full text-sm">
+            <thead className="bg-amber-50/60 text-left text-amber-900">
+              <tr>
+                <th className="px-4 py-3 font-medium">Activity</th>
+                <th className="px-4 py-3 font-medium text-right">Transactions</th>
+                <th className="px-4 py-3 font-medium text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-amber-100">
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  <TermHelp label="Cashback credited" help={dailyReportSummaryHelp.loyalty_cash_earned} />
+                </td>
+                <td className="px-4 py-3 text-right text-gray-600">{loyalty.earn_transactions}</td>
+                <td className="px-4 py-3 text-right font-semibold text-emerald-800">
+                  {formatCurrency(loyalty.cash_earned ?? 0)}
+                </td>
+              </tr>
+              <tr className="border-t border-amber-100">
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  <TermHelp label="Cashback redeemed" help={dailyReportSummaryHelp.loyalty_cash_redeemed} />
+                </td>
+                <td className="px-4 py-3 text-right text-gray-600">{loyalty.redeem_transactions}</td>
+                <td className="px-4 py-3 text-right font-semibold text-amber-800">
+                  {formatCurrency(loyalty.cash_redeemed ?? 0)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
   if (loyalty.points_earned === 0 && loyalty.points_redeemed === 0) return null
 
   return (
@@ -575,6 +657,7 @@ function ReportEmailSettingsCard() {
   // Local editable form state
   const [isEnabled, setIsEnabled] = useState(false)
   const [recipients, setRecipients] = useState('')
+  const [sendTelegram, setSendTelegram] = useState(false)
   const [period, setPeriod] = useState<ReportEmailPeriod>('daily')
   const [sendTime, setSendTime] = useState('09:00')
   const [subject, setSubject] = useState('')
@@ -586,6 +669,7 @@ function ReportEmailSettingsCard() {
       setSettings(s)
       setIsEnabled(s.is_enabled)
       setRecipients(s.recipient_emails || '')
+      setSendTelegram(!!s.send_telegram)
       setPeriod((s.period as ReportEmailPeriod) || 'daily')
       setSendTime(s.send_time || '09:00')
       setSubject(s.subject || '')
@@ -625,6 +709,7 @@ function ReportEmailSettingsCard() {
       const updated = await updateDailyReportEmailSettings({
         is_enabled: isEnabled,
         recipient_emails: recipients,
+        send_telegram: sendTelegram,
         period,
         send_time: sendTime,
         subject,
@@ -632,6 +717,7 @@ function ReportEmailSettingsCard() {
       setSettings(updated)
       setIsEnabled(updated.is_enabled)
       setRecipients(updated.recipient_emails || '')
+      setSendTelegram(!!updated.send_telegram)
       setPeriod((updated.period as ReportEmailPeriod) || 'daily')
       setSendTime(updated.send_time || '09:00')
       setSubject(updated.subject || '')
@@ -706,7 +792,7 @@ function ReportEmailSettingsCard() {
       <CardContent className="space-y-4">
         {loading ? (
           <div className="flex h-24 items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+            <BrandLoader size={40} />
           </div>
         ) : (
           <>
@@ -768,6 +854,8 @@ function ReportEmailSettingsCard() {
               </p>
             </div>
 
+            <ReportTelegramToggle id="daily-report-telegram" checked={sendTelegram} onChange={setSendTelegram} />
+
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-gray-50 px-3 py-2">
               <div className="space-y-0.5 text-xs text-gray-600">
                 <div>
@@ -818,7 +906,7 @@ function ReportEmailSettingsCard() {
                   variant="outline"
                   size="sm"
                   onClick={() => void sendNow()}
-                  disabled={sending || !settings?.recipient_emails}
+                  disabled={sending || (!settings?.recipient_emails && !settings?.send_telegram)}
                 >
                   <Mail className="mr-2 h-4 w-4" />
                   {sending ? 'Sending…' : 'Send now (test)'}
@@ -1125,12 +1213,12 @@ export default function DailyReportPage() {
               <CardContent>
                 {loading ? (
                   <div className="flex h-48 items-center justify-center">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                    <BrandLoader />
                   </div>
                 ) : report ? (
                   <ReportSummaryBody report={report} profitLabel="Daily profit" />
                 ) : (
-                  <p className="py-8 text-center text-gray-500">No report data for this date.</p>
+                  <PremiumEmpty compact icon={CalendarDays} title="No report data for this date" hint="Pick another date or check back once there's activity." />
                 )}
               </CardContent>
             </Card>
@@ -1324,16 +1412,17 @@ export default function DailyReportPage() {
               <CardContent>
                 {periodLoading ? (
                   <div className="flex h-48 items-center justify-center">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                    <BrandLoader />
                   </div>
                 ) : periodReport ? (
                   <ReportSummaryBody report={periodReport} profitLabel="Period profit" />
                 ) : (
-                  <p className="py-10 text-center text-sm text-gray-500">
-                    {periodGenerated
-                      ? 'No report data for this period.'
-                      : 'Choose a period and click Generate report to view results.'}
-                  </p>
+                  <PremiumEmpty
+                    compact
+                    icon={CalendarRange}
+                    title={periodGenerated ? 'No report data for this period' : 'Nothing generated yet'}
+                    hint={periodGenerated ? 'Try a different period.' : 'Choose a period and click Generate report to view results.'}
+                  />
                 )}
               </CardContent>
             </Card>

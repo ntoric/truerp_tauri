@@ -21,6 +21,13 @@ import {
   firstValidationMessage,
   validatePartyForm,
 } from '@/lib/partyValidation'
+import { notifyError, notifySuccess } from '@/lib/notify'
+import LoyaltyCardAssignField, {
+  assignNextLoyaltyCard,
+  linkLoyaltyCard,
+  resolveScannedLoyaltyCard,
+  type LoyaltyCardAssignMode,
+} from '@/components/loyalty/LoyaltyCardAssignField'
 
 export default function CreatePartyPage() {
   const router = useRouter()
@@ -36,6 +43,10 @@ export default function CreatePartyPage() {
 
   const [saving, setSaving] = useState(false)
   const [partyCategories, setPartyCategories] = useState<string[]>([])
+  const [loyaltyEnabled, setLoyaltyEnabled] = useState(false)
+  const [cardMode, setCardMode] = useState<LoyaltyCardAssignMode>('scan')
+  const [cardInput, setCardInput] = useState('')
+  const [cardError, setCardError] = useState('')
   const [formData, setFormData] = useState({
     ...EMPTY_PARTY_FORM,
     party_type: typeParam,
@@ -66,6 +77,15 @@ export default function CreatePartyPage() {
     loadCategories()
   }, [])
 
+  useEffect(() => {
+    apiFetch('/loyalty/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setLoyaltyEnabled(Boolean(d?.is_enabled)))
+      .catch(() => setLoyaltyEnabled(false))
+  }, [])
+
+  const showLoyaltyCard = loyaltyEnabled && formData.party_type === 'customer'
+
   const updateField = <K extends keyof typeof formData>(field: K, value: (typeof formData)[K]) => {
     clearFieldError(field)
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -82,6 +102,19 @@ export default function CreatePartyPage() {
 
     setSaving(true)
     try {
+      // Validate a scanned card before creating the customer so a bad card
+      // number doesn't leave a half-finished customer behind.
+      let scannedCard: { id: string; card_number: string } | null = null
+      if (showLoyaltyCard && cardMode === 'scan' && cardInput.trim()) {
+        const r = await resolveScannedLoyaltyCard(cardInput)
+        if ('error' in r) {
+          setCardError(r.error)
+          showErrorToast(r.error)
+          return
+        }
+        scannedCard = r.card
+      }
+
       const payload = {
         ...formData,
         name: formData.name.trim(),
@@ -98,7 +131,22 @@ export default function CreatePartyPage() {
         body: JSON.stringify(payload),
       })
       if (res.ok) {
-        router.push('/parties')
+        const data = await res.json().catch(() => ({}))
+        const partyId: string | undefined = data?.id ?? data?.party?.id
+        if (showLoyaltyCard && partyId) {
+          if (cardMode === 'auto') {
+            const r = await assignNextLoyaltyCard(partyId)
+            if ('error' in r) notifyError(`Customer saved, but ${r.error.charAt(0).toLowerCase()}${r.error.slice(1)}`)
+            else notifySuccess(`Loyalty card ${r.card_number} assigned`)
+          } else if (scannedCard) {
+            if (await linkLoyaltyCard(scannedCard.id, partyId)) {
+              notifySuccess(`Loyalty card ${scannedCard.card_number} linked`)
+            } else {
+              notifyError('Customer saved, but linking the loyalty card failed')
+            }
+          }
+        }
+        router.push(payload.party_type === 'vendor' ? '/parties/vendors' : '/parties/customers')
       } else {
         await handleApiError(res)
       }
@@ -114,7 +162,7 @@ export default function CreatePartyPage() {
       <div className="max-w-3xl space-y-4 pb-2">
         <PageHeader
           title={`Create New ${formData.party_type === 'customer' ? 'Customer' : 'Vendor'}`}
-          backHref="/parties"
+          backHref={formData.party_type === 'vendor' ? '/parties/vendors' : '/parties/customers'}
         />
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -189,6 +237,21 @@ export default function CreatePartyPage() {
                 </Select>
                 <FieldError message={fieldErrors.party_type} />
               </div>
+              {showLoyaltyCard && (
+                <LoyaltyCardAssignField
+                  mode={cardMode}
+                  onModeChange={(m) => {
+                    setCardMode(m)
+                    setCardError('')
+                  }}
+                  value={cardInput}
+                  onChange={(v) => {
+                    setCardInput(v)
+                    setCardError('')
+                  }}
+                  error={cardError}
+                />
+              )}
             </CardContent>
           </Card>
 

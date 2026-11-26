@@ -2,23 +2,37 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
+import BrandLoader from '@/components/BrandLoader'
+
+/** Wait this long before showing the overlay so fast navigations don't flash. */
+const SHOW_DELAY_MS = 150
+/** Keep the overlay up at least this long once shown, to avoid a flicker. */
+const MIN_VISIBLE_MS = 300
+/** Safety net: never leave the overlay stuck if a navigation never resolves. */
+const MAX_VISIBLE_MS = 10000
 
 /**
- * Thin top progress bar for soft client navigations.
- * Sidebar/header stay mounted; only the content area feels like it is loading.
+ * Gooseroot-branded loading overlay for soft client navigations.
+ * Starts on same-origin link clicks and clears once the route has changed.
  */
 export default function NavigationProgress() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [visible, setVisible] = useState(false)
-  const [width, setWidth] = useState(0)
   const routeKey = `${pathname}?${searchParams?.toString() ?? ''}`
   const prevRoute = useRef(routeKey)
   const timers = useRef<number[]>([])
+  const shownAt = useRef<number | null>(null)
 
   const clearTimers = () => {
     timers.current.forEach((id) => window.clearTimeout(id))
     timers.current = []
+  }
+
+  const hide = () => {
+    clearTimers()
+    shownAt.current = null
+    setVisible(false)
   }
 
   useEffect(() => {
@@ -31,6 +45,7 @@ export default function NavigationProgress() {
       const href = anchor.getAttribute('href')
       if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return
       if (anchor.target && anchor.target !== '_self') return
+      if (anchor.hasAttribute('download')) return
       try {
         const url = new URL(href, window.location.origin)
         if (url.origin !== window.location.origin) return
@@ -41,11 +56,12 @@ export default function NavigationProgress() {
         return
       }
       clearTimers()
-      setVisible(true)
-      setWidth(18)
       timers.current.push(
-        window.setTimeout(() => setWidth(55), 80),
-        window.setTimeout(() => setWidth(78), 280)
+        window.setTimeout(() => {
+          shownAt.current = Date.now()
+          setVisible(true)
+        }, SHOW_DELAY_MS),
+        window.setTimeout(hide, MAX_VISIBLE_MS)
       )
     }
 
@@ -60,32 +76,35 @@ export default function NavigationProgress() {
     if (prevRoute.current === routeKey) return
     prevRoute.current = routeKey
     clearTimers()
-    setVisible(true)
-    setWidth(92)
-    timers.current.push(
-      window.setTimeout(() => setWidth(100), 60),
-      window.setTimeout(() => {
-        setVisible(false)
-        setWidth(0)
-      }, 220)
-    )
+    if (shownAt.current === null) {
+      // Overlay never appeared (fast navigation) — just cancel the pending show.
+      setVisible(false)
+      return
+    }
+    const remaining = Math.max(0, MIN_VISIBLE_MS - (Date.now() - shownAt.current))
+    timers.current.push(window.setTimeout(hide, remaining))
     return clearTimers
   }, [routeKey])
 
-  if (!visible && width === 0) return null
+  if (!visible) return null
 
   return (
     <div
-      aria-hidden
-      className="pointer-events-none fixed left-0 right-0 top-0 z-[60] h-0.5 overflow-hidden"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading"
+      className="brand-loader-overlay fixed inset-0 z-[60] flex items-center justify-center bg-background/70 backdrop-blur-sm"
     >
-      <div
-        className="h-full bg-blue-600 transition-[width,opacity] duration-200 ease-out"
-        style={{
-          width: `${width}%`,
-          opacity: visible ? 1 : 0,
-        }}
-      />
+      <BrandLoader size={120} />
+      <style jsx>{`
+        .brand-loader-overlay {
+          animation: brand-loader-fade 180ms ease-out;
+        }
+        @keyframes brand-loader-fade {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
     </div>
   )
 }

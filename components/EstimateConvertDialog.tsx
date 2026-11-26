@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { PAYMENT_METHODS } from '@/lib/paymentSplits'
+import { PAYMENT_METHODS, isUnpaidMethod } from '@/lib/paymentSplits'
 import { formatCurrency } from '@/lib/utils'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { Loader2 } from 'lucide-react'
@@ -47,7 +47,7 @@ export default function EstimateConvertDialog({
         method: 'POST',
         body: JSON.stringify({
           payment_mode: paymentMode,
-          amount_paid: Number(amountPaid) || 0,
+          amount_paid: isUnpaidMethod(paymentMode) ? 0 : Number(amountPaid) || 0,
         }),
       })
       if (res.ok) {
@@ -81,7 +81,12 @@ export default function EstimateConvertDialog({
             <Label>Payment Method</Label>
             <select
               value={paymentMode}
-              onChange={(e) => setPaymentMode(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value
+                if (isUnpaidMethod(next)) setAmountPaid(0)
+                else if (isUnpaidMethod(paymentMode)) setAmountPaid(estimate?.total_amount || 0)
+                setPaymentMode(next)
+              }}
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             >
               {PAYMENT_METHODS.map((method) => (
@@ -98,6 +103,7 @@ export default function EstimateConvertDialog({
               min="0"
               step="0.01"
               value={amountPaid}
+              disabled={isUnpaidMethod(paymentMode)}
               onChange={(e) => setAmountPaid(Number(e.target.value))}
             />
             <p className="text-xs text-muted-foreground">

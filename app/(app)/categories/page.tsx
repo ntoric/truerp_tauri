@@ -30,7 +30,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Pencil, Trash2, FileText, Power, MoreVertical, Download, Search } from 'lucide-react'
+import { Plus, Pencil, Trash2, FileText, Power, MoreVertical, Download, Search, Tags } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
@@ -42,6 +43,7 @@ import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import BrandLoader from '@/components/BrandLoader'
 
 interface Category {
   id: string
@@ -471,7 +473,15 @@ export default function CategoriesPage() {
                   </TableRow>
                 ))}
                 {categories.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-500">No categories found</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={7} className="px-4 py-4">
+                      <PremiumEmpty
+                        icon={Tags}
+                        title="No categories yet"
+                        hint="Create categories to organise your products."
+                      />
+                    </TableCell>
+                  </TableRow>
                 )}
               </TableBody>
             </Table>
@@ -530,7 +540,7 @@ export default function CategoriesPage() {
             </DialogHeader>
             {loadingDraft ? (
               <div className="flex justify-center py-8">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : drafts.length === 0 ? (
               <div className="text-center py-8 text-gray-500">No drafts saved</div>

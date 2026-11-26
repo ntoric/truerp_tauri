@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import Link from 'next/link'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SearchableSelect, type SearchableSelectOption } from '@/components/ui/searchable-select'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadBlob, downloadCsv, rowsToCsv } from '@/lib/accountingExport'
 import { runWithExportProgress } from '@/lib/exportProgress'
@@ -24,11 +26,18 @@ import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import JSZip from 'jszip'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { isSuperAdmin } from '@/lib/roles'
-import { printHtmlDocument } from '@/lib/printDocument'
+import {
+  DEFAULT_BULK_DOWNLOAD_LIMIT,
+  downloadPurchaseBillPdf,
+  downloadPurchaseBillPdfsZip,
+  fetchBulkDownloadLimit,
+  printHtmlDocument,
+} from '@/lib/printDocument'
 import { printBarcodeLabels, type BarcodeLabelsPayload } from '@/lib/barcodeLabelPrint'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import {
   BARCODE_LABEL_SIZE_OPTIONS,
   normalizeThermalPrintSize,
@@ -44,6 +53,7 @@ import {
   type A4LabelSheetPresetKey,
 } from '@/lib/a4LabelSheets'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import BrandLoader from '@/components/BrandLoader'
 
 const THERMAL_LABEL_DIMENSIONS: Record<BarcodeLabelSize, { width: number; height: number }> = {
   '1inch': { width: 25.4, height: 15 },
@@ -92,13 +102,16 @@ export default function PurchaseInvoicesPage() {
   const { confirm, confirmDialog } = useConfirmDialog()
   const { user } = useAuth()
   const canMigrate = isSuperAdmin(user?.role)
+  const canDelete = canMigrate
   const [bills, setBills] = useState<PurchaseBill[]>([])
   const [stats, setStats] = useState<PurchaseBillStats>({ total_purchase: 0, paid: 0, unpaid: 0 })
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filter, setFilter] = useState('')
+  const [partyId, setPartyId] = useState('')
+  const [partyOptions, setPartyOptions] = useState<SearchableSelectOption[]>([])
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
@@ -126,9 +139,11 @@ export default function PurchaseInvoicesPage() {
   const [labelPreviewLoading, setLabelPreviewLoading] = useState(false)
   const labelPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [bulkLimit, setBulkLimit] = useState(DEFAULT_BULK_DOWNLOAD_LIMIT)
   const [showBulkCreateProducts, setShowBulkCreateProducts] = useState(false)
 
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
+  const [labelItems, setLabelItems] = useState<NonNullable<PurchaseBill['items']>>([])
 
   const isThermalSelected = isThermalLabelSize(labelConfig.paperSize)
   const sheetLabelsPerPage = labelsPerSheet({ columns: labelConfig.cols, rows: labelConfig.rows })
@@ -136,11 +151,35 @@ export default function PurchaseInvoicesPage() {
 
   useEffect(() => {
     fetchBills()
-  }, [filter, dateFrom, dateTo, debouncedSearch, page])
+  }, [filter, partyId, dateFrom, dateTo, debouncedSearch, page])
 
   useEffect(() => {
     fetchStats()
-  }, [filter, dateFrom, dateTo])
+  }, [filter, partyId, dateFrom, dateTo])
+
+  // Party list for the "filter by party" dropdown.
+  useEffect(() => {
+    apiFetch('/parties')
+      .then(async (res) => {
+        if (!res.ok) return
+        const data = await res.json()
+        const list: { id: string; name: string }[] = Array.isArray(data) ? data : []
+        setPartyOptions(
+          list
+            .filter((p) => p?.id)
+            .map((p) => ({ value: p.id, label: p.name || 'Unnamed party' }))
+            .sort((a, b) => a.label.localeCompare(b.label)),
+        )
+      })
+      .catch((err) => console.error(err))
+  }, [])
+
+  // Bulk download cap is configurable in Developer Settings (super admin only);
+  // everyone else uses the default and the backend enforces the limit anyway.
+  useEffect(() => {
+    if (!canMigrate) return
+    fetchBulkDownloadLimit().then(setBulkLimit).catch(() => {})
+  }, [canMigrate])
 
   // Debounce the search box so each keystroke doesn't hit the API.
   useEffect(() => {
@@ -160,6 +199,7 @@ export default function PurchaseInvoicesPage() {
   const buildBillParams = (targetPage: number, perPage: number) => {
     const params = new URLSearchParams()
     if (filter) params.append('status', filter)
+    if (partyId) params.append('party_id', partyId)
     if (dateFrom) params.append('from_date', dateFrom)
     if (dateTo) params.append('to_date', dateTo)
     if (debouncedSearch) params.append('search', debouncedSearch)
@@ -195,6 +235,7 @@ export default function PurchaseInvoicesPage() {
     try {
       let url = '/purchase/bills/stats'
       const params = new URLSearchParams()
+      if (partyId) params.append('party_id', partyId)
       if (dateFrom) params.append('from_date', dateFrom)
       if (dateTo) params.append('to_date', dateTo)
       if (params.toString()) url += `?${params.toString()}`
@@ -359,6 +400,41 @@ export default function PurchaseInvoicesPage() {
     }
   }
 
+  const handleBulkDownloadPdfs = async () => {
+    const selected = bills.filter((b) => selectedBills.has(b.id))
+    if (selected.length === 0) {
+      notifyError('No purchase invoices selected')
+      return
+    }
+    if (selected.length > bulkLimit) {
+      notifyError(`You can download up to ${bulkLimit} invoices at once`)
+      return
+    }
+    if (exporting) return
+    setExporting(true)
+    try {
+      if (selected.length === 1) {
+        await downloadPurchaseBillPdf(selected[0].id, { billNumber: selected[0].bill_number })
+        notifySuccess('Purchase invoice PDF downloaded')
+        return
+      }
+      await runWithExportProgress('Downloading purchase invoice PDFs', async (update) => {
+        update(10, 'Requesting PDFs from backend…')
+        const blob = await downloadPurchaseBillPdfsZip(selected.map((b) => b.id))
+        update(75, 'Saving ZIP…')
+        await downloadBlob(`purchase-invoices_${accountingExportDateStamp()}.zip`, blob, {
+          skipProgress: true,
+        })
+        update(100, 'Saved')
+      })
+      notifySuccess(`Downloaded ${selected.length} purchase invoice PDFs`)
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Failed to download purchase invoice PDFs')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const handleBulkDelete = async () => {
     if (!(await confirm({
       title: `Delete ${selectedBills.size} purchase invoices?`,
@@ -392,69 +468,6 @@ export default function PurchaseInvoicesPage() {
       fetchStats()
     } catch (err) {
       console.error(err)
-    }
-  }
-
-  const handleDownloadSource = async (bill: PurchaseBill) => {
-    if (!bill.source_url) {
-      notifyError('This purchase invoice has no source link')
-      return
-    }
-    // Single-bill download: reuse the bulk endpoint with one id so the backend
-    // renders the source page to PDF via headless Chromium and returns a ZIP.
-    try {
-      const res = await apiFetch(`/purchase/bills/download-source`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: [bill.id] }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Failed to download source invoice')
-      }
-      const blob = await res.blob()
-      if (!blob.size) throw new Error('Source invoice download was empty')
-      const name = `source_${(bill.bill_number || bill.id).replace(/[^a-zA-Z0-9-_]/g, '_')}.zip`
-      await downloadBlob(name, blob, { skipProgress: true })
-      notifySuccess('Source invoice downloaded')
-    } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Failed to download source invoice')
-    }
-  }
-
-  const handleBulkDownloadSource = async () => {
-    const selected = bills.filter((b) => selectedBills.has(b.id) && b.source_url)
-    if (selected.length === 0) {
-      notifyError('No selected purchase invoices have a source link')
-      return
-    }
-    if (exporting) return
-    setExporting(true)
-    try {
-      await runWithExportProgress('Rendering source invoices to PDF', async (update) => {
-        update(10, 'Requesting PDFs from backend…')
-        const res = await apiFetch(`/purchase/bills/download-source`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: selected.map((b) => b.id) }),
-        })
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          throw new Error(err.error || 'Failed to download source invoices')
-        }
-        update(70, 'Saving ZIP…')
-        const blob = await res.blob()
-        if (!blob.size) throw new Error('Source invoice download was empty')
-        await downloadBlob(`purchase-source-invoices_${accountingExportDateStamp()}.zip`, blob, {
-          skipProgress: true,
-        })
-        update(100, 'Saved')
-      })
-      notifySuccess(`Downloaded source invoices for ${selected.length} purchase invoice${selected.length === 1 ? '' : 's'}`)
-    } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Failed to download source invoices')
-    } finally {
-      setExporting(false)
     }
   }
 
@@ -562,6 +575,7 @@ export default function PurchaseInvoicesPage() {
         quantities[item.id] = Math.max(1, Math.round(Number(item.quantity) || 1))
       })
       setItemQuantities(quantities)
+      setLabelItems(bill.items)
       setLabelModal(billId)
     } catch (err) {
       console.error(err)
@@ -803,6 +817,16 @@ export default function PurchaseInvoicesPage() {
                 <option value="unpaid">Unpaid</option>
                 <option value="partial">Partial</option>
               </select>
+              <SearchableSelect
+                value={partyId}
+                onValueChange={(v) => { setPartyId(v); resetPageAndSelection() }}
+                options={partyOptions}
+                placeholder="All Parties"
+                searchPlaceholder="Search parties..."
+                emptyMessage="No parties found"
+                clearable
+                className="h-10 w-56"
+              />
               <Input
                 type="date"
                 className="h-10 w-auto"
@@ -820,7 +844,7 @@ export default function PurchaseInvoicesPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <div>
@@ -844,28 +868,33 @@ export default function PurchaseInvoicesPage() {
                         )}
                         Export
                       </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleBulkDownloadPdfs()}
+                        disabled={exporting || selectedBills.size > bulkLimit}
+                        title={
+                          selectedBills.size > bulkLimit
+                            ? `You can download up to ${bulkLimit} invoices at once`
+                            : 'Download selected purchase invoices as a ZIP of PDFs'
+                        }
+                      >
+                        {exporting ? (
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <FileText className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        Download PDF
+                      </Button>
                       <Button variant="outline" size="sm" onClick={handleBulkMarkPaid}>
                         Mark as Paid
                       </Button>
-                      {canMigrate && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => void handleBulkDownloadSource()}
-                          disabled={exporting}
-                          title="Download the original source invoices (rendered to PDF) for selected bills"
-                        >
-                          {exporting ? (
-                            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Download className="mr-1 h-3.5 w-3.5" />
-                          )}
-                          Download Source
+                      {canDelete && (
+                        <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDelete}>
+                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
                         </Button>
                       )}
-                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDelete}>
-                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
-                      </Button>
                     </div>
                   </div>
                 )}
@@ -950,12 +979,6 @@ export default function PurchaseInvoicesPage() {
                                   Open Source
                                 </DropdownMenuItem>
                               )}
-                              {bill.source_url && canMigrate && (
-                                <DropdownMenuItem onClick={() => void handleDownloadSource(bill)}>
-                                  <Download className="mr-2 h-4 w-4" />
-                                  Download Source
-                                </DropdownMenuItem>
-                              )}
                               {bill.status !== 'paid' && (
                                 <DropdownMenuItem onClick={() => handleMarkPaid(bill.id)}>
                                   <X className="mr-2 h-4 w-4" />
@@ -976,8 +999,19 @@ export default function PurchaseInvoicesPage() {
                     ))}
                     {bills.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="py-8 text-center text-gray-500">
-                          No purchase invoices found
+                        <td colSpan={8} className="px-4 py-4">
+                          <PremiumEmpty
+                            icon={FileText}
+                            title="No purchase invoices yet"
+                            hint="Record your first purchase invoice to track what you owe suppliers."
+                            action={
+                              <Link href="/purchase-invoices/create">
+                                <Button size="sm">
+                                  <Plus className="mr-1.5 h-4 w-4" /> New Purchase Invoice
+                                </Button>
+                              </Link>
+                            }
+                          />
                         </td>
                       </tr>
                     )}
@@ -1073,7 +1107,7 @@ export default function PurchaseInvoicesPage() {
               <div>
                 <Label className="text-sm font-medium">Label Quantities (default: invoice quantity)</Label>
                 <div className="mt-2 space-y-2 max-h-48 overflow-y-auto border rounded-md p-2">
-                  {bills.find(b => b.id === labelModal)?.items?.map((item) => (
+                  {labelItems.map((item) => (
                     <div key={item.id} className="flex items-center justify-between text-sm">
                       <span className="flex-1">{item.description}</span>
                       <Input

@@ -1,5 +1,6 @@
 import type { Icon } from '@phosphor-icons/react'
 import {
+  AddressBook,
   UsersThree,
   Tag,
   Package,
@@ -35,6 +36,7 @@ import {
   Megaphone,
   ChatCircleText,
   EnvelopeSimple,
+  Factory,
   WhatsappLogo,
   Gift,
   ShieldCheck,
@@ -48,6 +50,10 @@ import {
   Headset,
   Ticket,
   FlagBanner,
+  SealPercent,
+  ShoppingCartSimple,
+  ListChecks,
+  ArrowsLeftRight,
 } from '@phosphor-icons/react'
 import { canManageUsers, isSuperAdmin } from '@/lib/roles'
 
@@ -101,10 +107,27 @@ export function filterNavForPageFeatures(
 
 export const navItems: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: SquaresFour, accent: '#4f46e5' },
-  { name: 'Parties', href: '/parties', icon: UsersThree, accent: '#7c3aed' },
-  { name: 'Product Categories', href: '/categories', icon: Tag, accent: '#b45309' },
-  { name: 'Products', href: '/products', icon: Package, accent: '#059669' },
-  { name: 'Inventory', href: '/inventory', icon: Warehouse, accent: '#0891b2' },
+  {
+    name: 'Parties',
+    icon: UsersThree,
+    accent: '#7c3aed',
+    children: [
+      { name: 'All Parties', href: '/parties', icon: AddressBook },
+      { name: 'Customers', href: '/parties/customers', icon: Users },
+      { name: 'Vendors', href: '/parties/vendors', icon: Factory },
+    ],
+  },
+  {
+    name: 'Inventory',
+    icon: Warehouse,
+    accent: '#0891b2',
+    children: [
+      { name: 'Products', href: '/products', icon: Package },
+      { name: 'Product Categories', href: '/categories', icon: Tag },
+      { name: 'Stock', href: '/inventory', icon: Warehouse },
+      { name: 'Stock Movement', href: '/inventory/movements', icon: ArrowsLeftRight },
+    ],
+  },
   { name: 'Warehouses', href: '/warehouses', icon: Buildings, accent: '#64748b' },
   {
     name: 'Purchases',
@@ -113,8 +136,6 @@ export const navItems: NavItem[] = [
     children: [
       { name: 'Purchase Invoices', href: '/purchase-invoices', icon: FileText },
       { name: 'Purchase Return', href: '/purchase-returns', icon: ArrowCounterClockwise },
-      { name: 'Debit Notes', href: '/debit-notes', icon: FileMinus },
-      { name: 'Payment Out', href: '/payment-outs', icon: HandWithdraw },
     ],
   },
   {
@@ -126,8 +147,34 @@ export const navItems: NavItem[] = [
       { name: 'Estimates', href: '/estimates', icon: ClipboardText },
       { name: 'Delivery Challans', href: '/delivery-challans', icon: Truck },
       { name: 'Sales Return', href: '/sales-returns', icon: ArrowCounterClockwise },
+      { name: 'Discount', href: '/discount', icon: SealPercent },
+    ],
+  },
+  {
+    name: 'B2B Shop',
+    icon: ShoppingCartSimple,
+    accent: '#0d9488',
+    children: [
+      { name: 'Shop Manager', href: '/b2b-shop', icon: Storefront },
+      { name: 'B2B Orders', href: '/b2b-orders', icon: ListChecks },
+    ],
+  },
+  {
+    name: 'Credit/Debit',
+    icon: Scales,
+    accent: '#0f766e',
+    children: [
       { name: 'Credit Notes', href: '/credit-notes', icon: ReceiptX },
+      { name: 'Debit Notes', href: '/debit-notes', icon: FileMinus },
+    ],
+  },
+  {
+    name: 'Payments',
+    icon: Money,
+    accent: '#6366f1',
+    children: [
       { name: 'Payment In', href: '/payments', icon: HandCoins },
+      { name: 'Payment Out', href: '/payment-outs', icon: HandWithdraw },
     ],
   },
   { name: 'Expenses', href: '/expenses', icon: Receipt, accent: '#e11d48' },
@@ -145,6 +192,7 @@ export const navItems: NavItem[] = [
       { name: 'Profit & Loss', href: '/reports/profit-loss', icon: Scales },
       { name: 'Billwise Profit', href: '/reports/billwise-profit', icon: ReceiptX },
       { name: 'Stock Report', href: '/reports/stock', icon: Warehouse },
+      { name: 'Party Balances', href: '/reports/party-balance', icon: UsersThree },
       { name: 'Reports & Analytics', href: '/reports', icon: ChartLineUp },
     ],
   },
@@ -164,6 +212,7 @@ export const navItems: NavItem[] = [
     children: [
       { name: 'Staff', href: '/staff', icon: Users },
       { name: 'Attendance', href: '/attendance', icon: CalendarCheck },
+      { name: 'Attendance Reminder', href: '/attendance-reminder', icon: BellRinging },
       { name: 'Payroll', href: '/payroll', icon: Money },
     ],
   },
@@ -224,7 +273,8 @@ export const bottomNavPrimary: {
 export function isNavChildActive(pathname: string, href?: string): boolean {
   if (!href) return false
   if (pathname === href) return true
-  if (href === '/reports') return false
+  // Index pages whose sub-routes are separate menu entries match exactly.
+  if (href === '/reports' || href === '/parties' || href === '/inventory') return false
   return pathname.startsWith(`${href}/`)
 }
 

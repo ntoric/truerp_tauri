@@ -155,10 +155,29 @@ export async function downloadPdfBase64(pdfBase64: string, filename: string): Pr
   await triggerBlobDownload(blob, filename.endsWith('.pdf') ? filename : `${filename}.pdf`)
 }
 
+function cleanFilenamePart(value?: string | null): string {
+  return (value || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+/** "Invoice_<number>_<party>.pdf" — mirrors the backend's invoiceDownloadFilename. */
+export function invoicePdfFilename(
+  invoiceNumber: string | undefined | null,
+  partyName: string | undefined | null,
+  fallbackId: string
+): string {
+  const number = cleanFilenamePart(invoiceNumber) || cleanFilenamePart(fallbackId)
+  const party = cleanFilenamePart(partyName).slice(0, 60).replace(/_+$/, '')
+  return party ? `Invoice_${number}_${party}.pdf` : `Invoice_${number}.pdf`
+}
+
 /** Download invoice PDF from API. */
 export async function downloadInvoicePdf(
   invoiceId: string,
-  options?: { invoiceNumber?: string }
+  options?: { invoiceNumber?: string; partyName?: string }
 ): Promise<void> {
   const res = await apiFetch(`/invoices/${invoiceId}/pdf`)
   if (!res.ok) {
@@ -169,9 +188,11 @@ export async function downloadInvoicePdf(
   if (!blob.size) {
     throw new Error('Invoice PDF was empty')
   }
-  const name = options?.invoiceNumber
-    ? `Invoice_${options.invoiceNumber}.pdf`
-    : `Invoice_${invoiceId}.pdf`
+  // Callers that only have the id get the server-chosen name (number + party).
+  const serverName = !options?.invoiceNumber
+    ? /filename="?([^";]+)"?/i.exec(res.headers.get('Content-Disposition') || '')?.[1]
+    : undefined
+  const name = serverName || invoicePdfFilename(options?.invoiceNumber, options?.partyName, invoiceId)
   await triggerBlobDownload(blob, name)
 }
 
@@ -193,6 +214,57 @@ export async function downloadPurchaseBillPdf(
     ? `Purchase_Invoice_${options.billNumber}.pdf`
     : `Purchase_Invoice_${billId}.pdf`
   await triggerBlobDownload(blob, name)
+}
+
+/** Fallback cap for bulk PDF downloads when the developer setting is unreadable. */
+export const DEFAULT_BULK_DOWNLOAD_LIMIT = 25
+
+/**
+ * Read the configured bulk PDF download cap (Developer Settings → General).
+ * Only super admins can read developer settings; everyone else gets the default.
+ */
+export async function fetchBulkDownloadLimit(): Promise<number> {
+  try {
+    const res = await apiFetch('/developer-settings')
+    if (!res.ok) return DEFAULT_BULK_DOWNLOAD_LIMIT
+    const data = await res.json()
+    const limit = Number(data?.bulk_download_limit)
+    return Number.isFinite(limit) && limit > 0
+      ? Math.floor(limit)
+      : DEFAULT_BULK_DOWNLOAD_LIMIT
+  } catch {
+    return DEFAULT_BULK_DOWNLOAD_LIMIT
+  }
+}
+
+/** POST ids to a bulk PDF endpoint and return the ZIP blob. */
+async function fetchPdfZip(path: string, ids: string[]): Promise<Blob> {
+  const res = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to download invoice PDFs')
+  }
+  const buffer = await res.arrayBuffer()
+  if (!buffer.byteLength) {
+    throw new Error('PDF download was empty')
+  }
+  const copy = new Uint8Array(buffer.byteLength)
+  copy.set(new Uint8Array(buffer))
+  return new Blob([copy], { type: 'application/zip' })
+}
+
+/** Fetch a ZIP of invoice PDFs for the selected sales invoices. */
+export function downloadInvoicePdfsZip(invoiceIds: string[]): Promise<Blob> {
+  return fetchPdfZip('/invoices/download-pdf', invoiceIds)
+}
+
+/** Fetch a ZIP of invoice PDFs for the selected purchase bills. */
+export function downloadPurchaseBillPdfsZip(billIds: string[]): Promise<Blob> {
+  return fetchPdfZip('/purchase/bills/download-pdf', billIds)
 }
 
 function thermalReceiptHtml(content: string, widthMm: number, logoUrl?: string): string {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Bell, CheckCheck, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/hooks/useAuth'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -14,6 +15,8 @@ interface AppNotification {
   message: string
   is_read: boolean
   created_at: string
+  related_id?: string | null
+  related_type?: string
 }
 
 function formatRelativeTime(dateStr: string) {
@@ -30,6 +33,7 @@ function formatRelativeTime(dateStr: string) {
 }
 
 export default function NotificationBell() {
+  const router = useRouter()
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
@@ -129,6 +133,10 @@ export default function NotificationBell() {
                 }`}
                 onClick={() => {
                   if (!notification.is_read) markRead(notification.id)
+                  if (notification.related_type === 'b2b_order' && notification.related_id) {
+                    setOpen(false)
+                    router.push(`/b2b-orders?id=${notification.related_id}`)
+                  }
                 }}
               >
                 <div className="flex items-start justify-between gap-2">

@@ -4,8 +4,10 @@ import { type ReactNode, useEffect } from 'react'
 import { AuthProvider } from '@/hooks/useAuth'
 import { ColorThemeProvider } from '@/hooks/useColorTheme'
 import { ThemeModeProvider } from '@/hooks/useThemeMode'
+import { AppearanceProvider } from '@/hooks/useAppearance'
 import { StoreProvider } from '@/hooks/useStore'
 import { PageFeaturesProvider } from '@/hooks/usePageFeatures'
+import { DiscountProvider } from '@/hooks/useDiscount'
 import { OfflineSyncProvider } from '@/hooks/useOfflineSync'
 import { Toaster } from '@/components/ui/toaster'
 import ExportProgressOverlay from '@/components/ExportProgressOverlay'
@@ -43,15 +45,19 @@ export function Providers({ children }: { children: ReactNode }) {
     <AuthProvider>
       <ThemeModeProvider>
         <ColorThemeProvider>
+        <AppearanceProvider>
         <StoreProvider>
           <PageFeaturesProvider>
+            <DiscountProvider>
             <OfflineSyncProvider>
               {children}
               <Toaster />
               <ExportProgressOverlay />
             </OfflineSyncProvider>
+            </DiscountProvider>
           </PageFeaturesProvider>
         </StoreProvider>
+        </AppearanceProvider>
       </ColorThemeProvider>
       </ThemeModeProvider>
     </AuthProvider>

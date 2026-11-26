@@ -29,6 +29,7 @@ export interface InvoiceDetailVisibility {
   show_amount_in_words: boolean
   show_received_amount: boolean
   show_balance_due: boolean
+  show_composition_declaration: boolean
 }
 
 export interface PartyDetailVisibility {
@@ -116,7 +117,7 @@ export function defaultInvoiceTemplateCustomization(): InvoiceTemplateCustomizat
     theme_style_tags: [],
     use_custom_theme: false,
     theme_settings: {
-      show_party_balance: true,
+      show_party_balance: false,
       enable_free_item_quantity: false,
       show_item_description: false,
       show_alternate_unit: false,
@@ -136,6 +137,7 @@ export function defaultInvoiceTemplateCustomization(): InvoiceTemplateCustomizat
       show_amount_in_words: true,
       show_received_amount: true,
       show_balance_due: true,
+      show_composition_declaration: true,
     },
     party_details: {
       show_party_name: true,

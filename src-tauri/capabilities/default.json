@@ -32,6 +32,7 @@
     "allow-app-version",
     "allow-check-for-updates",
     "allow-download-and-install-update",
+    "allow-set-force-update",
     "allow-pos-queue"
   ]
 }

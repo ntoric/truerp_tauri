@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
+import { useDiscount } from '@/hooks/useDiscount'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, type StatusBadgeTone } from '@/components/ui/badge'
@@ -18,13 +20,19 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, MoreVertical, Trash2, Search } from 'lucide-react'
+import { Plus, MoreVertical, Trash2, Search, X, CreditCard } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
-import { PAYMENT_METHODS, formatPaymentMethod } from '@/lib/paymentSplits'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useBankAccounts } from '@/hooks/useBankAccounts'
+import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
+import { RECEIPT_PAYMENT_METHODS as PAYMENT_METHODS, formatPaymentMethod, isInitialInvestmentMethod } from '@/lib/paymentSplits'
+import BrandLoader from '@/components/BrandLoader'
 
 interface Payment {
   id: string
@@ -35,6 +43,8 @@ interface Payment {
   date: string
   reference: string
   notes: string
+  status?: string
+  cancel_reason?: string
   invoice?: {
     id: string
     invoice_number: string
@@ -62,6 +72,7 @@ const emptyForm = () => ({
   payment_in_discount: '0',
   payment_in_number: '',
   mode: '',
+  bank_account_id: '',
   date: new Date().toISOString().split('T')[0],
   notes: '',
 })
@@ -70,6 +81,12 @@ export default function PaymentsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { requestCancelReason, cancelReasonDialog } = useCancelReasonDialog()
+  const { user } = useAuth()
+  const canDelete = isSuperAdmin(user?.role)
+  const { isDiscountEnabled } = useDiscount()
+  const { accounts: bankAccounts, loading: bankAccountsLoading } = useBankAccounts()
+  const { getDepositHint } = usePaymentMethodMappings()
   const {
     fieldErrors,
     clearErrors,
@@ -274,9 +291,10 @@ export default function PaymentsPage() {
         body: JSON.stringify({
           party_id: formData.party_id,
           amount_received: amountReceived,
-          payment_in_discount: discount,
+          payment_in_discount: isDiscountEnabled ? discount : 0,
           payment_in_number: formData.payment_in_number,
           mode: formData.mode,
+          bank_account_id: formData.bank_account_id || null,
           date: new Date(formData.date).toISOString(),
           notes: formData.notes,
         }),
@@ -311,6 +329,13 @@ export default function PaymentsPage() {
   const getPosBadge = () => <StatusBadge tone="violet">POS</StatusBadge>
 
   const isPosPayment = (payment: Payment) => payment.invoice?.is_pos === true
+
+  // Resolved destination account for the form's method + explicit selection,
+  // mirroring the backend's resolveBankAccountForPaymentMode order: explicit
+  // account → method mapping → primary account → cash in-hand.
+  const paymentInAccountLabel = formData.bank_account_id
+    ? bankAccounts.find((a) => a.id === formData.bank_account_id)?.account_name || 'the selected account'
+    : getDepositHint(formData.mode || 'cash', bankAccounts)
 
   const handleDeletePayment = async (id: string) => {
     if (!(await confirm({
@@ -356,6 +381,56 @@ export default function PaymentsPage() {
       setSelectedPayments(new Set())
     } else {
       setSelectedPayments(new Set(payments.map(p => p.id)))
+    }
+  }
+
+  const handleCancelPayment = async (id: string) => {
+    const reason = await requestCancelReason({
+      title: 'Cancel payment?',
+      description: 'The payment will be reversed and kept for reference — it will no longer count in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      const res = await apiFetch(`/payments/${id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
+      if (res.ok) {
+        showSuccessToast('Payment cancelled')
+        fetchPayments()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showErrorToast(data.error || 'Failed to cancel payment')
+      }
+    } catch (err) {
+      console.error(err)
+      showErrorToast('Failed to cancel payment')
+    }
+  }
+
+  const handleBulkCancelPayments = async () => {
+    const eligible = payments.filter(
+      (p) => selectedPayments.has(p.id) && p.status !== 'cancelled'
+    )
+    if (eligible.length === 0) return
+    const reason = await requestCancelReason({
+      title: `Cancel ${eligible.length} payment(s)?`,
+      description: 'The payments will be reversed and kept for reference — they will no longer count in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      await Promise.all(
+        eligible.map((p) =>
+          apiFetch(`/payments/${p.id}/cancel`, {
+            method: 'POST',
+            body: JSON.stringify({ reason }),
+          })
+        )
+      )
+      setSelectedPayments(new Set())
+      fetchPayments()
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -433,21 +508,23 @@ export default function PaymentsPage() {
                   />
                   <FieldError message={fieldErrors.amount_received} />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="payment_in_discount">Payment In Discount</Label>
-                  <Input
-                    id="payment_in_discount"
-                    type="number"
-                    step="0.01"
-                    value={formData.payment_in_discount}
-                    onChange={(e) => {
-                      clearFieldError('payment_in_discount')
-                      setFormData({ ...formData, payment_in_discount: e.target.value })
-                    }}
-                    className={cn(fieldErrors.payment_in_discount && 'border-red-500')}
-                  />
-                  <FieldError message={fieldErrors.payment_in_discount} />
-                </div>
+                {isDiscountEnabled && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="payment_in_discount">Payment In Discount</Label>
+                    <Input
+                      id="payment_in_discount"
+                      type="number"
+                      step="0.01"
+                      value={formData.payment_in_discount}
+                      onChange={(e) => {
+                        clearFieldError('payment_in_discount')
+                        setFormData({ ...formData, payment_in_discount: e.target.value })
+                      }}
+                      className={cn(fieldErrors.payment_in_discount && 'border-red-500')}
+                    />
+                    <FieldError message={fieldErrors.payment_in_discount} />
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <Label htmlFor="payment_in_number">Payment In Number</Label>
                   <Input
@@ -484,6 +561,44 @@ export default function PaymentsPage() {
                     </SelectContent>
                   </Select>
                   <FieldError message={fieldErrors.mode} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="bank_account_id">Received Into</Label>
+                  {isInitialInvestmentMethod(formData.mode) ? (
+                    <div className="flex h-9 items-center rounded-md border border-input bg-gray-50 px-3 text-sm text-muted-foreground">
+                      Owner&apos;s Equity
+                    </div>
+                  ) : bankAccountsLoading ? (
+                    <Skeleton className="h-9" />
+                  ) : (
+                    <select
+                      id="bank_account_id"
+                      value={formData.bank_account_id}
+                      onChange={(e) => setFormData({ ...formData, bank_account_id: e.target.value })}
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                    >
+                      <option value="">
+                        {!formData.mode || formData.mode === 'cash'
+                          ? 'Cash in-hand'
+                          : `Auto — ${getDepositHint(formData.mode, bankAccounts)}`}
+                      </option>
+                      {bankAccounts
+                        .filter((a) => a.is_active || a.id === formData.bank_account_id)
+                        .map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_name}
+                            {account.bank_name ? ` (${account.bank_name})` : ''}
+                            {' — '}
+                            {formatCurrency(account.balance)}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {isInitialInvestmentMethod(formData.mode)
+                      ? 'Recorded as owner\u2019s capital; does not affect cash or bank balances.'
+                      : `Amount received is credited to: ${paymentInAccountLabel} (configure under Cash & Bank → Payment method accounts)`}
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="date">Payment Date *</Label>
@@ -606,7 +721,7 @@ export default function PaymentsPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <>
@@ -614,9 +729,14 @@ export default function PaymentsPage() {
                   <div className="mb-3 flex items-center gap-2 rounded-md border bg-gray-50 px-3 py-2">
                     <span className="text-sm text-gray-600">{selectedPayments.size} selected</span>
                     <div className="ml-auto flex gap-2">
-                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeletePayments}>
-                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                      <Button variant="outline" size="sm" onClick={handleBulkCancelPayments}>
+                        Cancel
                       </Button>
+                      {canDelete && (
+                        <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeletePayments}>
+                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -636,7 +756,7 @@ export default function PaymentsPage() {
                       <th className="pb-3 font-medium">Payment ID</th>
                       <th className="pb-3 font-medium">Party Name</th>
                       <th className="pb-3 font-medium">Amount Received</th>
-                      <th className="pb-3 font-medium">Payment In Discount</th>
+                      {isDiscountEnabled && <th className="pb-3 font-medium">Payment In Discount</th>}
                       <th className="pb-3 font-medium">Payment Mode</th>
                       <th className="pb-3 font-medium">Payment In Number</th>
                       <th className="pb-3 font-medium">Notes</th>
@@ -663,9 +783,20 @@ export default function PaymentsPage() {
                         </td>
                         <td className="py-3 font-medium text-gray-900">{getPartyName(p)}</td>
                         <td className="py-3 font-medium text-gray-900">{formatCurrency(p.amount_received)}</td>
-                        <td className="py-3 font-medium text-gray-900">{formatCurrency(p.payment_in_discount)}</td>
+                        {isDiscountEnabled && (
+                          <td className="py-3 font-medium text-gray-900">{formatCurrency(p.payment_in_discount)}</td>
+                        )}
                         <td className="py-3">{getModeIcon(p.mode)}</td>
-                        <td className="py-3 text-gray-600">{p.payment_in_number || '-'}</td>
+                        <td className="py-3 text-gray-600">
+                          <div className="flex items-center gap-2">
+                            {p.payment_in_number || '-'}
+                            {p.status === 'cancelled' && (
+                              <span title={p.cancel_reason || undefined}>
+                                <StatusBadge status="cancelled" />
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-3 text-gray-600">{p.notes || '-'}</td>
                         <td className="py-3">
                           <DropdownMenu>
@@ -675,13 +806,21 @@ export default function PaymentsPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => handleDeletePayment(p.id)}
-                                className="text-red-600"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
+                              {p.status !== 'cancelled' && (
+                                <DropdownMenuItem onClick={() => handleCancelPayment(p.id)}>
+                                  <X className="mr-2 h-4 w-4" />
+                                  Cancel
+                                </DropdownMenuItem>
+                              )}
+                              {canDelete && (
+                                <DropdownMenuItem
+                                  onClick={() => handleDeletePayment(p.id)}
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </td>
@@ -689,8 +828,16 @@ export default function PaymentsPage() {
                     ))}
                     {payments.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="py-8 text-center text-gray-500">
-                          {hasActiveFilters ? 'No payments match your filters' : 'No payments recorded yet'}
+                        <td colSpan={isDiscountEnabled ? 10 : 9} className="px-4 py-4">
+                          {hasActiveFilters ? (
+                            <p className="py-6 text-center text-sm text-gray-500">No payments match your filters</p>
+                          ) : (
+                            <PremiumEmpty
+                              icon={CreditCard}
+                              title="No payments recorded yet"
+                              hint="Payments received against invoices will appear here."
+                            />
+                          )}
                         </td>
                       </tr>
                     )}
@@ -715,6 +862,7 @@ export default function PaymentsPage() {
         </Card>
       </div>
       {confirmDialog}
+      {cancelReasonDialog}
     </DashboardLayout>
   )
 }

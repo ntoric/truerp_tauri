@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Search, Filter, Download, Trash2, Settings, Archive, BarChart3, Activity, Users, Clock, ArrowLeft, Loader2 } from 'lucide-react'
+import { Search, Filter, Download, Trash2, Settings, Archive, BarChart3, Activity, Users, Clock, ArrowLeft } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifySuccess, notifyError } from '@/lib/notify'
 import { accountingExportDateStamp, downloadBlob } from '@/lib/accountingExport'
 import { runWithExportProgress } from '@/lib/exportProgress'
@@ -20,6 +21,7 @@ import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import BrandLoader from '@/components/BrandLoader'
 
 interface AuditLog {
   id: string
@@ -226,7 +228,7 @@ export default function AuditDashboard() {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <BrandLoader />
         </div>
       </DashboardLayout>
     )
@@ -354,6 +356,9 @@ export default function AuditDashboard() {
                   <SelectItem value="expense">Expense</SelectItem>
                   <SelectItem value="party">Party</SelectItem>
                   <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="loyalty_settings">Loyalty settings</SelectItem>
+                  <SelectItem value="loyalty_category">Loyalty category</SelectItem>
+                  <SelectItem value="loyalty_exclusion">Loyalty exclusion</SelectItem>
                 </SelectContent>
               </Select>
               <Select
@@ -414,10 +419,12 @@ export default function AuditDashboard() {
           <CardContent className="p-0">
             {loading ? (
               <div className="flex h-48 items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                <BrandLoader />
               </div>
             ) : logs.length === 0 ? (
-              <div className="py-12 text-center text-sm text-gray-500">No audit logs found</div>
+              <div className="p-4">
+                <PremiumEmpty compact icon={Activity} title="No audit logs found" hint="Activity across your workspace will be recorded here." />
+              </div>
             ) : (
               <Table>
                   <TableHeader>
@@ -451,7 +458,7 @@ export default function AuditDashboard() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="max-w-md truncate text-sm text-gray-600">
+                        <TableCell className="max-w-md truncate text-sm text-gray-600" title={log.description}>
                           {log.description}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
@@ -486,7 +493,7 @@ export default function AuditDashboard() {
               </CardHeader>
               <CardContent>
                 {stats.top_actions.length === 0 ? (
-                  <p className="text-sm text-gray-500">No action data yet</p>
+                  <PremiumEmpty compact icon={BarChart3} title="No action data yet" />
                 ) : (
                   <div className="space-y-2">
                     {stats.top_actions.slice(0, 5).map((item, index) => (
@@ -505,7 +512,7 @@ export default function AuditDashboard() {
               </CardHeader>
               <CardContent>
                 {stats.top_users.length === 0 ? (
-                  <p className="text-sm text-gray-500">No user data yet</p>
+                  <PremiumEmpty compact icon={Users} title="No user data yet" />
                 ) : (
                   <div className="space-y-2">
                     {stats.top_users.slice(0, 5).map((item, index) => (

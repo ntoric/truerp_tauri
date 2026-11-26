@@ -29,6 +29,7 @@ import {
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import BrandLoader from '@/components/BrandLoader'
 
 interface PortalProfile {
   customer: {
@@ -36,6 +37,7 @@ interface PortalProfile {
     phone: string
     balance: number
     loyalty_points: number
+    loyalty_cash?: number
   }
   business: { name: string; logo_url?: string }
   portal: {
@@ -90,7 +92,14 @@ export default function CustomerPortalHomePage() {
   const [invoices, setInvoices] = useState<PortalInvoice[]>([])
   const [payments, setPayments] = useState<PortalPayment[]>([])
   const [statements, setStatements] = useState<PortalStatement[]>([])
-  const [loyalty, setLoyalty] = useState<{ enabled: boolean; points?: number; transactions?: unknown[] } | null>(null)
+  const [loyalty, setLoyalty] = useState<{
+    enabled: boolean
+    points?: number
+    cash?: number
+    reward_type?: 'points' | 'cash'
+    transactions?: unknown[]
+  } | null>(null)
+  const loyaltyIsCash = loyalty?.reward_type === 'cash'
   const [tickets, setTickets] = useState<SupportTicket[]>([])
   const [ticketSubject, setTicketSubject] = useState('')
   const [ticketDescription, setTicketDescription] = useState('')
@@ -170,7 +179,7 @@ export default function CustomerPortalHomePage() {
   if (loading || !profile) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <BrandLoader />
       </div>
     )
   }
@@ -215,10 +224,14 @@ export default function CustomerPortalHomePage() {
           {profile.portal.loyalty_enabled && loyalty?.enabled && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Loyalty points</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {loyaltyIsCash ? 'Loyalty cashback' : 'Loyalty points'}
+                </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-bold">
-                {(loyalty.points ?? profile.customer.loyalty_points).toLocaleString()}
+                {loyaltyIsCash
+                  ? formatCurrency(loyalty.cash ?? profile.customer.loyalty_cash ?? 0)
+                  : (loyalty.points ?? profile.customer.loyalty_points).toLocaleString()}
               </CardContent>
             </Card>
           )}
@@ -360,17 +373,28 @@ export default function CustomerPortalHomePage() {
             <TabsContent value="loyalty">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Loyalty points</CardTitle>
+                  <CardTitle className="text-base">{loyaltyIsCash ? 'Loyalty cashback' : 'Loyalty points'}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {!loyalty?.enabled ? (
                     <p className="text-muted-foreground">Loyalty program is not active.</p>
                   ) : (
                     <>
-                      <p className="mb-4 text-2xl font-bold">{(loyalty.points ?? 0).toLocaleString()} points</p>
-                      <p className="text-sm text-muted-foreground">
-                        Points are earned on eligible purchases and can be redeemed on future bills.
-                      </p>
+                      {loyaltyIsCash ? (
+                        <>
+                          <p className="mb-4 text-2xl font-bold">{formatCurrency(loyalty.cash ?? 0)} cashback</p>
+                          <p className="text-sm text-muted-foreground">
+                            Cashback is credited on eligible purchases and can be used as a discount on future bills.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="mb-4 text-2xl font-bold">{(loyalty.points ?? 0).toLocaleString()} points</p>
+                          <p className="text-sm text-muted-foreground">
+                            Points are earned on eligible purchases and can be redeemed on future bills.
+                          </p>
+                        </>
+                      )}
                     </>
                   )}
                 </CardContent>

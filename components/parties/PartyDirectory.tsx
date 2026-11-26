@@ -1,0 +1,1164 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
+import { BrandAvatar } from '@/components/ui/brand-avatar'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { apiFetch } from '@/hooks/useAuth'
+import DashboardLayout from '@/components/layout/DashboardLayout'
+import SummaryStat from '@/components/widgets/SummaryStat'
+import PageHeader from '@/components/layout/PageHeader'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { formatCurrency, cn, formatDate } from '@/lib/utils'
+import { DEFAULT_PARTY_CATEGORIES, mergePartyCategories } from '@/lib/partyCategories'
+import {
+  EMPTY_PARTY_FORM,
+  firstValidationMessage,
+  validatePartyForm,
+} from '@/lib/partyValidation'
+import { FieldError } from '@/components/ui/field-error'
+import { useFormErrors } from '@/hooks/useFormErrors'
+import { Plus, Search, Phone, ArrowUp, ArrowDown, Trash2, Edit, MoreVertical, Download, BarChart3, ChevronUp, ChevronDown, FileText, Send, UserCheck, UserX } from 'lucide-react'
+import { accountingExportDateStamp, downloadBlob, downloadCsv } from '@/lib/accountingExport'
+import { notifyError, notifySuccess } from '@/lib/notify'
+import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
+import PaginationControls from '@/components/ui/pagination-controls'
+import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import BrandLoader from '@/components/BrandLoader'
+import SendStatementDialog from '@/components/parties/SendStatementDialog'
+import TelegramLinkDialog from '@/components/parties/TelegramLinkPanel'
+import {
+  excludeFromStatements,
+  fetchStatementExclusions,
+  includeInStatements,
+  type BulkStatementSelection,
+} from '@/lib/partyStatement'
+
+export type PartyDirectoryType = 'customer' | 'vendor'
+
+interface Party {
+  id: string
+  name: string
+  phone: string
+  email: string
+  category: string
+  party_type: string
+  balance: number
+  opening_balance: number
+  city: string
+  state: string
+  gstin: string
+  address: string
+  pincode: string
+  credit_limit: number
+  loyalty_points?: number
+  loyalty_cash?: number
+  tan: string
+  pan: string
+  notes: string
+  created_at?: string
+  updated_at?: string
+}
+
+interface PartyStats {
+  total_parties: number
+  to_collect: number
+  to_pay: number
+}
+
+export default function PartyDirectory({ partyType }: { partyType?: PartyDirectoryType }) {
+  const router = useRouter()
+  const typeLocked = partyType !== undefined
+  const singularLabel = partyType === 'vendor' ? 'Vendor' : partyType === 'customer' ? 'Customer' : 'Party'
+  const pluralLabel = partyType === 'vendor' ? 'Vendors' : partyType === 'customer' ? 'Customers' : 'Parties'
+  const exportPrefix = partyType ? pluralLabel.toLowerCase() : 'parties'
+  const {
+    fieldErrors,
+    setFieldErrors,
+    clearErrors,
+    clearFieldError,
+    showErrorToast,
+  } = useFormErrors()
+  const { confirm, confirmDialog } = useConfirmDialog()
+  const pageSize = DEFAULT_PAGE_SIZE
+  const [parties, setParties] = useState<Party[]>([])
+  const [categories, setCategories] = useState<string[]>(DEFAULT_PARTY_CATEGORIES)
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [stats, setStats] = useState<PartyStats>({ total_parties: 0, to_collect: 0, to_pay: 0 })
+  const [showStats, setShowStats] = useStatsDefaultOpen()
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [balanceFilter, setBalanceFilter] = useState('all')
+  const [selectedParties, setSelectedParties] = useState<Set<string>>(new Set())
+  const [selectAllMatching, setSelectAllMatching] = useState(false)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [editingParty, setEditingParty] = useState<Party | null>(null)
+  const [rowContextMenu, setRowContextMenu] = useState<{ party: Party; x: number; y: number } | null>(null)
+  const [isBulkCategoryModalOpen, setIsBulkCategoryModalOpen] = useState(false)
+  const [bulkCategory, setBulkCategory] = useState('')
+  const [statementTarget, setStatementTarget] = useState<
+    | { kind: 'single'; party: { id: string; name: string; phone?: string } }
+    | { kind: 'bulk'; selection: BulkStatementSelection; count: number }
+    | null
+  >(null)
+  const [telegramParty, setTelegramParty] = useState<{ id: string; name: string; phone?: string } | null>(null)
+  // Parties left out of bulk / scheduled statements.
+  const [statementExcluded, setStatementExcluded] = useState<Set<string>>(new Set())
+  const [isCategoryUpdateConfirmOpen, setIsCategoryUpdateConfirmOpen] = useState(false)
+  const [formData, setFormData] = useState({ ...EMPTY_PARTY_FORM, party_type: partyType ?? EMPTY_PARTY_FORM.party_type })
+
+  const updateFormField = <K extends keyof typeof formData>(field: K, value: (typeof formData)[K]) => {
+    clearFieldError(field)
+    setFormData((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const resetCreateForm = () => {
+    clearErrors()
+    setFormData({ ...EMPTY_PARTY_FORM, party_type: partyType ?? EMPTY_PARTY_FORM.party_type })
+  }
+
+  const handleCreateModalChange = (open: boolean) => {
+    setIsCreateModalOpen(open)
+    if (!open) resetCreateForm()
+  }
+
+  useEffect(() => {
+    fetchParties()
+  }, [debouncedSearch, categoryFilter, balanceFilter, page])
+
+  const loadStatementExclusions = () =>
+    fetchStatementExclusions()
+      .then((rows) => setStatementExcluded(new Set(rows.map((r) => r.party_id))))
+      .catch(() => {})
+
+  useEffect(() => {
+    void loadStatementExclusions()
+  }, [])
+
+  const toggleStatementExclusion = async (p: Party) => {
+    const excluded = statementExcluded.has(p.id)
+    try {
+      if (excluded) await includeInStatements(p.id)
+      else await excludeFromStatements({ party_ids: [p.id] })
+      notifySuccess(
+        excluded
+          ? `${p.name} will get bulk and scheduled statements again`
+          : `${p.name} won't get bulk or scheduled statements`
+      )
+      void loadStatementExclusions()
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : 'Failed to update excluded parties')
+    }
+  }
+
+  const handleBulkExcludeFromStatements = async () => {
+    if (
+      !(await confirm({
+        title: `Exclude ${selectedCount} ${selectedCount === 1 ? 'party' : 'parties'} from statements?`,
+        description:
+          'They will be skipped by bulk statement sends and schedules. You can include them again from Settings → Customer Messaging → Party statements.',
+        confirmLabel: 'Exclude',
+      }))
+    )
+      return
+    try {
+      const res = await excludeFromStatements(bulkSelectionPayload() as BulkStatementSelection)
+      notifySuccess(`${res.excluded} ${res.excluded === 1 ? 'party' : 'parties'} excluded from statements`)
+      void loadStatementExclusions()
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : 'Failed to exclude parties')
+    }
+  }
+
+  useEffect(() => {
+    fetchStats()
+  }, [])
+
+  // Debounce the search box so each keystroke doesn't hit the API.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim())
+      setPage(1)
+      setSelectedParties(new Set())
+      setSelectAllMatching(false)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  const handleCategoryFilterChange = (value: string) => {
+    setCategoryFilter(value)
+    setPage(1)
+    setSelectedParties(new Set())
+    setSelectAllMatching(false)
+  }
+
+  const handleBalanceFilterChange = (value: string) => {
+    setBalanceFilter(value)
+    setPage(1)
+    setSelectedParties(new Set())
+    setSelectAllMatching(false)
+  }
+
+  const clearSelection = () => {
+    setSelectAllMatching(false)
+    setSelectedParties(new Set())
+  }
+
+  const selectedCount = selectAllMatching ? total : selectedParties.size
+
+  const bulkSelectionPayload = () =>
+    selectAllMatching
+      ? {
+          all_matching: true,
+          filters: {
+            search: debouncedSearch,
+            category: categoryFilter === 'all' ? '' : categoryFilter,
+            party_type: partyType ?? '',
+            balance: balanceFilter === 'all' ? '' : balanceFilter,
+          },
+        }
+      : { ids: Array.from(selectedParties) }
+
+  const buildPartyParams = (targetPage: number, perPage: number) => {
+    const params = new URLSearchParams()
+    if (debouncedSearch) params.append('search', debouncedSearch)
+    if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
+    if (partyType) params.append('party_type', partyType)
+    if (balanceFilter !== 'all') params.append('balance', balanceFilter)
+    params.append('page', String(targetPage))
+    params.append('per_page', String(perPage))
+    return params
+  }
+
+  const fetchParties = async () => {
+    try {
+      const res = await apiFetch(`/parties?${buildPartyParams(page, pageSize).toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rows: Party[] = Array.isArray(data) ? data : data?.parties ?? []
+        // The current page may no longer exist after deletions or filter changes.
+        const maxPage = Math.max(1, Math.ceil((data.total ?? rows.length) / pageSize))
+        if (page > maxPage) {
+          setPage(maxPage)
+          return
+        }
+        setParties(rows)
+        setTotal(data.total ?? rows.length)
+        setCategories(mergePartyCategories(data.categories ?? []))
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchStats = async () => {
+    try {
+      const res = await apiFetch('/parties/stats')
+      if (res.ok) setStats(await res.json())
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
+  const handleExport = async () => {
+    // per_page=0 returns every matching row for the export.
+    const res = await apiFetch(`/parties?${buildPartyParams(1, 0).toString()}`, { timeoutMs: 30000 })
+    const data = res.ok ? await res.json() : { parties: [] }
+    const allParties: Party[] = Array.isArray(data) ? data : data?.parties ?? []
+    const rows: (string | number)[][] = [
+      [
+        'Name',
+        'Category',
+        'Mobile',
+        'Email',
+        'Party Type',
+        'Balance',
+        'Credit Limit',
+        'Loyalty Points',
+        'Loyalty Cashback',
+        'GSTIN',
+        'PAN',
+        'TAN',
+        'City',
+        'State',
+        'Pincode',
+        'Address',
+        'Notes',
+        'Created',
+        'Last Updated',
+      ],
+      ...allParties.map((p) => [
+        p.name,
+        p.category || '',
+        p.phone || '',
+        p.email || '',
+        p.party_type === 'customer' ? 'Customer' : 'Vendor',
+        p.balance,
+        p.credit_limit,
+        p.party_type === 'customer' ? p.loyalty_points ?? 0 : '',
+        p.party_type === 'customer' ? p.loyalty_cash ?? 0 : '',
+        p.gstin || '',
+        p.pan || '',
+        p.tan || '',
+        p.city || '',
+        p.state || '',
+        p.pincode || '',
+        p.address || '',
+        p.notes || '',
+        p.created_at ? formatDate(p.created_at) : '',
+        p.updated_at ? formatDate(p.updated_at) : '',
+      ]),
+    ]
+    await downloadCsv(`${exportPrefix}_${accountingExportDateStamp()}.csv`, rows, { label: `Exporting ${pluralLabel.toLowerCase()}` })
+  }
+
+  const handleExportPdf = async () => {
+    try {
+      const params = buildPartyParams(1, 0)
+      params.delete('page')
+      params.delete('per_page')
+      const res = await apiFetch(`/parties/pdf?${params.toString()}`, { timeoutMs: 60000 })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error((err as { error?: string }).error || 'Failed to export PDF')
+      }
+      const blob = await res.blob()
+      if (!blob.size) throw new Error('Export was empty')
+      await downloadBlob(`${exportPrefix}_${accountingExportDateStamp()}.pdf`, blob, { label: `Exporting ${pluralLabel.toLowerCase()} PDF` })
+      notifySuccess('PDF exported')
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'PDF export failed')
+    }
+  }
+
+  const handleSelectParty = (id: string) => {
+    // Unchecking a row while "all matching" is active drops back to an
+    // explicit selection of the loaded page.
+    const newSelected = selectAllMatching
+      ? new Set(parties.map((p) => p.id))
+      : new Set(selectedParties)
+    setSelectAllMatching(false)
+    if (newSelected.has(id)) {
+      newSelected.delete(id)
+    } else {
+      newSelected.add(id)
+    }
+    setSelectedParties(newSelected)
+  }
+
+  const handleSelectAll = () => {
+    if (selectAllMatching) {
+      clearSelection()
+      return
+    }
+    if (selectedParties.size === parties.length) {
+      setSelectedParties(new Set())
+    } else {
+      setSelectedParties(new Set(parties.map(p => p.id)))
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedCount === 0) return
+    if (!(await confirm({
+      title: `Delete ${pluralLabel.toLowerCase()}?`,
+      description: `Are you sure you want to delete ${selectedCount} ${pluralLabel.toLowerCase()}? This action cannot be undone.`,
+    }))) return
+    try {
+      const res = await apiFetch('/parties/bulk/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bulkSelectionPayload())
+      })
+      if (res.ok) {
+        clearSelection()
+        fetchParties()
+        fetchStats()
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleBulkUpdateCategory = () => {
+    if (selectedCount === 0 || !bulkCategory) return
+    setIsCategoryUpdateConfirmOpen(true)
+  }
+
+  const confirmCategoryUpdate = async () => {
+    try {
+      const res = await apiFetch('/parties/bulk/update-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...bulkSelectionPayload(), category: bulkCategory })
+      })
+      if (res.ok) {
+        clearSelection()
+        setBulkCategory('')
+        setIsBulkCategoryModalOpen(false)
+        setIsCategoryUpdateConfirmOpen(false)
+        fetchParties()
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleCreateParty = async () => {
+    const errors = validatePartyForm(formData)
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      showErrorToast(firstValidationMessage(errors) || 'Please fix the highlighted fields')
+      return
+    }
+
+    try {
+      const payload = {
+        ...formData,
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        gstin: formData.gstin.trim().toUpperCase(),
+        pan: formData.pan.trim().toUpperCase(),
+        tan: formData.tan.trim().toUpperCase(),
+        pincode: formData.pincode.trim(),
+      }
+      const res = await apiFetch('/parties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (res.ok) {
+        setIsCreateModalOpen(false)
+        resetCreateForm()
+        fetchParties()
+        fetchStats()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showErrorToast(data.error || `Failed to create ${singularLabel.toLowerCase()}`)
+      }
+    } catch (err) {
+      console.error(err)
+      showErrorToast(`Failed to create ${singularLabel.toLowerCase()}`)
+    }
+  }
+
+  const handleEditParty = (party: Party) => {
+    setEditingParty(party)
+    setFormData({
+      name: party.name,
+      phone: party.phone,
+      email: party.email,
+      category: party.category,
+      party_type: party.party_type,
+      opening_balance: party.opening_balance,
+      credit_limit: party.credit_limit,
+      gstin: party.gstin,
+      address: party.address,
+      city: party.city,
+      state: party.state,
+      pincode: party.pincode,
+      tan: party.tan,
+      pan: party.pan,
+      notes: party.notes
+    })
+    setIsEditModalOpen(true)
+  }
+
+  const handleUpdateParty = async () => {
+    if (!editingParty) return
+    try {
+      const res = await apiFetch(`/parties/${editingParty.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      })
+      if (res.ok) {
+        setIsEditModalOpen(false)
+        setEditingParty(null)
+        resetCreateForm()
+        fetchParties()
+        fetchStats()
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const renderPartyActions = (p: Party) => (
+    <>
+      <DropdownMenuItem onClick={() => router.push(`/payments?create=true&party_id=${p.id}`)}>
+        <ArrowDown className="mr-2 h-4 w-4" />
+        Create Payment In
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => router.push(`/payment-outs?create=true&party_id=${p.id}`)}>
+        <ArrowUp className="mr-2 h-4 w-4" />
+        Create Payment Out
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => router.push(`/parties/ledger?party_id=${p.id}`)}>
+        <FileText className="mr-2 h-4 w-4" />
+        View Ledger
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setStatementTarget({ kind: 'single', party: { id: p.id, name: p.name, phone: p.phone } })}>
+        <Send className="mr-2 h-4 w-4" />
+        Send Statement
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => void toggleStatementExclusion(p)}>
+        {statementExcluded.has(p.id) ? (
+          <>
+            <UserCheck className="mr-2 h-4 w-4" />
+            Include in Statements
+          </>
+        ) : (
+          <>
+            <UserX className="mr-2 h-4 w-4" />
+            Exclude from Statements
+          </>
+        )}
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setTelegramParty({ id: p.id, name: p.name, phone: p.phone })}>
+        <Send className="mr-2 h-4 w-4 text-sky-600" />
+        Telegram Link
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => handleEditParty(p)}>
+        <Edit className="mr-2 h-4 w-4" />
+        Edit
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => handleDeleteParty(p.id)} className="text-red-600">
+        <Trash2 className="mr-2 h-4 w-4" />
+        Delete
+      </DropdownMenuItem>
+    </>
+  )
+
+  const handleDeleteParty = async (id: string) => {
+    if (!(await confirm({
+      title: `Delete ${singularLabel.toLowerCase()}?`,
+      description: `Are you sure you want to delete this ${singularLabel.toLowerCase()}? This action cannot be undone.`,
+    }))) return
+    try {
+      const res = await apiFetch(`/parties/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        fetchParties()
+        fetchStats()
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const colSpan = 10 - (typeLocked ? 1 : 0) - (partyType === 'vendor' ? 1 : 0)
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-4">
+        <PageHeader
+          title={pluralLabel}
+          actions={
+            <>
+              <Button
+                type="button"
+                variant={showStats ? 'secondary' : 'outline'}
+                className="gap-1.5"
+                onClick={() => setShowStats((prev) => !prev)}
+                aria-expanded={showStats}
+                aria-controls="parties-stats"
+              >
+                <BarChart3 className="h-4 w-4" />
+                Stats
+                {showStats ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={loading || total === 0}>
+                    <Download className="mr-2 h-4 w-4" /> Export
+                    <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => void handleExport()}>
+                    <Download className="mr-2 h-4 w-4" /> Export CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void handleExportPdf()}>
+                    <FileText className="mr-2 h-4 w-4" /> Export PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Dialog open={isCreateModalOpen} onOpenChange={handleCreateModalChange}>
+            <DialogTrigger asChild>
+              <Button><Plus className="mr-2 h-4 w-4" /> Create {singularLabel}</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Create New {singularLabel}</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="name">Name *</Label>
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => updateFormField('name', e.target.value)}
+                      className={cn(fieldErrors.name && 'border-red-500')}
+                    />
+                    <FieldError message={fieldErrors.name} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="phone">Mobile</Label>
+                    <Input
+                      id="phone"
+                      value={formData.phone}
+                      onChange={(e) => updateFormField('phone', e.target.value)}
+                      className={cn(fieldErrors.phone && 'border-red-500')}
+                      placeholder="10-digit mobile number"
+                    />
+                    <FieldError message={fieldErrors.phone} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => updateFormField('email', e.target.value)}
+                      className={cn(fieldErrors.email && 'border-red-500')}
+                    />
+                    <FieldError message={fieldErrors.email} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="category">Category</Label>
+                    <Select
+                      value={formData.category || undefined}
+                      onValueChange={(v) => updateFormField('category', v)}
+                    >
+                      <SelectTrigger id="category">
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="party_type">Party Type *</Label>
+                  <Select value={formData.party_type} onValueChange={(v) => updateFormField('party_type', v)} disabled={typeLocked}>
+                    <SelectTrigger className={cn(fieldErrors.party_type && 'border-red-500')}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="customer">Customer</SelectItem>
+                      <SelectItem value="vendor">Vendor</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FieldError message={fieldErrors.party_type} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="opening_balance">Opening Balance</Label>
+                    <Input
+                      id="opening_balance"
+                      type="number"
+                      value={formData.opening_balance}
+                      onChange={(e) => updateFormField('opening_balance', parseFloat(e.target.value) || 0)}
+                      className={cn(fieldErrors.opening_balance && 'border-red-500')}
+                    />
+                    <FieldError message={fieldErrors.opening_balance} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="credit_limit">Credit Limit</Label>
+                    <Input
+                      id="credit_limit"
+                      type="number"
+                      min={0}
+                      value={formData.credit_limit}
+                      onChange={(e) => updateFormField('credit_limit', parseFloat(e.target.value) || 0)}
+                      className={cn(fieldErrors.credit_limit && 'border-red-500')}
+                    />
+                    <FieldError message={fieldErrors.credit_limit} />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="gstin">GSTIN</Label>
+                  <Input
+                    id="gstin"
+                    value={formData.gstin}
+                    onChange={(e) => updateFormField('gstin', e.target.value.toUpperCase())}
+                    className={cn(fieldErrors.gstin && 'border-red-500')}
+                    placeholder="15-character GSTIN"
+                  />
+                  <FieldError message={fieldErrors.gstin} />
+                </div>
+                <div>
+                  <Label htmlFor="address">Address</Label>
+                  <Input id="address" value={formData.address} onChange={(e) => updateFormField('address', e.target.value)} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:grid-cols-3">
+                  <div>
+                    <Label htmlFor="city">City</Label>
+                    <Input id="city" value={formData.city} onChange={(e) => updateFormField('city', e.target.value)} />
+                  </div>
+                  <div>
+                    <Label htmlFor="state">State</Label>
+                    <Input id="state" value={formData.state} onChange={(e) => updateFormField('state', e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="pincode">Pincode</Label>
+                    <Input
+                      id="pincode"
+                      value={formData.pincode}
+                      onChange={(e) => updateFormField('pincode', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      className={cn(fieldErrors.pincode && 'border-red-500')}
+                      placeholder="6-digit pincode"
+                    />
+                    <FieldError message={fieldErrors.pincode} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="tan">TAN</Label>
+                    <Input
+                      id="tan"
+                      value={formData.tan}
+                      onChange={(e) => updateFormField('tan', e.target.value.toUpperCase())}
+                      className={cn(fieldErrors.tan && 'border-red-500')}
+                      placeholder="ABCD12345E"
+                    />
+                    <FieldError message={fieldErrors.tan} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="pan">PAN</Label>
+                    <Input
+                      id="pan"
+                      value={formData.pan}
+                      onChange={(e) => updateFormField('pan', e.target.value.toUpperCase())}
+                      className={cn(fieldErrors.pan && 'border-red-500')}
+                      placeholder="ABCDE1234F"
+                    />
+                    <FieldError message={fieldErrors.pan} />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="notes">Notes</Label>
+                  <Input id="notes" value={formData.notes} onChange={(e) => updateFormField('notes', e.target.value)} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => handleCreateModalChange(false)}>Cancel</Button>
+                <Button onClick={handleCreateParty}>Create {singularLabel}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+            </>
+          }
+        />
+
+          <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Edit {singularLabel}</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+                  <div>
+                    <Label htmlFor="edit_name">Name *</Label>
+                    <Input id="edit_name" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_phone">Mobile</Label>
+                    <Input id="edit_phone" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+                  <div>
+                    <Label htmlFor="edit_email">Email</Label>
+                    <Input id="edit_email" type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_category">Category</Label>
+                    <Input id="edit_category" value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="edit_party_type">Party Type *</Label>
+                  <Select value={formData.party_type} onValueChange={v => setFormData({ ...formData, party_type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="customer">Customer</SelectItem>
+                      <SelectItem value="vendor">Vendor</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+                  <div>
+                    <Label htmlFor="edit_opening_balance">Opening Balance</Label>
+                    <Input id="edit_opening_balance" type="number" value={formData.opening_balance} onChange={e => setFormData({ ...formData, opening_balance: parseFloat(e.target.value) || 0 })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_credit_limit">Credit Limit</Label>
+                    <Input id="edit_credit_limit" type="number" value={formData.credit_limit} onChange={e => setFormData({ ...formData, credit_limit: parseFloat(e.target.value) || 0 })} />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="edit_gstin">GSTIN</Label>
+                  <Input id="edit_gstin" value={formData.gstin} onChange={e => setFormData({ ...formData, gstin: e.target.value })} />
+                </div>
+                <div>
+                  <Label htmlFor="edit_address">Address</Label>
+                  <Input id="edit_address" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:grid-cols-3">
+                  <div>
+                    <Label htmlFor="edit_city">City</Label>
+                    <Input id="edit_city" value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_state">State</Label>
+                    <Input id="edit_state" value={formData.state} onChange={e => setFormData({ ...formData, state: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_pincode">Pincode</Label>
+                    <Input id="edit_pincode" value={formData.pincode} onChange={e => setFormData({ ...formData, pincode: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+                  <div>
+                    <Label htmlFor="edit_tan">TAN</Label>
+                    <Input id="edit_tan" value={formData.tan} onChange={e => setFormData({ ...formData, tan: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_pan">PAN</Label>
+                    <Input id="edit_pan" value={formData.pan} onChange={e => setFormData({ ...formData, pan: e.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="edit_notes">Notes</Label>
+                  <Input id="edit_notes" value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>Cancel</Button>
+                <Button onClick={handleUpdateParty}>Update {singularLabel}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isCategoryUpdateConfirmOpen} onOpenChange={setIsCategoryUpdateConfirmOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Confirm Category Update</DialogTitle>
+              </DialogHeader>
+              <p className="py-4 text-sm text-gray-600">
+                Are you sure you want to update the category to "{bulkCategory}" for {selectedCount} {pluralLabel.toLowerCase()}?
+              </p>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCategoryUpdateConfirmOpen(false)}>Cancel</Button>
+                <Button onClick={confirmCategoryUpdate}>Update</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+        {showStats && (
+          <div id="parties-stats" className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <SummaryStat label="All Parties" value={stats.total_parties} />
+            <SummaryStat tone="success" label="To Collect" value={formatCurrency(stats.to_collect)} />
+            <SummaryStat tone="danger" label="To Pay" value={formatCurrency(stats.to_pay)} />
+          </div>
+        )}
+
+        <Card>
+          <CardHeader className="pb-4">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+              <div className="flex gap-2 flex-1 w-full sm:w-auto">
+                <div className="relative flex-1 sm:flex-none">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    placeholder="Search by name, mobile, category..."
+                    className="pl-10"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                <Select value={categoryFilter} onValueChange={handleCategoryFilterChange}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {categories.map(cat => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={balanceFilter} onValueChange={handleBalanceFilterChange}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Balance" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Balances</SelectItem>
+                    <SelectItem value="to_collect">To Collect</SelectItem>
+                    <SelectItem value="to_pay">To Pay</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {selectedCount > 0 && (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setStatementTarget({ kind: 'bulk', selection: bulkSelectionPayload() as BulkStatementSelection, count: selectedCount })
+                    }
+                  >
+                    <Send className="h-4 w-4 mr-2" /> Send Statement ({selectedCount})
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void handleBulkExcludeFromStatements()}>
+                    <UserX className="h-4 w-4 mr-2" /> Exclude from Statements
+                  </Button>
+                  <Dialog open={isBulkCategoryModalOpen} onOpenChange={setIsBulkCategoryModalOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm">Update Category</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Update Category for {selectedCount} {pluralLabel}</DialogTitle>
+                      </DialogHeader>
+                      <div className="py-4">
+                        <Label htmlFor="bulk_category">Category</Label>
+                        <Input id="bulk_category" value={bulkCategory} onChange={e => setBulkCategory(e.target.value)} placeholder="Enter category name" />
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsBulkCategoryModalOpen(false)}>Cancel</Button>
+                        <Button onClick={handleBulkUpdateCategory}>Update</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                  <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+                    <Trash2 className="h-4 w-4 mr-2" /> Delete ({selectedCount})
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex h-32 items-center justify-center">
+                <BrandLoader />
+              </div>
+            ) : (
+              <>
+              {selectAllMatching ? (
+                <div className="mb-2 flex items-center justify-between rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                  <span>All {total} {pluralLabel.toLowerCase()} are selected.</span>
+                  <button type="button" className="font-medium underline" onClick={clearSelection}>
+                    Clear selection
+                  </button>
+                </div>
+              ) : parties.length > 0 && total > parties.length && selectedParties.size === parties.length ? (
+                <div className="mb-2 flex items-center justify-between rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                  <span>All {parties.length} {pluralLabel.toLowerCase()} on this page are selected.</span>
+                  <button type="button" className="font-medium underline" onClick={() => setSelectAllMatching(true)}>
+                    Select all {total} {pluralLabel.toLowerCase()}
+                  </button>
+                </div>
+              ) : null}
+              <div className="table-scroll">
+                <DropdownMenu
+                  modal={false}
+                  open={rowContextMenu !== null}
+                  onOpenChange={(open) => { if (!open) setRowContextMenu(null) }}
+                >
+                  <DropdownMenuTrigger asChild>
+                    <span
+                      aria-hidden
+                      className="pointer-events-none fixed h-0 w-0"
+                      style={{ left: rowContextMenu?.x ?? 0, top: rowContextMenu?.y ?? 0 }}
+                    />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="bottom" sideOffset={2}>
+                    {rowContextMenu && renderPartyActions(rowContextMenu.party)}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-500">
+                      <th className="pb-3 font-medium w-10">
+                        <Checkbox checked={selectAllMatching || (selectedParties.size === parties.length && parties.length > 0)} onCheckedChange={handleSelectAll} />
+                      </th>
+                      <th className="pb-3 font-medium">Name</th>
+                      <th className="pb-3 font-medium">Category</th>
+                      <th className="pb-3 font-medium">Mobile</th>
+                      {!typeLocked && <th className="pb-3 font-medium">Party Type</th>}
+                      {partyType !== 'vendor' && <th className="pb-3 font-medium">Loyalty</th>}
+                      <th className="pb-3 font-medium">Balance</th>
+                      <th className="pb-3 font-medium">Created</th>
+                      <th className="pb-3 font-medium">Last Updated</th>
+                      <th className="pb-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parties.map((p) => (
+                      <tr
+                        key={p.id}
+                        className={cn(
+                          'border-b last:border-0 hover:bg-gray-50',
+                          rowContextMenu?.party.id === p.id && 'bg-gray-50'
+                        )}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          setRowContextMenu({ party: p, x: e.clientX, y: e.clientY })
+                        }}
+                      >
+                        <td className="py-3">
+                          <Checkbox checked={selectedParties.has(p.id)} onCheckedChange={() => handleSelectParty(p.id)} />
+                        </td>
+                        <td className="py-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <BrandAvatar
+                              name={p.name}
+                              tone={p.party_type === 'vendor' ? 'wine' : 'brand'}
+                              title={p.party_type === 'vendor' ? 'Vendor' : 'Customer'}
+                            />
+                            <div className="min-w-0">
+                              <Link
+                                href={`/parties/ledger?party_id=${p.id}`}
+                                title={`Open ${p.name} ledger`}
+                                className="block max-w-[16rem] truncate font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                              >
+                                {p.name}
+                              </Link>
+                              {(p.email || p.city) && (
+                                <p className="max-w-[16rem] truncate text-xs text-gray-500">{p.email || p.city}</p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 text-gray-600">{p.category || '-'}</td>
+                        <td className="py-3">
+                          {p.phone && (
+                            <div className="flex items-center gap-1 text-gray-600">
+                              <Phone className="h-3 w-3" /> {p.phone}
+                            </div>
+                          )}
+                        </td>
+                        {!typeLocked && (
+                          <td className="py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              p.party_type === 'customer' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                            }`}>
+                              {p.party_type === 'customer' ? 'Customer' : 'Vendor'}
+                            </span>
+                          </td>
+                        )}
+                        {partyType !== 'vendor' && (
+                          <td className="py-3 text-gray-600">
+                            {p.party_type === 'customer'
+                              ? (p.loyalty_cash ?? 0) > 0
+                                ? `${(p.loyalty_points ?? 0) > 0 ? `${(p.loyalty_points ?? 0).toLocaleString()} pts · ` : ''}${formatCurrency(p.loyalty_cash ?? 0)}`
+                                : `${(p.loyalty_points ?? 0).toLocaleString()} pts`
+                              : '—'}
+                          </td>
+                        )}
+                        <td className="py-3">
+                          <div className="flex items-center gap-1">
+                            {p.balance > 0 ? (
+                              <>
+                                <ArrowDown className="h-4 w-4 text-green-500" />
+                                <span className="font-medium text-green-600">{formatCurrency(p.balance)}</span>
+                              </>
+                            ) : p.balance < 0 ? (
+                              <>
+                                <ArrowUp className="h-4 w-4 text-red-500" />
+                                <span className="font-medium text-red-600">{formatCurrency(Math.abs(p.balance))}</span>
+                              </>
+                            ) : (
+                              <span className="text-gray-600">{formatCurrency(0)}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 whitespace-nowrap text-gray-600">
+                          {p.created_at ? formatDate(p.created_at) : '—'}
+                        </td>
+                        <td className="py-3 whitespace-nowrap text-gray-600">
+                          {p.updated_at ? formatDate(p.updated_at) : '—'}
+                        </td>
+                        <td className="py-3">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">{renderPartyActions(p)}</DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </tr>
+                    ))}
+                    {parties.length === 0 && (
+                      <tr>
+                        <td colSpan={colSpan} className="py-8 text-center text-gray-500">
+                          No {pluralLabel.toLowerCase()} found
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              </>
+            )}
+            {!loading && (
+              <PaginationControls
+                page={page}
+                totalPages={totalPages}
+                totalItems={total}
+                pageSize={pageSize}
+                onPageChange={setPage}
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+      {confirmDialog}
+      <SendStatementDialog
+        open={statementTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setStatementTarget(null)
+        }}
+        target={statementTarget}
+      />
+      <TelegramLinkDialog
+        open={telegramParty !== null}
+        onOpenChange={(open) => {
+          if (!open) setTelegramParty(null)
+        }}
+        party={telegramParty}
+      />
+    </DashboardLayout>
+  )
+}

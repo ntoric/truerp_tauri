@@ -5,6 +5,7 @@ import { apiFetch, useAuth } from '@/hooks/useAuth'
 import { isSuperAdmin } from '@/lib/roles'
 import { clearActiveStoreId, getActiveStoreId, setActiveStoreId } from '@/lib/storeSelection'
 import { getDesktopAppVersion } from '@/lib/desktopBridge'
+import { applyStoreForceUpdatePolicy } from '@/lib/desktopAutoUpdate'
 
 // Report the Tauri app version for the resolved store so super admins can see
 // it on the Stores page. Fire-and-forget: no-op in browsers, and a 404 from an
@@ -31,6 +32,7 @@ export interface StoreSummary {
   phone?: string
   email?: string
   is_active: boolean
+  force_update?: boolean
   app_version?: string | null
   app_version_seen_at?: string | null
   user_count?: number
@@ -55,18 +57,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeStore, setActiveStoreState] = useState<StoreSummary | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const canSwitchStores = isSuperAdmin(user?.role)
+  // Super admins can switch between all stores; regular users get the
+  // selector when they're assigned to more than one active store.
+  const canSwitchStores =
+    isSuperAdmin(user?.role) || stores.filter((s) => s.is_active).length > 1
 
   const applyActiveStore = useCallback((list: StoreSummary[], preferredId?: string | null) => {
     if (list.length === 0) {
       setActiveStoreState(null)
       clearActiveStoreId()
+      applyStoreForceUpdatePolicy(null)
       return
     }
     const saved = preferredId || getActiveStoreId()
     const match = list.find((s) => s.id === saved && s.is_active) || list.find((s) => s.is_active) || list[0]
     setActiveStoreState(match)
     setActiveStoreId(match.id)
+    applyStoreForceUpdatePolicy(match)
   }, [])
 
   const refreshStores = useCallback(async () => {

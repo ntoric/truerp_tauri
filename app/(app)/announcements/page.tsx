@@ -23,7 +23,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Crop, Loader2, Pencil, Plus, Trash2, Upload } from 'lucide-react'
+import { Crop, Loader2, Megaphone, Pencil, Plus, Trash2, Upload } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { isSuperAdmin } from '@/lib/roles'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -281,7 +282,7 @@ export default function AnnouncementsPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-5xl space-y-3">
+      <div className="space-y-3">
         <PageHeader
           title="Announcements"
           actions={
@@ -296,9 +297,18 @@ export default function AnnouncementsPage() {
         </p>
 
         {items.length === 0 ? (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-gray-500">
-              No announcements yet. Create one to broadcast it to all users.
+          <Card className="overflow-hidden">
+            <CardContent className="p-4">
+              <PremiumEmpty
+                icon={Megaphone}
+                title="No announcements yet"
+                hint="Publish your first announcement — live ones appear to every signed-in user as a toast card on the dashboard."
+                action={
+                  <Button size="sm" onClick={openCreate}>
+                    <Plus className="mr-1.5 h-4 w-4" /> New announcement
+                  </Button>
+                }
+              />
             </CardContent>
           </Card>
         ) : (

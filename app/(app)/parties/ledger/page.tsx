@@ -26,7 +26,7 @@ import {
   fetchPartyLedger,
   partyLedgerModeLabel,
   partyLedgerRange,
-  printPartyLedger,
+  downloadPartyLedgerPdf,
   type PartyLedger,
   type PartyLedgerEntry,
   type PartyLedgerPeriod,
@@ -37,13 +37,17 @@ import {
   Download,
   Mail,
   MessageCircle,
-  Printer,
+  FileDown,
   Receipt,
   Star,
   TrendingUp,
   Wallet,
   AlertTriangle,
+  Send,
 } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
+import SendStatementDialog from '@/components/parties/SendStatementDialog'
+import TelegramLinkDialog from '@/components/parties/TelegramLinkPanel'
 
 const FAVOURITE_KEY = 'party-ledger'
 
@@ -95,6 +99,8 @@ export default function PartyLedgerPage() {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<'excel' | 'pdf' | null>(null)
   const [favourites, setFavourites] = useState<Set<string>>(new Set())
+  const [sendOpen, setSendOpen] = useState(false)
+  const [telegramOpen, setTelegramOpen] = useState(false)
 
   useEffect(() => {
     setFavourites(new Set(loadReportFavourites()))
@@ -158,6 +164,14 @@ export default function PartyLedgerPage() {
   const docLabel = isVendor ? 'Total Purchase Amount' : 'Total Sales Amount'
   const moneyLabel = isVendor ? 'Total Paid Amount' : 'Total Received Amount'
 
+  const statementTarget = useMemo(
+    () =>
+      ledger
+        ? ({ kind: 'single', party: { id: ledger.party.id, name: ledger.party.name, phone: ledger.party.phone } } as const)
+        : null,
+    [ledger]
+  )
+
   const shareText = ledger ? buildPartyLedgerShareText(ledger) : ''
 
   const shareWhatsApp = () => {
@@ -184,13 +198,14 @@ export default function PartyLedgerPage() {
     }
   }
 
-  const printLedger = async () => {
-    if (!partyId) return
+  const downloadPdf = async () => {
+    if (!partyId || !ledger) return
     setBusy('pdf')
     try {
-      await printPartyLedger(partyId, fromDate, toDate)
+      await downloadPartyLedgerPdf(partyId, fromDate, toDate, ledger.party.name)
+      notifySuccess('PDF downloaded')
     } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Print failed')
+      notifyError(err instanceof Error ? err.message : 'PDF download failed')
     } finally {
       setBusy(null)
     }
@@ -220,9 +235,23 @@ export default function PartyLedgerPage() {
                 />
                 Favourite
               </Button>
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700"
+                onClick={() => setSendOpen(true)}
+                disabled={!ledger || !fromDate || !toDate}
+                title={!fromDate || !toDate ? 'Pick a period with a start and end date to send a statement' : undefined}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Send Statement
+              </Button>
               <Button variant="outline" size="sm" onClick={shareWhatsApp} disabled={!ledger}>
                 <MessageCircle className="mr-2 h-4 w-4" />
                 WhatsApp
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setTelegramOpen(true)} disabled={!ledger}>
+                <Send className="mr-2 h-4 w-4 text-sky-600" />
+                Telegram Link
               </Button>
               <Button variant="outline" size="sm" onClick={shareEmail} disabled={!ledger}>
                 <Mail className="mr-2 h-4 w-4" />
@@ -232,9 +261,9 @@ export default function PartyLedgerPage() {
                 <Download className="mr-2 h-4 w-4" />
                 {busy === 'excel' ? 'Exporting…' : 'Download Excel'}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => void printLedger()} disabled={!ledger || busy !== null}>
-                <Printer className="mr-2 h-4 w-4" />
-                {busy === 'pdf' ? 'Preparing…' : 'Print PDF'}
+              <Button variant="outline" size="sm" onClick={() => void downloadPdf()} disabled={!ledger || busy !== null}>
+                <FileDown className="mr-2 h-4 w-4" />
+                {busy === 'pdf' ? 'Downloading…' : 'Download PDF'}
               </Button>
             </>
           }
@@ -324,7 +353,7 @@ export default function PartyLedgerPage() {
           <CardContent className="p-0">
             {loading ? (
               <div className="flex h-64 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : !ledger ? (
               <div className="flex h-64 items-center justify-center text-sm text-gray-500">
@@ -382,6 +411,13 @@ export default function PartyLedgerPage() {
           </CardContent>
         </Card>
       </div>
+      <SendStatementDialog
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        target={statementTarget}
+        initialRange={fromDate && toDate ? { from_date: fromDate, to_date: toDate } : undefined}
+      />
+      <TelegramLinkDialog open={telegramOpen} onOpenChange={setTelegramOpen} party={statementTarget?.party ?? null} />
     </DashboardLayout>
   )
 }

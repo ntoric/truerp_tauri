@@ -8,8 +8,10 @@ import BottomMenubar, { shouldReserveBottomMenubarSpace } from './BottomMenubar'
 import NavigationProgress from './NavigationProgress'
 import ComingSoonPage from '@/components/ComingSoonPage'
 import AnnouncementToaster from '@/components/AnnouncementToaster'
+import AttendanceReminderDialog from '@/components/AttendanceReminderDialog'
 import { useAuth } from '@/hooks/useAuth'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
+import { useAppearance } from '@/hooks/useAppearance'
 import { KeyboardShortcutsProvider } from '@/hooks/useKeyboardShortcuts'
 import { pageLabelForPath } from '@/lib/pageFeatures'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -26,10 +28,10 @@ function isShellLessPath(pathname: string) {
 
 function AuthBootSkeleton() {
   return (
-    <div className="flex min-h-screen bg-[#f6f7fb]">
+    <div className="flex min-h-screen bg-background">
       {/* Floating dock placeholder */}
       <div className="hidden shrink-0 p-2 pr-0 md:block">
-        <div className="flex h-full w-14 flex-col items-center gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,hsl(var(--theme-900)/0.95),hsl(var(--theme-950)/0.98))] px-2 py-4 shadow-xl shadow-black/20">
+        <div className="flex h-full w-14 flex-col items-center gap-3 rounded-3xl bg-brand-rail px-2 py-4 shadow-gr-md">
           <Skeleton dark className="h-8 w-8 rounded-lg" />
           <div className="mt-2 flex flex-col items-center gap-2.5">
             {Array.from({ length: 7 }).map((_, i) => (
@@ -41,7 +43,7 @@ function AuthBootSkeleton() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Floating header placeholder */}
         <div className="px-2 pt-2 sm:px-3">
-          <div className="flex h-12 items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 shadow-[0_1px_2px_rgba(16,24,40,0.04)] backdrop-blur-md">
+          <div className="flex h-12 items-center justify-between rounded-2xl bg-card px-4 shadow-gr-sm">
             <Skeleton className="h-7 w-36 rounded-lg" />
             <div className="flex items-center gap-2">
               <Skeleton delayMs={80} className="h-7 w-20 rounded-full" />
@@ -74,6 +76,7 @@ export default function DashboardLayout({
   const { user, loading, token, refreshProfile } = useAuth()
   const pathname = usePathname()
   const { isPageEnabled, loading: featuresLoading } = usePageFeatures()
+  const { prefs } = useAppearance()
 
   useEffect(() => {
     if (!loading && !user && !token) {
@@ -91,7 +94,15 @@ export default function DashboardLayout({
   // collapsed rail and the menu overlays when hovered. On small screens the
   // sidebar is hidden and BottomMenubar reserves space instead.
   const isPosPage = pathname === '/pos' || pathname.startsWith('/pos/')
-  const contentOffset = isPosPage ? 'md:ml-64' : 'md:ml-[4.5rem]'
+  const sidebarOpen = isPosPage || prefs.sidebarStyle === 'expanded'
+  const onRight = prefs.sidebarPosition === 'right'
+  const contentOffset = onRight
+    ? sidebarOpen
+      ? 'md:mr-64'
+      : 'md:mr-[4.5rem]'
+    : sidebarOpen
+      ? 'md:ml-64'
+      : 'md:ml-[4.5rem]'
   const showShell =
     !nested && !!user && !loading && !hideNavigation && !isShellLessPath(pathname)
   const reserveBottomNav = showShell && shouldReserveBottomMenubarSpace(pathname)
@@ -104,7 +115,7 @@ export default function DashboardLayout({
   if (loading || !user) {
     if (!loading && !user && token) {
       return (
-        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f6f7fb] p-6">
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background p-6">
           <WifiOff className="h-12 w-12 text-gray-400" />
           <div className="text-center">
             <h2 className="text-lg font-semibold text-gray-700">Unable to reach server</h2>
@@ -114,7 +125,7 @@ export default function DashboardLayout({
           </div>
           <button
             onClick={() => refreshProfile()}
-            className="inline-flex items-center gap-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-button-gradient px-4 text-sm font-medium text-primary-foreground transition-all hover:-translate-y-px hover:shadow-gr-accent"
           >
             <RefreshCw className="h-4 w-4" />
             Retry
@@ -139,7 +150,7 @@ export default function DashboardLayout({
     return (
       <DashboardShellContext.Provider value={true}>
         {hideNavigation ? (
-          <div className="min-h-screen bg-[#f6f7fb]">
+          <div className="min-h-screen bg-background">
             <main className="app-main p-4 sm:p-5">{content}</main>
           </div>
         ) : (
@@ -152,7 +163,7 @@ export default function DashboardLayout({
   return (
     <DashboardShellContext.Provider value={true}>
       <KeyboardShortcutsProvider>
-        <div className="min-h-screen bg-[#f6f7fb]">
+        <div className="min-h-screen bg-background">
           <Suspense fallback={null}>
             <NavigationProgress />
           </Suspense>
@@ -171,6 +182,7 @@ export default function DashboardLayout({
           </div>
           <BottomMenubar />
           <AnnouncementToaster />
+          <AttendanceReminderDialog />
         </div>
       </KeyboardShortcutsProvider>
     </DashboardShellContext.Provider>

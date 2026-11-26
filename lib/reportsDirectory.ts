@@ -98,6 +98,7 @@ export const REPORT_GROUPS: ReportGroup[] = [
     entries: [
       { key: 'product-report', name: 'Item Report (Product Wise Sales)', href: '/reports?tab=products', tags: ['item', 'summary'] },
       { key: 'stock-report', name: 'Stock Report', href: '/reports/stock', tags: ['item', 'summary'] },
+      { key: 'stock-movement', name: 'Stock Movement', href: '/inventory/movements', tags: ['item'] },
       { key: 'inventory-report', name: 'Inventory Valuation', href: '/reports?tab=inventory', tags: ['item', 'summary'] },
       { key: 'low-stock', name: 'Low Stock', href: '/inventory', tags: ['item'] },
       { key: 'item-categories', name: 'Item Categories', href: '/categories', tags: ['item', 'category'] },
@@ -111,6 +112,7 @@ export const REPORT_GROUPS: ReportGroup[] = [
       { key: 'customer-report', name: 'Party Report (Customer Wise)', href: '/reports?tab=customers', tags: ['party', 'summary'] },
       { key: 'receivable-ageing', name: 'Receivable Ageing Report', href: '/reports?tab=outstanding', tags: ['party', 'payment'] },
       { key: 'party-ledger', name: 'Party Statement (Ledger)', href: '/parties/ledger', tags: ['party'] },
+      { key: 'party-balance', name: 'Party Balance Report (Opening & Closing)', href: '/reports/party-balance', tags: ['party', 'summary'] },
       { key: 'party-list', name: 'Party Ledger & Balances', href: '/parties', tags: ['party'] },
       { key: 'loyalty-report', name: 'Loyalty Program', href: '/loyalty', tags: ['party', 'summary'] },
     ],

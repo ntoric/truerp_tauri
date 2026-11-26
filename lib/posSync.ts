@@ -98,6 +98,7 @@ export async function syncPendingPOSSales(): Promise<{ synced: number; failed: n
       ...(sale.additional_charges ? { additional_charges: sale.additional_charges } : {}),
       ...(sale.additional_charge_items?.length ? { additional_charge_items: sale.additional_charge_items } : {}),
       ...(sale.loyalty_points_redeemed ? { loyalty_points_redeemed: sale.loyalty_points_redeemed } : {}),
+      ...(sale.loyalty_cash_redeemed ? { loyalty_cash_redeemed: sale.loyalty_cash_redeemed } : {}),
       items: sale.items || [],
     }
 

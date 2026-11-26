@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { useDiscount } from '@/hooks/useDiscount'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageSkeleton from '@/components/layout/PageSkeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,14 +20,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import ProductItemCodeField from '@/components/ProductItemCodeField'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
-import { Package, Plus, Search, Trash2, Download, Upload, Printer, Edit, MoreVertical, Eye, Power, Loader2 } from 'lucide-react'
+import { Package, Plus, Search, Trash2, Download, Upload, Printer, Edit, MoreVertical, Eye, Power, Loader2, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { asArray, cn, skuFromProductName } from '@/lib/utils'
 import { DEFAULT_CATEGORY_NAME, pickDefaultCategoryName } from '@/lib/defaultCategories'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { accountingExportDateStamp, downloadBlob } from '@/lib/accountingExport'
-import { isProductGstEnabled } from '@/lib/numbers'
+import { formatQty, isProductGstEnabled } from '@/lib/numbers'
 import { runWithExportProgress } from '@/lib/exportProgress'
 import ProductImageField from '@/components/ProductImageField'
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
@@ -57,6 +59,7 @@ import {
 } from '@/lib/weighingScale'
 import { lookupProductsByPlu, fetchNextProductPlu } from '@/lib/itemCode'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import BrandLoader from '@/components/BrandLoader'
 
 interface Category {
   id: string
@@ -100,6 +103,7 @@ interface Product {
   is_service: boolean
   low_stock_alert: boolean
   min_stock: number
+  stock_qty?: number
   hsn_code: string
   description: string
   enable_batching: boolean
@@ -109,10 +113,57 @@ interface Product {
   is_active: boolean
 }
 
+type ProductSortKey = 'name' | 'category' | 'sale_price' | 'purchase_price' | 'stock'
+type SortDir = 'asc' | 'desc'
+
+function SortableProductHead({
+  label,
+  column,
+  sortKey,
+  sortDir,
+  onSort,
+  className,
+}: {
+  label: string
+  column: ProductSortKey
+  sortKey: ProductSortKey | ''
+  sortDir: SortDir
+  onSort: (key: ProductSortKey) => void
+  className?: string
+}) {
+  const active = sortKey === column
+  return (
+    <TableHead
+      className={className}
+      aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className="inline-flex items-center gap-1 hover:text-gray-800"
+        title={`Sort by ${label} ${active && sortDir === 'asc' ? 'descending' : 'ascending'}`}
+        aria-label={`Sort by ${label} ${active && sortDir === 'asc' ? 'descending' : 'ascending'}`}
+      >
+        {label}
+        {active ? (
+          sortDir === 'asc' ? (
+            <ChevronUp className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5" />
+          )
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 opacity-40" />
+        )}
+      </button>
+    </TableHead>
+  )
+}
+
 export default function ProductsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, loading: authLoading } = useAuth()
+  const { isDiscountEnabled } = useDiscount()
   const canUseCameraBarcodeScanner = isSuperAdmin(user?.role)
   const {
     fieldErrors,
@@ -136,6 +187,8 @@ export default function ProductsPage() {
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [debouncedSearch, setDebouncedSearch] = useState<string>('')
   const [page, setPage] = useState(1)
+  const [sortKey, setSortKey] = useState<ProductSortKey | ''>('')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [total, setTotal] = useState(0)
   const pageSize = DEFAULT_PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -212,7 +265,7 @@ export default function ProductsPage() {
   }, [searchParams, router])
   useEffect(() => { if (!authLoading && user) fetchBusinessSettings() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchUnits() }, [authLoading, user])
-  useEffect(() => { if (!authLoading && user) fetchProducts() }, [authLoading, user, selectedCategory, selectedUnit, debouncedSearch, page])
+  useEffect(() => { if (!authLoading && user) fetchProducts() }, [authLoading, user, selectedCategory, selectedUnit, debouncedSearch, page, sortKey, sortDir])
 
   // Debounce the search box so each keystroke doesn't hit the API.
   useEffect(() => {
@@ -332,6 +385,10 @@ export default function ProductsPage() {
       if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory)
       if (selectedUnit && selectedUnit !== 'all') params.append('unit', selectedUnit)
       if (debouncedSearch) params.append('search', debouncedSearch)
+      if (sortKey) {
+        params.append('sort', sortKey)
+        params.append('order', sortDir)
+      }
       params.append('page', String(page))
       params.append('per_page', String(pageSize))
       const res = await apiFetch(`/products?${params.toString()}`)
@@ -758,6 +815,16 @@ export default function ProductsPage() {
     setShowPreviewDialog(true)
   }
 
+  const handleSort = (key: ProductSortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+    setPage(1)
+  }
+
   const updateNewItem = (patch: Partial<typeof newItem> | ((prev: typeof newItem) => typeof newItem), clearField?: string) => {
     setNewItem((prev) => (typeof patch === 'function' ? patch(prev) : { ...prev, ...patch }))
     if (clearField) clearFieldError(clearField)
@@ -850,7 +917,7 @@ export default function ProductsPage() {
       const res = await apiFetch('/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newItem)
+        body: JSON.stringify({ ...newItem, discount: isDiscountEnabled ? newItem.discount : '' })
       })
       if (res.ok) {
         setShowCreateModal(false)
@@ -1215,21 +1282,23 @@ export default function ProductsPage() {
                       )}
                     </div>
                     
-                    <div className="space-y-2">
-                      <Label htmlFor="discount">Discount on Sale Price</Label>
-                      <Input
-                        id="discount"
-                        type="text"
-                        value={newItem.discount}
-                        onChange={(e) => updateNewItem({ discount: e.target.value }, 'discount')}
-                        placeholder="10% or 100"
-                        className={cn(fieldErrors.discount && 'border-red-500')}
-                      />
-                      <FieldError message={fieldErrors.discount} />
-                      <p className="text-xs text-gray-500">
-                        Enter percentage (e.g., 10%) for percentage discount, or amount (e.g., 100) for fixed amount discount
-                      </p>
-                    </div>
+                    {isDiscountEnabled && (
+                      <div className="space-y-2">
+                        <Label htmlFor="discount">Discount on Sale Price</Label>
+                        <Input
+                          id="discount"
+                          type="text"
+                          value={newItem.discount}
+                          onChange={(e) => updateNewItem({ discount: e.target.value }, 'discount')}
+                          placeholder="10% or 100"
+                          className={cn(fieldErrors.discount && 'border-red-500')}
+                        />
+                        <FieldError message={fieldErrors.discount} />
+                        <p className="text-xs text-gray-500">
+                          Enter percentage (e.g., 10%) for percentage discount, or amount (e.g., 100) for fixed amount discount
+                        </p>
+                      </div>
+                    )}
                   </TabsContent>
 
                   <TabsContent value="settings" className="space-y-4 mt-4">
@@ -1289,7 +1358,7 @@ export default function ProductsPage() {
                   </TabsContent>
                 </Tabs>
                 
-                <div className="flex justify-end gap-2 pt-4 border-t">
+                <div className="sticky -bottom-6 z-10 -mx-6 -mb-6 flex justify-end gap-2 border-t bg-card px-6 py-4 sm:rounded-b-3xl">
                   <Button variant="outline" onClick={() => setShowCreateModal(false)}>Cancel</Button>
                   <Button variant="outline" onClick={handleSaveDraft}>Save as Draft</Button>
                   <Button onClick={handleCreateItem} disabled={creating || itemCodeDuplicate.isDuplicate || pluDuplicate.isDuplicate}>
@@ -1308,7 +1377,7 @@ export default function ProductsPage() {
                 </DialogHeader>
                 {loadingDraft ? (
                   <div className="flex justify-center py-8">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                    <BrandLoader />
                   </div>
                 ) : drafts.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">No drafts saved</div>
@@ -1405,11 +1474,12 @@ export default function ProductsPage() {
                       onCheckedChange={handleSelectAll}
                     />
                   </TableHead>
-                  <TableHead>Product Name</TableHead>
+                  <SortableProductHead label="Product Name" column="name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                   <TableHead>SKU</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Sale Price</TableHead>
-                  <TableHead className="text-right">Purchase Price</TableHead>
+                  <SortableProductHead label="Category" column="category" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                  <SortableProductHead label="Sale Price" column="sale_price" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right" />
+                  <SortableProductHead label="Purchase Price" column="purchase_price" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right" />
+                  <SortableProductHead label="Stock" column="stock" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right" />
                   <TableHead className="text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1422,11 +1492,28 @@ export default function ProductsPage() {
                         onCheckedChange={() => handleSelectItem(p)}
                       />
                     </TableCell>
-                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <button
+                        type="button"
+                        className="font-medium text-blue-600 hover:underline text-left"
+                        onClick={() => handlePreviewProduct(p)}
+                      >
+                        {p.name}
+                      </button>
+                    </TableCell>
                     <TableCell>{p.sku}</TableCell>
                     <TableCell>{p.category}</TableCell>
                     <TableCell className="text-right">{formatCurrency(p.sale_price)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(p.purchase_price)}</TableCell>
+                    <TableCell className="text-right">
+                      {p.is_service ? (
+                        '—'
+                      ) : (
+                        <span className={cn(p.low_stock_alert && (p.stock_qty ?? 0) <= p.min_stock && 'text-red-600 font-medium')}>
+                          {formatQty(p.stock_qty ?? 0)}{p.unit ? ` ${p.unit}` : ''}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -1460,7 +1547,17 @@ export default function ProductsPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {products.length === 0 && <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-500">No products found</TableCell></TableRow>}
+                {products.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="px-4 py-4">
+                      <PremiumEmpty
+                        icon={Package}
+                        title="No products found"
+                        hint="Add products or services to start billing them."
+                      />
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
             <PaginationControls

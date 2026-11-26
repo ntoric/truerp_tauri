@@ -16,7 +16,7 @@ export default function PublicDesignKitPage() {
   const { resolvedMode, setMode } = useThemeMode()
 
   return (
-    <div className="min-h-screen bg-[#f6f7fb] dark:bg-background">
+    <div className="min-h-screen bg-background dark:bg-background">
       <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/80 backdrop-blur-md dark:border-border/70 dark:bg-background/90">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4">
           <div className="flex min-w-0 items-center gap-3">

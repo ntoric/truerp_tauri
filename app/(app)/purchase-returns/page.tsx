@@ -16,11 +16,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
-import { Plus, Search, MoreVertical, Edit, Trash2, CheckCircle, Download } from 'lucide-react'
+import { Plus, Search, MoreVertical, Edit, Trash2, CheckCircle, Download, RotateCcw } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { usePagination } from '@/hooks/usePagination'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import PaginationControls from '@/components/ui/pagination-controls'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
+import BrandLoader from '@/components/BrandLoader'
 
 interface PurchaseReturn {
   id: string
@@ -184,7 +186,7 @@ export default function PurchaseReturnsPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <div className="table-scroll">
@@ -247,8 +249,12 @@ export default function PurchaseReturnsPage() {
                     ))}
                     {filteredReturns.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-gray-500">
-                          No purchase returns found
+                        <td colSpan={7} className="px-4 py-4">
+                          <PremiumEmpty
+                            icon={RotateCcw}
+                            title="No purchase returns found"
+                            hint="Items returned to suppliers will appear here."
+                          />
                         </td>
                       </tr>
                     )}

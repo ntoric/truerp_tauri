@@ -69,6 +69,11 @@ description = "Allow downloading and installing TruERP desktop updates"
 commands.allow = ["download_and_install_update"]
 
 [[permission]]
+identifier = "allow-set-force-update"
+description = "Allow telling the shell whether the active store forces auto updates"
+commands.allow = ["set_force_update"]
+
+[[permission]]
 identifier = "allow-pos-queue"
 description = "Allow reading and writing the durable desktop POS sales queue"
 commands.allow = [

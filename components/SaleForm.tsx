@@ -13,11 +13,12 @@ import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { cn, formatCurrency } from '@/lib/utils'
-import { limitDecimalInput, parseItemNumber, parseMoney, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
-import { Plus, Trash2, Loader2, Save, Search, X, Edit2, Package, FileText, Gift, Scale, Printer, Copy, ChevronRight } from 'lucide-react'
+import { limitDecimalInput, formatQty, parseItemNumber, parseMoney, productSaleUnitPrice, productTaxRate, isProductGstEnabled } from '@/lib/numbers'
+import { Plus, Trash2, Loader2, Save, Search, X, Edit2, Package, FileText, Gift, Scale, Printer, Copy, ChevronRight, Tag } from 'lucide-react'
 import BarcodeScannerInput from '@/components/ui/BarcodeScannerInput'
 import { ProductCombobox } from '@/components/ui/ProductCombobox'
 import { notifyError, notifySuccess } from '@/lib/notify'
@@ -29,7 +30,15 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { useBankAccounts } from '@/hooks/useBankAccounts'
 import ItemsEmptyState, { type PastedItemRow } from '@/components/ItemsEmptyState'
 import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
-import { computeLoyaltyDiscount, estimatePointsEarned } from '@/lib/loyalty'
+import {
+  computeLoyaltyDiscount,
+  estimateLoyaltyEarnedOnSale,
+  formatLoyaltyValue,
+  isCashLoyalty,
+  loyaltyAvailable,
+  loyaltyRedeemPayload,
+  parseLoyaltyRedeemInput,
+} from '@/lib/loyalty'
 import type { LoyaltySettings } from '@/lib/loyalty-types'
 import InvoiceCustomFieldsForm, {
   type InvoiceCustomFieldDefinition,
@@ -42,12 +51,16 @@ import CreateProductDialog, { type CreatedProduct } from '@/components/CreatePro
 import BulkCreateProductsDialog from '@/components/BulkCreateProductsDialog'
 import { isWeightBasedUnit } from '@/lib/weighingScale'
 import { looksLikeScaleBarcode, productsMatchingScanCode, resolveScaleBarcodeForPos, normalizeScannedBarcode } from '@/lib/weighingScaleBarcode'
-import { fetchProductBatches, formatBatchLabel, type ProductBatchStock } from '@/lib/productBatches'
+import { fetchBatchesForProducts, fetchProductBatches, type ProductBatchStock } from '@/lib/productBatches'
+import { BatchPicker } from '@/components/ui/BatchPicker'
 import {
   PAYMENT_METHODS,
+  RECEIPT_PAYMENT_METHODS,
+  UNPAID_METHOD,
   appendPaymentSplit,
   formatPaymentMethod,
   isInitialInvestmentMethod,
+  isUnpaidMethod,
   splitsFromInvoice,
   sumPaymentSplits,
 } from '@/lib/paymentSplits'
@@ -58,6 +71,12 @@ import {
   sanitizeAdditionalChargeItems,
   sumAdditionalChargeItems,
 } from '@/lib/additionalCharges'
+import {
+  autoDiscountEligible,
+  computeAutoDiscount,
+  describeAutoDiscount,
+} from '@/lib/saleDiscount'
+import { useDiscount } from '@/hooks/useDiscount'
 
 interface Party {
   id: string
@@ -69,6 +88,8 @@ interface Party {
   party_type: string
   category?: string
   loyalty_points?: number
+  loyalty_cash?: number
+  loyalty_excluded?: boolean
 }
 
 interface Product {
@@ -106,6 +127,15 @@ interface InvoiceItem {
   batch_no: string
   exp_date: string
   enable_batching?: boolean
+}
+
+interface StockShortage {
+  product_id: string
+  product_name: string
+  batch_no?: string
+  available_qty: number
+  requested_qty: number
+  resulting_qty: number
 }
 
 const ITEM_NUMBER_FIELDS: (keyof InvoiceItem)[] = [
@@ -156,20 +186,30 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const [notes, setNotes] = useState('')
   const [terms, setTerms] = useState('')
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
+  // Discount already saved on the document being edited. Kept allowed even
+  // when it exceeds the max-discount limit set after it was created.
+  const [storedInvoiceDiscount, setStoredInvoiceDiscount] = useState(0)
+  const { settings: saleDiscount, isDiscountEnabled } = useDiscount()
+  const [autoDiscountApplied, setAutoDiscountApplied] = useState(false)
+  const [autoDiscountValue, setAutoDiscountValue] = useState('')
   const [chargeItems, setChargeItems] = useState<AdditionalChargeItem[]>([])
   const [autoRoundOff, setAutoRoundOff] = useState(true)
   const [amountPaidEdited, setAmountPaidEdited] = useState(false)
-  const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: number }[]>([
-    { mode: 'cash', amount: 0 },
+  const [paymentSplits, setPaymentSplits] = useState<{ mode: string; amount: number; bank_account_id: string | null }[]>([
+    { mode: 'cash', amount: 0, bank_account_id: null },
   ])
-  const { accounts: bankAccounts } = useBankAccounts()
+  const { accounts: bankAccounts, loading: bankAccountsLoading } = useBankAccounts()
   const { getDepositHint } = usePaymentMethodMappings()
   const [signature, setSignature] = useState('')
   const [businessSignature, setBusinessSignature] = useState('')
   const [items, setItems] = useState<InvoiceItem[]>([
     { product_id: '', description: '', hsn_code: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 0, unit: 'PCS', cgst: 0, sgst: 0, igst: 0, total: 0, sale_price_with_tax: false, batch_no: '', exp_date: '', enable_batching: false }
   ] as InvoiceItem[])
-  const [lineBatches, setLineBatches] = useState<Record<number, ProductBatchStock[]>>({})
+  // Batches per product (FEFO-ordered), keyed by product id so line removal/reorder can't desync them.
+  const [productBatches, setProductBatches] = useState<Record<string, ProductBatchStock[]>>({})
+  const batchRequestsRef = useRef<Record<string, Promise<ProductBatchStock[]>>>({})
+  // Batch chosen per product in the Select Product modal, applied when the product is added.
+  const [modalBatches, setModalBatches] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showProductModal, setShowProductModal] = useState(false)
@@ -260,6 +300,19 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   useEffect(() => {
     fetchData()
   }, [])
+
+  // Drop per-split account selections that no longer resolve to a known
+  // account (e.g. deleted since the draft was saved).
+  useEffect(() => {
+    if (bankAccountsLoading) return
+    setPaymentSplits((prev) =>
+      prev.map((split) =>
+        split.bank_account_id && !bankAccounts.some((a) => a.id === split.bank_account_id)
+          ? { ...split, bank_account_id: null }
+          : split
+      )
+    )
+  }, [bankAccounts, bankAccountsLoading])
 
   useEffect(() => {
     if (date && paymentTerms) {
@@ -427,10 +480,15 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       igst: 0,
       total: 0,
       sale_price_with_tax: isProductGstEnabled(product) ? (product.sale_price_with_tax ?? false) : false,
-      batch_no: '',
-      exp_date: '',
+      ...modalBatchFields(product.id),
       enable_batching: product.enable_batching ?? false,
     }
+  }
+
+  const modalBatchFields = (productId: string): Pick<InvoiceItem, 'batch_no' | 'exp_date'> => {
+    const batchNo = modalBatches[productId] || ''
+    const batch = batchNo ? (productBatches[productId] ?? []).find((b) => b.batch_no === batchNo) : undefined
+    return { batch_no: batchNo, exp_date: batch?.exp_date ? String(batch.exp_date).slice(0, 10) : '' }
   }
 
   const applyTaxToInvoiceItem = (item: InvoiceItem, interState: boolean): InvoiceItem => {
@@ -457,25 +515,77 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     return next
   }
 
+  const loadProductBatches = (productId: string, force = false): Promise<ProductBatchStock[]> => {
+    if (!productId) return Promise.resolve([])
+    const pending = batchRequestsRef.current[productId]
+    if (pending && !force) return pending
+    const req = fetchProductBatches(productId).then((batches) => {
+      setProductBatches((prev) => ({ ...prev, [productId]: batches }))
+      return batches
+    })
+    batchRequestsRef.current[productId] = req
+    return req
+  }
+
+  /** Batch-tracked products get their earliest-expiry (FEFO) batch preselected; the user can change or add one. */
   const applyBatchDefaults = (product: Product, lineIndex: number) => {
-    if (!product.enable_batching) return
-    void (async () => {
-      const batches = await fetchProductBatches(product.id)
+    void loadProductBatches(product.id).then((batches) => {
+      if (!product.enable_batching) return
+      const first = batches.find((b) => b.batch_no?.trim())
+      if (!first) return
       setItems((prev) => {
-        if (!prev[lineIndex]) return prev
-        setLineBatches((lb) => ({ ...lb, [lineIndex]: batches }))
-        if (!batches.length) return prev
+        const line = prev[lineIndex]
+        if (!line || line.product_id !== product.id || line.batch_no) return prev
         const copy = [...prev]
         copy[lineIndex] = {
-          ...copy[lineIndex],
-          batch_no: batches[0].batch_no || '',
-          exp_date: batches[0].exp_date ? String(batches[0].exp_date).slice(0, 10) : '',
+          ...line,
+          batch_no: first.batch_no,
+          exp_date: first.exp_date ? String(first.exp_date).slice(0, 10) : '',
           enable_batching: true,
         }
         return copy
       })
-    })()
+    })
   }
+
+  const setLineBatch = (index: number, batchNo: string, batch: ProductBatchStock | null) => {
+    setItems((prev) => {
+      if (!prev[index]) return prev
+      const next = [...prev]
+      next[index] = {
+        ...next[index],
+        batch_no: batchNo,
+        // Existing batch → its expiry; new batch → keep what the user entered; cleared → none.
+        exp_date: batch
+          ? batch.exp_date ? String(batch.exp_date).slice(0, 10) : ''
+          : batchNo ? next[index].exp_date : '',
+      }
+      return next
+    })
+  }
+
+  const lineShowsBatch = (item: InvoiceItem) => {
+    if (!item.product_id) return false
+    if (item.enable_batching || item.batch_no) return true
+    if (products.find((p) => p.id === item.product_id)?.enable_batching) return true
+    return (productBatches[item.product_id] ?? []).some((b) => b.batch_no?.trim())
+  }
+
+  const modalProductIds = showProductModal ? filteredProducts.map((p) => p.id).join(',') : ''
+  useEffect(() => {
+    const missing = modalProductIds.split(',').filter((id) => id && !batchRequestsRef.current[id])
+    if (!missing.length) return
+    const req = fetchBatchesForProducts(missing)
+    missing.forEach((id) => { batchRequestsRef.current[id] = req.then((g) => g[id] ?? []) })
+    void req.then((grouped) => setProductBatches((prev) => ({ ...prev, ...grouped })))
+  }, [modalProductIds])
+
+  const lineProductIds = items.map((it) => it.product_id).filter(Boolean).join(',')
+  useEffect(() => {
+    // Load batches for every product on the invoice (incl. lines loaded for edit/duplicate).
+    lineProductIds.split(',').filter(Boolean).forEach((id) => void loadProductBatches(id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineProductIds])
 
   const addProductsToInvoice = (products: Product[], options?: { closeModal?: boolean }) => {
     if (products.length === 0) return
@@ -491,9 +601,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       return [...prev, ...builtItems.map((item) => applyTaxToInvoiceItem(item, isInterState))]
     })
     products.forEach((product, offset) => {
-      if (product.enable_batching) {
-        applyBatchDefaults(product, startIndex + offset)
-      }
+      applyBatchDefaults(product, startIndex + offset)
     })
 
     if (options?.closeModal !== false) {
@@ -502,6 +610,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       setSelectedProductIds(new Set())
       setSelectedProductMap({})
       setProductAddQuantities({})
+      setModalBatches({})
     }
     setFocusTarget({ lineIndex: startIndex, field: 'quantity' })
   }
@@ -512,14 +621,13 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
 
     const newLineIndex = items.length
     setItems((prev) => [...prev, applyTaxToInvoiceItem(item, isInterState)])
-    if (product.enable_batching) {
-      applyBatchDefaults(product, newLineIndex)
-    }
+    applyBatchDefaults(product, newLineIndex)
     setShowProductModal(false)
     setProductSearch('')
     setSelectedProductIds(new Set())
     setSelectedProductMap({})
     setProductAddQuantities({})
+    setModalBatches({})
     setFocusTarget({ lineIndex: newLineIndex, field: 'quantity' })
   }
 
@@ -538,19 +646,20 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           tax_rate: productTaxRate(product),
           unit: product.unit,
           sale_price_with_tax: isProductGstEnabled(product) ? (product.sale_price_with_tax ?? false) : false,
+          ...(current.product_id !== product.id ? { batch_no: '', exp_date: '' } : {}),
         },
         isInterState
       )
       return next
     })
-    if (product.enable_batching) applyBatchDefaults(product, index)
+    applyBatchDefaults(product, index)
     setFocusTarget({ lineIndex: index, field: 'quantity' })
   }
 
   const handleItemNameChange = (index: number, productId: string) => {
     updateItem(index, 'product_id', productId)
     const product = products.find((p) => p.id === productId)
-    if (product?.enable_batching) applyBatchDefaults(product, index)
+    if (product) applyBatchDefaults(product, index)
     if (productId) setFocusTarget({ lineIndex: index, field: 'quantity' })
   }
 
@@ -587,6 +696,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     setSelectedProductIds(new Set())
     setSelectedProductMap({})
     setProductAddQuantities({})
+    setModalBatches({})
     notifySuccess(`Added custom item: ${trimmed}`)
     setFocusTarget({ lineIndex: newLineIndex, field: 'quantity' })
   }
@@ -652,6 +762,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     setSelectedProductIds(new Set())
     setSelectedProductMap({})
     setProductAddQuantities({})
+    setModalBatches({})
     setModalPage(1)
     setShowProductModal(true)
   }
@@ -661,6 +772,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     setSelectedProductIds(new Set())
     setSelectedProductMap({})
     setProductAddQuantities({})
+    setModalBatches({})
   }
 
   const applyScaleWeightToInvoiceLine = (index: number, unit: string) => {
@@ -837,6 +949,10 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     }
 
     if (field === 'product_id') {
+      if (items[index]?.product_id !== value) {
+        newItems[index].batch_no = ''
+        newItems[index].exp_date = ''
+      }
       const product = products.find(p => p.id === value)
       if (product) {
         newItems[index].description = product.name
@@ -966,23 +1082,79 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   }
 
   const subTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
-  const discountTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price * (item.discount / 100)), 0)
+  const discountTotal = isDiscountEnabled
+    ? items.reduce((sum, item) => sum + (item.quantity * item.unit_price * (item.discount / 100)), 0)
+    : 0
   const cgstTotal = items.reduce((sum, item) => sum + item.cgst, 0)
   const sgstTotal = items.reduce((sum, item) => sum + item.sgst, 0)
   const igstTotal = items.reduce((sum, item) => sum + item.igst, 0)
   const taxTotal = cgstTotal + sgstTotal + igstTotal
   const additionalCharges = sumAdditionalChargeItems(chargeItems)
 
-  const preLoyaltyTotal = subTotal - discountTotal + taxTotal - invoiceDiscount + additionalCharges
+  const discountModeAuto = isDiscountEnabled && saleDiscount?.mode === 'auto'
+  const saleDiscountBase = subTotal - discountTotal + taxTotal + additionalCharges
+  const autoDiscountCap = computeAutoDiscount(saleDiscount, saleDiscountBase)
+  const effectiveInvoiceDiscountRaw = !isDiscountEnabled
+    ? 0
+    : discountModeAuto
+      ? (autoDiscountApplied ? Math.min(parseMoney(autoDiscountValue || '0'), autoDiscountCap) : 0)
+      : invoiceDiscount
+  const maxInvoiceDiscount =
+    (saleDiscount?.max_discount_amount ?? 0) > 0
+      ? Math.max(saleDiscount.max_discount_amount, storedInvoiceDiscount)
+      : 0
+  const effectiveInvoiceDiscount = effectiveInvoiceDiscountRaw
+  // Discount the user typed (before any clamping), checked against the
+  // super-admin max-discount limit so we can show a validation error.
+  const enteredInvoiceDiscount = !isDiscountEnabled
+    ? 0
+    : discountModeAuto
+      ? (autoDiscountApplied ? parseMoney(autoDiscountValue || '0') : 0)
+      : invoiceDiscount
+  const discountLimitError =
+    maxInvoiceDiscount > 0 && enteredInvoiceDiscount > maxInvoiceDiscount + 0.005
+      ? `Discount cannot exceed the maximum allowed amount of ${formatCurrency(maxInvoiceDiscount)}`
+      : ''
+
+  const applyAutoDiscount = () => {
+    setAutoDiscountApplied(true)
+    setAutoDiscountValue(String(autoDiscountCap))
+  }
+  const changeAutoDiscountValue = (raw: string) => {
+    const next = limitDecimalInput(raw)
+    setAutoDiscountValue(clampAutoDiscountValue(next))
+  }
+  // Clamp to the auto rule's grant, except when the value is over the
+  // max-discount limit — that is left as typed so validation can flag it.
+  function clampAutoDiscountValue(next: string) {
+    const value = parseMoney(next || '0')
+    if (maxInvoiceDiscount > 0 && value > maxInvoiceDiscount) return next
+    return value > autoDiscountCap ? String(autoDiscountCap) : next
+  }
+
+  const preLoyaltyTotal = saleDiscountBase - effectiveInvoiceDiscount
+  const loyaltyIsCash = isCashLoyalty(loyaltySettings)
+  // Excluded customers neither earn nor redeem: treat loyalty as off for them.
+  const partyLoyaltyExcluded = !!selectedParty?.loyalty_excluded
+  const partyLoyaltySettings = partyLoyaltyExcluded ? null : loyaltySettings
+  const loyaltyBalance = loyaltyAvailable(loyaltySettings, selectedParty)
   const { discount: loyaltyDiscount } = computeLoyaltyDiscount(
-    loyaltySettings,
-    selectedParty?.loyalty_points ?? 0,
+    partyLoyaltySettings,
+    loyaltyBalance,
     preLoyaltyTotal,
     loyaltyPointsToRedeem
   )
-  const pointsToEarn = estimatePointsEarned(
-    loyaltySettings,
-    Math.max(0, preLoyaltyTotal - loyaltyDiscount)
+  const pointsToEarn = estimateLoyaltyEarnedOnSale(
+    partyLoyaltySettings,
+    Math.max(0, preLoyaltyTotal - loyaltyDiscount),
+    items.map((item) => ({
+      has_product: !!item.product_id,
+      quantity: Number(parseItemNumber(item.quantity, 1)),
+      unit_price: parseMoney(item.unit_price),
+      discount_percent: isDiscountEnabled ? Number(parseItemNumber(item.discount)) : 0,
+      unit_cost: Number(products.find((p) => p.id === item.product_id)?.purchase_price ?? 0),
+    })),
+    parseMoney(effectiveInvoiceDiscount) + loyaltyDiscount
   )
 
   let totalBeforeRound = preLoyaltyTotal - loyaltyDiscount
@@ -994,18 +1166,35 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   }
   const totalAmount = totalBeforeRound
   const paymentMode = paymentSplits[0]?.mode || 'cash'
-  const effectiveAmountPaid = !amountPaidEdited && paymentSplits.length === 1
+  const isUnpaid = paymentSplits.length === 1 && isUnpaidMethod(paymentSplits[0]?.mode)
+  const effectiveAmountPaid = isUnpaid
+    ? 0
+    : !amountPaidEdited && paymentSplits.length === 1
     ? totalAmount
     : sumPaymentSplits(paymentSplits)
   const balance = totalAmount - effectiveAmountPaid
+  const isFullyPaid = effectiveAmountPaid >= totalAmount
 
   const splitAmountValue = (index: number) => {
+    if (isUnpaid) return 0
     if (paymentSplits.length === 1 && !amountPaidEdited) return totalAmount
     return paymentSplits[index]?.amount || 0
   }
 
-  const updateSplit = (index: number, patch: Partial<{ mode: string; amount: number }>) => {
-    setAmountPaidEdited(true)
+  const updateSplit = (index: number, patch: Partial<{ mode: string; amount: number; bank_account_id: string | null }>) => {
+    if (patch.mode !== undefined && isUnpaidMethod(patch.mode)) {
+      // Unpaid means nothing received: collapse to a single zero split.
+      setAmountPaidEdited(true)
+      setPaymentSplits([{ mode: UNPAID_METHOD, amount: 0, bank_account_id: null }])
+      return
+    }
+    if (patch.mode !== undefined && isUnpaidMethod(paymentSplits[index]?.mode) && paymentSplits.length === 1) {
+      // Leaving Unpaid: default back to receiving the full amount.
+      setAmountPaidEdited(false)
+      setPaymentSplits([{ mode: patch.mode, amount: totalAmount, bank_account_id: null }])
+      return
+    }
+    if (patch.amount !== undefined) setAmountPaidEdited(true)
     setPaymentSplits((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
@@ -1017,7 +1206,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           ? { ...row, amount: totalAmount }
           : row
       ))
-      return appendPaymentSplit(normalized, totalAmount, (mode, amount) => ({ mode, amount }))
+      return appendPaymentSplit(normalized, totalAmount, (mode, amount) => ({ mode, amount, bank_account_id: null }))
     })
   }
 
@@ -1037,7 +1226,12 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const markFullyPaid = () => {
     if (paymentSplits.length <= 1) {
       setAmountPaidEdited(false)
-      setPaymentSplits([{ mode: paymentSplits[0]?.mode || 'cash', amount: totalAmount }])
+      const currentMode = paymentSplits[0]?.mode || 'cash'
+      setPaymentSplits([{
+        mode: isUnpaidMethod(currentMode) ? 'cash' : currentMode,
+        amount: totalAmount,
+        bank_account_id: paymentSplits[0]?.bank_account_id ?? null,
+      }])
       return
     }
     setAmountPaidEdited(true)
@@ -1048,10 +1242,29 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     })
   }
 
+  const handleFullyPaidToggle = (checked: boolean) => {
+    if (checked) {
+      markFullyPaid()
+      return
+    }
+    setAmountPaidEdited(true)
+    setPaymentSplits((prev) => prev.map((row) => ({ ...row, amount: 0 })))
+  }
+
+  // Human-readable destination for a split: explicit account, method-mapped
+  // account/primary, or Cash in hand — matching the backend resolver.
+  const splitAccountLabel = (split: { mode: string; bank_account_id: string | null }) => {
+    if (isInitialInvestmentMethod(split.mode)) return "Owner's Equity"
+    if (split.bank_account_id) {
+      return bankAccounts.find((a) => a.id === split.bank_account_id)?.account_name || 'the selected account'
+    }
+    return getDepositHint(split.mode, bankAccounts)
+  }
+
   const applyLoyaltyRedemptionChange = (nextPoints: number) => {
     const { discount: nextDiscount } = computeLoyaltyDiscount(
-      loyaltySettings,
-      selectedParty?.loyalty_points ?? 0,
+      partyLoyaltySettings,
+      loyaltyBalance,
       preLoyaltyTotal,
       nextPoints
     )
@@ -1131,12 +1344,20 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setIsInterState(invoice.is_inter_state || false)
         setNotes(invoice.notes || '')
         setTerms(invoice.terms || '')
-        setInvoiceDiscount(invoice.invoice_discount ?? invoice.quotation_discount ?? 0)
+        const storedDiscount = invoice.invoice_discount ?? invoice.quotation_discount ?? 0
+        setInvoiceDiscount(storedDiscount)
+        setStoredInvoiceDiscount(storedDiscount)
+        setAutoDiscountApplied(storedDiscount > 0)
+        setAutoDiscountValue(storedDiscount > 0 ? String(storedDiscount) : '')
         setChargeItems(hydrateAdditionalCharges(invoice.additional_charge_items, invoice.additional_charges || 0))
         const loadedPaid = invoice.amount_paid || 0
         const loadedTotal = invoice.total_amount || 0
         const loadedSplits = splitsFromInvoice(invoice)
-        setPaymentSplits(loadedSplits.length ? loadedSplits : [{ mode: invoice.payment_mode || 'cash', amount: loadedPaid }])
+        setPaymentSplits(
+          loadedSplits.length
+            ? loadedSplits.map((s) => ({ mode: s.mode, amount: s.amount, bank_account_id: s.bank_account_id ?? null }))
+            : [{ mode: invoice.payment_mode || 'cash', amount: loadedPaid, bank_account_id: invoice.bank_account_id ?? null }]
+        )
         setAmountPaidEdited(loadedPaid + 0.01 < loadedTotal || loadedSplits.length > 1)
         setSignature(invoice.signature || '')
         setPdfTemplate(invoice.pdf_template || pdfTemplate)
@@ -1215,6 +1436,10 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       showErrorToast('Please fill all item details')
       return
     }
+    if (discountLimitError) {
+      showErrorToast(discountLimitError)
+      return
+    }
     setSaving(true)
     try {
       const url = editId ? `/quotations/${editId}` : '/quotations'
@@ -1230,7 +1455,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           is_inter_state: isInterState,
           notes,
           terms,
-          quotation_discount: parseMoney(invoiceDiscount),
+          quotation_discount: isDiscountEnabled ? parseMoney(effectiveInvoiceDiscount) : 0,
           additional_charges: parseMoney(additionalCharges),
           additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
           signature,
@@ -1240,7 +1465,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             hsn_code: item.hsn_code,
             quantity: Number(parseItemNumber(item.quantity, 1)),
             unit_price: parseMoney(item.unit_price),
-            discount: parseItemNumber(item.discount),
+            discount: isDiscountEnabled ? parseItemNumber(item.discount) : 0,
             tax_rate: parseItemNumber(item.tax_rate),
             unit: item.unit,
             batch_no: item.batch_no || '',
@@ -1269,6 +1494,30 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     }
   }
 
+  const checkStockShortages = async (): Promise<StockShortage[]> => {
+    try {
+      const res = await apiFetch('/invoices/check-stock', {
+        method: 'POST',
+        body: JSON.stringify({
+          invoice_id: editId || undefined,
+          items: items
+            .filter((item) => item.product_id)
+            .map((item) => ({
+              product_id: item.product_id,
+              quantity: Number(parseItemNumber(item.quantity, 1)),
+              batch_no: item.batch_no || '',
+            })),
+        }),
+      })
+      if (!res.ok) return []
+      const data = await res.json().catch(() => null)
+      return Array.isArray(data?.warnings) ? data.warnings : []
+    } catch {
+      // The check is advisory — never block a save because it could not run.
+      return []
+    }
+  }
+
   const saveInvoice = async (shouldPrint = false) => {
     if (isEstimateOnly) {
       await saveEstimate(shouldPrint)
@@ -1289,8 +1538,36 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       showErrorToast('Please fill all item details')
       return
     }
+    if (discountLimitError) {
+      showErrorToast(discountLimitError)
+      return
+    }
     setSaving(true)
     try {
+      const shortages = await checkStockShortages()
+      if (shortages.length > 0) {
+        const proceed = await confirm({
+          title: 'Stock will go negative',
+          description: (
+            <div className="space-y-2">
+              <p>Saving will push stock below zero for:</p>
+              <ul className="list-disc space-y-1 pl-5">
+                {shortages.map((s) => (
+                  <li key={`${s.product_id}-${s.batch_no || ''}`}>
+                    <span className="font-medium text-foreground">{s.product_name || 'Item'}</span>
+                    {s.batch_no ? ` (batch ${s.batch_no})` : ''}
+                    {`: need ${formatQty(s.requested_qty)}, have ${formatQty(s.available_qty)} → ${formatQty(s.resulting_qty)}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ),
+          confirmLabel: 'Save anyway',
+          cancelLabel: 'Go back',
+          variant: 'destructive',
+        })
+        if (!proceed) return
+      }
       const url = editId ? `/invoices/${editId}` : '/invoices'
       const method = editId ? 'PUT' : 'POST'
       const res = await apiFetch(url, {
@@ -1306,31 +1583,33 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           is_inter_state: isInterState,
           payment_mode: paymentMode,
           amount_paid: parseMoney(Math.min(Math.max(0, effectiveAmountPaid), totalAmount)),
+          bank_account_id: paymentSplits.find((s) => s.bank_account_id)?.bank_account_id ?? null,
           payment_splits: paymentSplits
             .map((split, index) => ({
               mode: split.mode,
               amount: parseMoney(
-                paymentSplits.length === 1 && !amountPaidEdited && index === 0
+                isUnpaid
+                  ? 0
+                  : paymentSplits.length === 1 && !amountPaidEdited && index === 0
                   ? Math.min(Math.max(0, totalAmount), totalAmount)
                   : split.amount
               ),
+              bank_account_id: split.bank_account_id || null,
             }))
             .filter((split) => split.amount > 0),
           notes,
           terms,
-          invoice_discount: parseMoney(invoiceDiscount),
+          invoice_discount: isDiscountEnabled ? parseMoney(effectiveInvoiceDiscount) : 0,
           additional_charges: parseMoney(additionalCharges),
           additional_charge_items: sanitizeAdditionalChargeItems(chargeItems),
-          ...( !editId && loyaltyPointsToRedeem > 0
-            ? { loyalty_points_redeemed: loyaltyPointsToRedeem }
-            : {}),
+          ...(!editId && partyLoyaltySettings ? loyaltyRedeemPayload(partyLoyaltySettings, loyaltyPointsToRedeem) : {}),
           items: items.map(item => ({
             product_id: item.product_id || undefined,
             description: item.description,
             hsn_code: item.hsn_code,
             quantity: Number(parseItemNumber(item.quantity, 1)),
             unit_price: parseMoney(item.unit_price),
-            discount: parseItemNumber(item.discount),
+            discount: isDiscountEnabled ? parseItemNumber(item.discount) : 0,
             tax_rate: parseItemNumber(item.tax_rate),
             unit: item.unit,
             batch_no: item.batch_no || '',
@@ -1388,7 +1667,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       const title = `${docName} - ${parties.find(p => p.id === partyId)?.name || 'Untitled'}`
       const formData = {
         invoiceNumber, partyId, date, paymentTerms, dueDate, isInterState,
-        notes, terms, invoiceDiscount, additionalCharges, additionalChargeItems: chargeItems, autoRoundOff,
+        notes, terms, invoiceDiscount, autoDiscountApplied, autoDiscountValue, additionalCharges, additionalChargeItems: chargeItems, autoRoundOff,
         amountPaid: effectiveAmountPaid, amountPaidEdited, paymentMode, paymentSplits, signature, items
       }
       const res = await apiFetch('/drafts', {
@@ -1421,11 +1700,17 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
         setNotes(draftData.notes || '')
         setTerms(draftData.terms || '')
         setInvoiceDiscount(draftData.invoiceDiscount || 0)
+        setAutoDiscountApplied(draftData.autoDiscountApplied === true)
+        setAutoDiscountValue(draftData.autoDiscountValue || '')
         setChargeItems(hydrateAdditionalCharges(draftData.additionalChargeItems, draftData.additionalCharges || 0))
         setAutoRoundOff(draftData.autoRoundOff !== undefined ? draftData.autoRoundOff : true)
         const draftSplits = Array.isArray(draftData.paymentSplits) && draftData.paymentSplits.length
-          ? draftData.paymentSplits
-          : [{ mode: draftData.paymentMode || 'cash', amount: draftData.amountPaid || 0 }]
+          ? draftData.paymentSplits.map((s: { mode?: string; amount?: number; bank_account_id?: string | null }) => ({
+              mode: s.mode || 'cash',
+              amount: s.amount ?? 0,
+              bank_account_id: s.bank_account_id ?? null,
+            }))
+          : [{ mode: draftData.paymentMode || 'cash', amount: draftData.amountPaid || 0, bank_account_id: null }]
         setPaymentSplits(draftSplits)
         setAmountPaidEdited(
           typeof draftData.amountPaidEdited === 'boolean'
@@ -1460,7 +1745,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
 
   return (
     <DashboardLayout>
-      <div className="max-w-7xl space-y-4 pb-2">
+      <div className="w-full min-w-0 space-y-4 pb-2">
         <PageHeader
           title={isEstimate ? (editId ? 'Edit Estimate' : 'Create Estimate') : 'Create Sales Invoice'}
           actions={
@@ -1667,7 +1952,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       <th className="min-w-[12rem] whitespace-nowrap pb-2 pr-2 font-medium">Item</th>
                       <th className="min-w-[6rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Quantity</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Unit Price</th>
-                      <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
+                      {isDiscountEnabled && (
+                        <th className="min-w-[6.5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Discount %</th>
+                      )}
                       <th className="min-w-[5rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Tax %</th>
                       <th className="min-w-[7rem] whitespace-nowrap pb-2 px-1 font-medium text-right">Amount</th>
                       <th className="w-12 min-w-12 pb-2 pl-1 font-medium"></th>
@@ -1682,9 +1969,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   ) : (
                   <tbody>
                     {items.map((item, index) => {
-                      const needsBatch =
-                        Boolean(item.enable_batching) ||
-                        Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
+                      const needsBatch = lineShowsBatch(item)
                       const isExpanded = expandedRows.has(index)
                       const toggleExpand = () => {
                         setExpandedRows((prev) => {
@@ -1694,7 +1979,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                           return next
                         })
                       }
-                      const detailColSpan = 9
+                      const detailColSpan = isDiscountEnabled ? 9 : 8
                       return (
                         <Fragment key={index}>
                         <tr className="border-b">
@@ -1726,6 +2011,16 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                               onCreateNew={(query) => handleCreateItemForLine(index, query)}
                               className="w-full min-w-0"
                             />
+                            {needsBatch && (
+                              <BatchPicker
+                                batches={productBatches[item.product_id] ?? []}
+                                value={item.batch_no}
+                                loading={productBatches[item.product_id] === undefined}
+                                onOpen={() => void loadProductBatches(item.product_id, true)}
+                                onChange={(batchNo, batch) => setLineBatch(index, batchNo, batch)}
+                                className="mt-1 w-full max-w-[16rem]"
+                              />
+                            )}
                           </td>
                           <td className="px-1 py-2">
                             <div className="flex items-center justify-end gap-1">
@@ -1774,16 +2069,18 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                               required
                             />
                           </td>
-                          <td className="px-1 py-2">
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={item.discount}
-                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
-                              className="h-8 w-full min-w-0 text-right"
-                            />
-                          </td>
+                          {isDiscountEnabled && (
+                            <td className="px-1 py-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={item.discount}
+                                onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                                className="h-8 w-full min-w-0 text-right"
+                              />
+                            </td>
+                          )}
                           <td className="px-1 py-2">
                             <Input
                               type="number"
@@ -1821,46 +2118,6 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                                 </div>
                                 {needsBatch && (
                                   <div className="space-y-1">
-                                    <Label className="text-xs text-gray-500">Batch (FEFO)</Label>
-                                    <select
-                                      value={item.batch_no}
-                                      onChange={(e) => {
-                                        const batches = lineBatches[index] || []
-                                        const selected = batches.find((b) => b.batch_no === e.target.value)
-                                        const next = [...items]
-                                        next[index] = {
-                                          ...next[index],
-                                          batch_no: e.target.value,
-                                          exp_date: selected?.exp_date
-                                            ? String(selected.exp_date).slice(0, 10)
-                                            : '',
-                                        }
-                                        setItems(next)
-                                      }}
-                                      onFocus={() => {
-                                        if (item.product_id && !lineBatches[index]) {
-                                          void fetchProductBatches(item.product_id).then((batches) => {
-                                            setLineBatches((lb) => ({ ...lb, [index]: batches }))
-                                          })
-                                        }
-                                      }}
-                                      className="flex h-8 w-40 rounded-md border border-input bg-background px-2 text-xs"
-                                    >
-                                      <option value="">Select batch</option>
-                                      {(lineBatches[index] || []).map((b) => (
-                                        <option key={`${b.id}-${b.batch_no}`} value={b.batch_no}>
-                                          {formatBatchLabel(b)}
-                                        </option>
-                                      ))}
-                                      {item.batch_no &&
-                                        !(lineBatches[index] || []).some((b) => b.batch_no === item.batch_no) && (
-                                          <option value={item.batch_no}>{item.batch_no}</option>
-                                        )}
-                                    </select>
-                                  </div>
-                                )}
-                                {needsBatch && (
-                                  <div className="space-y-1">
                                     <Label className="text-xs text-gray-500">Expiry Date</Label>
                                     <Input
                                       type="date"
@@ -1885,9 +2142,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
               {items.length > 0 && (
                 <div className="block md:hidden space-y-3">
                   {items.map((item, index) => {
-                    const needsBatch =
-                      Boolean(item.enable_batching) ||
-                      Boolean(products.find((p) => p.id === item.product_id)?.enable_batching)
+                    const needsBatch = lineShowsBatch(item)
                     return (
                       <div key={index} className="rounded-lg border p-3 space-y-3">
                         <div className="flex items-start justify-between gap-2">
@@ -1959,17 +2214,19 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                               className="h-8 w-full text-right"
                             />
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs text-gray-500">Discount %</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={item.discount}
-                              onChange={(e) => updateItem(index, 'discount', e.target.value)}
-                              className="h-8 w-full text-right"
-                            />
-                          </div>
+                          {isDiscountEnabled && (
+                            <div className="space-y-1">
+                              <Label className="text-xs text-gray-500">Discount %</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={item.discount}
+                                onChange={(e) => updateItem(index, 'discount', e.target.value)}
+                                className="h-8 w-full text-right"
+                              />
+                            </div>
+                          )}
                           <div className="space-y-1">
                             <Label className="text-xs text-gray-500">Tax %</Label>
                             <Input
@@ -1996,42 +2253,15 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                           {needsBatch && (
                             <>
                               <div className="space-y-1">
-                                <Label className="text-xs text-gray-500">Batch (FEFO)</Label>
-                                <select
+                                <Label className="text-xs text-gray-500">Batch</Label>
+                                <BatchPicker
+                                  batches={productBatches[item.product_id] ?? []}
                                   value={item.batch_no}
-                                  onChange={(e) => {
-                                    const batches = lineBatches[index] || []
-                                    const selected = batches.find((b) => b.batch_no === e.target.value)
-                                    const next = [...items]
-                                    next[index] = {
-                                      ...next[index],
-                                      batch_no: e.target.value,
-                                      exp_date: selected?.exp_date
-                                        ? String(selected.exp_date).slice(0, 10)
-                                        : '',
-                                    }
-                                    setItems(next)
-                                  }}
-                                  onFocus={() => {
-                                    if (item.product_id && !lineBatches[index]) {
-                                      void fetchProductBatches(item.product_id).then((batches) => {
-                                        setLineBatches((lb) => ({ ...lb, [index]: batches }))
-                                      })
-                                    }
-                                  }}
-                                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                                >
-                                  <option value="">Select batch</option>
-                                  {(lineBatches[index] || []).map((b) => (
-                                    <option key={`${b.id}-${b.batch_no}`} value={b.batch_no}>
-                                      {formatBatchLabel(b)}
-                                    </option>
-                                  ))}
-                                  {item.batch_no &&
-                                    !(lineBatches[index] || []).some((b) => b.batch_no === item.batch_no) && (
-                                      <option value={item.batch_no}>{item.batch_no}</option>
-                                    )}
-                                </select>
+                                  loading={productBatches[item.product_id] === undefined}
+                                  onOpen={() => void loadProductBatches(item.product_id, true)}
+                                  onChange={(batchNo, batch) => setLineBatch(index, batchNo, batch)}
+                                  className="h-8 w-full"
+                                />
                               </div>
                               <div className="space-y-1">
                                 <Label className="text-xs text-gray-500">Expiry Date</Label>
@@ -2056,137 +2286,26 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2 space-y-4">
               <CardHeader>
-                <CardTitle>Additional Charges & Discount</CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
-                <div className="space-y-2 min-[420px]:col-span-2">
-                  <Label>Additional Charges</Label>
-                  <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Invoice Discount</Label>
-                  <Input type="number" min="0" step="0.01" value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Number(e.target.value))} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Auto Round Off</Label>
-                  <select
-                    value={autoRoundOff ? 'true' : 'false'}
-                    onChange={(e) => setAutoRoundOff(e.target.value === 'true')}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
-                </div>
-              </CardContent>
-
-              {!isEstimateOnly && (
-                <>
-              <CardHeader>
-                <CardTitle>Payment Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {paymentSplits.map((split, index) => {
-                  const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
-                  return (
-                    <div key={`${split.mode}-${index}`} className="grid grid-cols-1 gap-3 items-end min-[420px]:grid-cols-[1fr_1fr_auto]">
-                      <div className="space-y-2">
-                        <Label>{index === 0 ? 'Payment Method' : `Method ${index + 1}`}</Label>
-                        <select
-                          value={split.mode}
-                          onChange={(e) => updateSplit(index, { mode: e.target.value })}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        >
-                          {PAYMENT_METHODS.filter((method) => method.value === split.mode || !usedModes.includes(method.value)).map((method) => (
-                            <option key={method.value} value={method.value}>
-                              {method.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>{index === 0 ? 'Amount Received' : 'Amount'}</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={splitAmountValue(index)}
-                          onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
-                        />
-                      </div>
-                      {paymentSplits.length > 1 ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-10 w-10"
-                          onClick={() => removePaymentSplit(index)}
-                          aria-label="Remove payment method"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      ) : (
-                        <div className="h-10 w-10" />
-                      )}
-                    </div>
-                  )
-                })}
-                <p className="text-xs text-muted-foreground">
-                  {paymentSplits.length === 1
-                    ? isInitialInvestmentMethod(paymentMode)
-                      ? 'Amount received is recorded against Owner\'s Equity and will not affect cash or bank balances.'
-                      : `Amount received is credited to: ${getDepositHint(paymentMode, bankAccounts)} (configure under Cash & Bank → Payment method accounts)`
-                    : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${getDepositHint(split.mode, bankAccounts)}`).join(' · ')}
-                </p>
-                {PAYMENT_METHODS.length > paymentSplits.length && (
-                  <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
-                    <Plus className="h-4 w-4" />
-                    Add payment method
-                  </Button>
-                )}
-                <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Balance</Label>
-                    <Input value={formatCurrency(balance)} readOnly className="bg-gray-50" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Mark as Fully Paid</Label>
-                    <Button
-                      type="button"
-                      variant={effectiveAmountPaid >= totalAmount ? "default" : "outline"}
-                      className="w-full"
-                      onClick={markFullyPaid}
-                    >
-                      {effectiveAmountPaid >= totalAmount ? 'Fully Paid' : 'Mark Fully Paid'}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-                </>
-              )}
-
-              <CardHeader>
                 <CardTitle>Signature</CardTitle>
               </CardHeader>
               <CardContent>
-                {signature && (
-                  <div className="mb-3">
-                    <img src={signature} alt="Signature" className="max-h-[150px] max-w-full rounded border bg-white object-contain" />
-                  </div>
+                {signature ? (
+                  <img src={signature} alt="Signature" className="max-h-[150px] max-w-full rounded border bg-white object-contain" />
+                ) : (
+                  <canvas
+                    ref={canvasRef}
+                    width={400}
+                    height={150}
+                    className="max-w-full cursor-crosshair touch-none rounded border"
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                  />
                 )}
-                <canvas
-                  ref={canvasRef}
-                  width={400}
-                  height={150}
-                  className="max-w-full cursor-crosshair touch-none rounded border"
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDrawing}
-                />
                 <div className="mt-2 flex gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={clearSignature}>Clear</Button>
                   {businessSignature && signature !== businessSignature && (
@@ -2221,40 +2340,152 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
             </Card>
 
             <Card>
+              <CardHeader className="flex-row items-center justify-between space-y-0">
+                <CardTitle>{isDiscountEnabled ? 'Charges & Discount' : 'Charges'}</CardTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => setChargeItems([...chargeItems, { label: '', amount: 0 }])}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Charge
+                </Button>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 gap-4">
+                {chargeItems.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Additional Charges</Label>
+                    <AdditionalChargeItemsInput items={chargeItems} onChange={setChargeItems} hideAddButton />
+                  </div>
+                )}
+                {isDiscountEnabled && (
+                <div className="space-y-2">
+                  <Label>{docName} Discount</Label>
+                  {discountModeAuto ? (
+                    <div className="space-y-1.5">
+                      {autoDiscountEligible(saleDiscount, saleDiscountBase) ? (
+                        autoDiscountApplied ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="text"
+                              inputMode="decimal"
+                              value={autoDiscountValue}
+                              onChange={(e) => changeAutoDiscountValue(e.target.value)}
+                              onBlur={() => setAutoDiscountValue(clampAutoDiscountValue(autoDiscountValue))}
+                              aria-label="Applied discount amount"
+                              aria-invalid={!!discountLimitError}
+                              className={`h-9 ${discountLimitError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0"
+                              onClick={() => setAutoDiscountApplied(false)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={applyAutoDiscount}
+                            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-green-500 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 transition-colors hover:border-green-600 hover:bg-green-100"
+                          >
+                            <Tag className="h-3.5 w-3.5" />
+                            Apply {formatCurrency(autoDiscountCap)} discount
+                          </button>
+                        )
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No discount available</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {describeAutoDiscount(saleDiscount)}
+                        {autoDiscountApplied ? ` · max ${formatCurrency(autoDiscountCap)}` : ''}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={invoiceDiscount}
+                        aria-invalid={!!discountLimitError}
+                        className={discountLimitError ? 'border-red-500 focus-visible:ring-red-500' : ''}
+                        onChange={(e) => setInvoiceDiscount(Math.max(0, Number(e.target.value) || 0))}
+                      />
+                      {maxInvoiceDiscount > 0 && !discountLimitError && (
+                        <p className="text-xs text-muted-foreground">
+                          Max discount {formatCurrency(maxInvoiceDiscount)}
+                        </p>
+                      )}
+                    </>
+                  )}
+                  {discountLimitError && (
+                    <p className="text-xs font-medium text-red-600" role="alert">
+                      {discountLimitError}
+                    </p>
+                  )}
+                </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="auto-round-off">Auto Round Off</Label>
+                  <Switch
+                    id="auto-round-off"
+                    checked={autoRoundOff}
+                    onCheckedChange={setAutoRoundOff}
+                  />
+                </div>
+              </CardContent>
               <CardContent className="space-y-3 p-6">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Taxable Amount</span>
-                  <span className="font-medium">{formatCurrency(subTotal - discountTotal)}</span>
+                  <span className="text-gray-600">Subtotal</span>
+                  <span className="font-medium">{formatCurrency(subTotal)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Item Discount</span>
-                  <span className="font-medium text-red-600">-{formatCurrency(discountTotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">{docName} Discount</span>
-                  <span className="font-medium text-red-600">-{formatCurrency(invoiceDiscount)}</span>
-                </div>
+                {discountTotal > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Item Discount</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(discountTotal)}</span>
+                  </div>
+                )}
+                {effectiveInvoiceDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">{docName} Discount</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(effectiveInvoiceDiscount)}</span>
+                  </div>
+                )}
                 {chargeItems.filter((c) => Number(c.amount) > 0).map((charge, index) => (
                   <div key={index} className="flex justify-between text-sm">
                     <span className="text-gray-600">{charge.label.trim() || 'Additional Charge'}</span>
                     <span className="font-medium">{formatCurrency(charge.amount)}</span>
                   </div>
                 ))}
-                {!editId && !isEstimateOnly && loyaltySettings?.is_enabled && selectedParty && (
+                {!editId && !isEstimateOnly && loyaltySettings?.is_enabled && selectedParty && partyLoyaltyExcluded && (
+                  <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-gray-500">
+                    <Gift className="h-3.5 w-3.5" />
+                    Excluded from the loyalty program — no earning or redemption on this bill.
+                  </div>
+                )}
+                {!editId && !isEstimateOnly && loyaltySettings?.is_enabled && selectedParty && !partyLoyaltyExcluded && (
                   <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-3 space-y-2">
                     <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
                       <Gift className="h-4 w-4" />
-                      Loyalty — {(selectedParty.loyalty_points ?? 0).toLocaleString()} pts available
+                      Loyalty — {formatLoyaltyValue(loyaltySettings, loyaltyBalance)}{' '}
+                      {loyaltyIsCash ? 'cashback' : ''} available
                     </div>
                     <div className="flex items-center gap-2">
                       <Input
                         type="number"
                         min={0}
-                        max={selectedParty.loyalty_points ?? 0}
-                        placeholder="Points to redeem"
+                        step={loyaltyIsCash ? 0.01 : 1}
+                        max={loyaltyBalance}
+                        placeholder={loyaltyIsCash ? 'Cashback to redeem (₹)' : 'Points to redeem'}
                         value={loyaltyPointsToRedeem || ''}
                         onChange={(e) =>
-                          applyLoyaltyRedemptionChange(parseInt(e.target.value, 10) || 0)
+                          applyLoyaltyRedemptionChange(parseLoyaltyRedeemInput(loyaltySettings, e.target.value))
                         }
                         className="h-8 bg-white"
                       />
@@ -2266,25 +2497,34 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       </div>
                     )}
                     {pointsToEarn > 0 && (
-                      <p className="text-xs text-amber-800">Earn ~{pointsToEarn} points on this bill</p>
+                      <p className="text-xs text-amber-800">
+                        Earn ~{formatLoyaltyValue(loyaltySettings, pointsToEarn)}
+                        {loyaltyIsCash ? ' cashback' : ''} on this bill
+                      </p>
                     )}
                   </div>
                 )}
                 {isInterState ? (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">IGST</span>
-                    <span className="font-medium">{formatCurrency(igstTotal)}</span>
-                  </div>
+                  igstTotal > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">IGST</span>
+                      <span className="font-medium">{formatCurrency(igstTotal)}</span>
+                    </div>
+                  )
                 ) : (
                   <>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">CGST</span>
-                      <span className="font-medium">{formatCurrency(cgstTotal)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">SGST</span>
-                      <span className="font-medium">{formatCurrency(sgstTotal)}</span>
-                    </div>
+                    {cgstTotal > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">CGST</span>
+                        <span className="font-medium">{formatCurrency(cgstTotal)}</span>
+                      </div>
+                    )}
+                    {sgstTotal > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">SGST</span>
+                        <span className="font-medium">{formatCurrency(sgstTotal)}</span>
+                      </div>
+                    )}
                   </>
                 )}
                 {autoRoundOff && roundOff !== 0 && (
@@ -2300,6 +2540,123 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   </div>
                 </div>
               </CardContent>
+              {!isEstimateOnly && (
+                <>
+                  <CardHeader className="flex-row items-center justify-between space-y-0 border-t">
+                    <CardTitle>Payment Details</CardTitle>
+                    {!isUnpaid && RECEIPT_PAYMENT_METHODS.length > paymentSplits.length && (
+                      <Button type="button" variant="outline" size="sm" onClick={addPaymentSplit} className="gap-1">
+                        <Plus className="h-4 w-4" />
+                        Split Payment
+                      </Button>
+                    )}
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {paymentSplits.map((split, index) => {
+                      const usedModes = paymentSplits.map((row) => row.mode).filter((_, i) => i !== index)
+                      const initialInvestment = isInitialInvestmentMethod(split.mode)
+                      return (
+                        <div key={`${split.mode}-${index}`} className="space-y-3">
+                          <div className="space-y-2">
+                            <Label>{index === 0 ? 'Payment Method' : `Method ${index + 1}`}</Label>
+                            <select
+                              value={split.mode}
+                              onChange={(e) => updateSplit(index, { mode: e.target.value })}
+                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            >
+                              {PAYMENT_METHODS.filter((method) => method.value === split.mode || (!usedModes.includes(method.value) && (method.value !== UNPAID_METHOD || paymentSplits.length === 1))).map((method) => (
+                                <option key={method.value} value={method.value}>
+                                  {method.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Received Into</Label>
+                            {initialInvestment || isUnpaidMethod(split.mode) ? (
+                              <div className="flex h-10 items-center rounded-md border border-input bg-gray-50 px-3 text-sm text-muted-foreground">
+                                {initialInvestment ? <>Owner&apos;s Equity</> : 'Not applicable — nothing received'}
+                              </div>
+                            ) : bankAccountsLoading ? (
+                              <Skeleton className="h-10" />
+                            ) : (
+                              <select
+                                value={split.bank_account_id || ''}
+                                onChange={(e) => updateSplit(index, { bank_account_id: e.target.value || null })}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                              >
+                                <option value="">
+                                  {split.mode === 'cash' ? 'Cash in-hand' : `Auto — ${getDepositHint(split.mode, bankAccounts)}`}
+                                </option>
+                                {bankAccounts
+                                  .filter((a) => a.is_active || a.id === split.bank_account_id)
+                                  .map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                      {account.account_name}
+                                      {account.bank_name ? ` (${account.bank_name})` : ''}
+                                      {' — '}
+                                      {formatCurrency(account.balance)}
+                                    </option>
+                                  ))}
+                              </select>
+                            )}
+                          </div>
+                          <div className="flex items-end gap-3">
+                            <div className="flex-1 space-y-2">
+                              <Label>{index === 0 ? 'Amount Received' : 'Amount'}</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={splitAmountValue(index)}
+                                disabled={isUnpaidMethod(split.mode)}
+                                onChange={(e) => updateSplit(index, { amount: Number(e.target.value) })}
+                              />
+                            </div>
+                            {paymentSplits.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-10 w-10 shrink-0"
+                                onClick={() => removePaymentSplit(index)}
+                                aria-label="Remove payment method"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <p className="text-xs text-muted-foreground">
+                      {isUnpaid
+                        ? 'Invoice will be saved as unpaid; the full amount stays outstanding against the party.'
+                        : paymentSplits.length === 1
+                        ? isInitialInvestmentMethod(paymentMode)
+                          ? 'Amount received is recorded against Owner\'s Equity and will not affect cash or bank balances.'
+                          : `Amount received is credited to: ${splitAccountLabel(paymentSplits[0] || { mode: paymentMode, bank_account_id: null })} (configure under Cash & Bank → Payment method accounts)`
+                        : paymentSplits.map((split) => `${formatPaymentMethod(split.mode)} → ${splitAccountLabel(split)}`).join(' · ')}
+                    </p>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="fully-paid-toggle">Mark as Fully Paid</Label>
+                        <Switch
+                          id="fully-paid-toggle"
+                          checked={isFullyPaid}
+                          onCheckedChange={handleFullyPaidToggle}
+                        />
+                      </div>
+                      {!isFullyPaid && (
+                        <div className="space-y-2">
+                          <Label>Balance</Label>
+                          <Input value={formatCurrency(balance)} readOnly className="bg-gray-50" />
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </>
+              )}
             </Card>
           </div>
 
@@ -2373,6 +2730,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                         <th className="pb-2 font-medium">Item Code/SKU</th>
                         <th className="pb-2 font-medium">PLU</th>
                         <th className="pb-2 font-medium text-right">Stock</th>
+                        <th className="pb-2 pl-4 font-medium">Batch</th>
                         <th className="pb-2 font-medium text-right">Sale Price</th>
                         <th className="pb-2 font-medium text-right">Purchase Price</th>
                         <th className="pb-2 font-medium text-right">Qty</th>
@@ -2393,6 +2751,30 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                           <td className="py-2 text-gray-600">{product.sku || product.item_code || '-'}</td>
                           <td className="py-2 text-gray-600">{product.plu || '-'}</td>
                           <td className="py-2 text-right">{product.stock_qty} {product.unit}</td>
+                          <td className="py-2 pl-4">
+                            {(() => {
+                              const batches = productBatches[product.id]
+                              const named = (batches ?? []).filter((b) => b.batch_no?.trim())
+                              if (batches === undefined) return <span className="text-xs text-gray-400">…</span>
+                              if (!product.enable_batching && named.length === 0) return <span className="text-gray-400">-</span>
+                              return (
+                                <div className="space-y-0.5">
+                                  <BatchPicker
+                                    batches={batches}
+                                    value={modalBatches[product.id] || ''}
+                                    placeholder={product.enable_batching && named.length ? 'Auto (FEFO)' : 'Select / add'}
+                                    onChange={(batchNo) => setModalBatches((prev) => ({ ...prev, [product.id]: batchNo }))}
+                                    className="w-44"
+                                  />
+                                  {named.length > 0 && (
+                                    <div className="text-[11px] text-gray-500">
+                                      {named.length} batch{named.length > 1 ? 'es' : ''} in stock
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })()}
+                          </td>
                           <td className="py-2 text-right">{formatCurrency(product.sale_price)}</td>
                           <td className="py-2 text-right text-gray-500">{formatCurrency(product.purchase_price)}</td>
                           <td className="py-2 text-right">
@@ -2420,7 +2802,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       ))}
                       {modalLoading && (
                         <tr>
-                          <td colSpan={9} className="py-8 text-center text-gray-500">
+                          <td colSpan={10} className="py-8 text-center text-gray-500">
                             <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                             Loading items…
                           </td>
@@ -2428,7 +2810,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                       )}
                       {!modalLoading && filteredProducts.length === 0 && (
                         <tr>
-                          <td colSpan={9} className="py-8 text-center">
+                          <td colSpan={10} className="py-8 text-center">
                             {productSearch.trim() ? (
                               <button
                                 type="button"

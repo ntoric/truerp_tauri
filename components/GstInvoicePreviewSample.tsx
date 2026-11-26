@@ -114,12 +114,18 @@ export default function GstInvoicePreviewSample({ settings, customization, busin
           </div>
           <div className="text-right">
             <p className="text-xs font-bold" style={{ color: theme === 'modern' ? '#fff' : primary }}>
-              TAX INVOICE
+              BILL OF SUPPLY
             </p>
             <p className="text-[9px] text-gray-500">ORIGINAL FOR RECIPIENT</p>
           </div>
         </div>
       </div>
+
+      {customization.invoice_details.show_composition_declaration ? (
+        <p className="mb-3 text-center text-[11px] font-bold text-gray-900">
+          Composition taxable person, not eligible to collect tax on supplies.
+        </p>
+      ) : null}
 
       {(customization.invoice_details.show_invoice_number ||
         customization.invoice_details.show_invoice_date ||

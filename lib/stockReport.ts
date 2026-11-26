@@ -1,4 +1,5 @@
 import { apiFetch } from '@/hooks/useAuth'
+import { downloadBlob } from '@/lib/accountingExport'
 import { buildPeriodicReportQuery, type PeriodicReportPeriod } from '@/lib/dailyReport'
 
 export interface StockReportLine {
@@ -49,4 +50,33 @@ export async function fetchStockReport(params: StockReportParams): Promise<Stock
     throw new Error((err as { error?: string }).error || 'Failed to load stock report')
   }
   return res.json()
+}
+
+async function downloadStockReportFile(params: StockReportParams, kind: 'excel' | 'pdf') {
+  const qs = buildPeriodicReportQuery(params)
+  const res = await apiFetch(`/dashboard/stock-report/${kind}?${qs}`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(
+      (err as { error?: string }).error || `Failed to export ${kind === 'excel' ? 'Excel' : 'PDF'}`
+    )
+  }
+  const blob = await res.blob()
+  if (!blob.size) {
+    throw new Error('Export was empty')
+  }
+  const ext = kind === 'excel' ? 'xlsx' : 'pdf'
+  await downloadBlob(
+    `stock_report_${params.period}_${params.startDate ?? params.date}_${params.endDate ?? params.date}.${ext}`,
+    blob,
+    { label: `Exporting stock report ${ext.toUpperCase()}` }
+  )
+}
+
+export function downloadStockReportExcel(params: StockReportParams) {
+  return downloadStockReportFile(params, 'excel')
+}
+
+export function downloadStockReportPdf(params: StockReportParams) {
+  return downloadStockReportFile(params, 'pdf')
 }

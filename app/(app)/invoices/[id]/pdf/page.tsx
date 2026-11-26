@@ -6,6 +6,7 @@ import { apiFetch } from '@/hooks/useAuth'
 import { downloadInvoicePdf } from '@/lib/printDocument'
 import { Button } from '@/components/ui/button'
 import { Download, Loader2 } from 'lucide-react'
+import BrandLoader from '@/components/BrandLoader'
 
 export default function InvoicePDFPage() {
   const params = useParams()
@@ -68,7 +69,7 @@ export default function InvoicePDFPage() {
   if (!pdfUrl) {
     return (
       <div className="flex h-[100dvh] flex-col items-center justify-center gap-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+        <BrandLoader />
         <p className="text-sm text-gray-600">{status}</p>
       </div>
     )

@@ -12,12 +12,14 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { formatDate } from '@/lib/utils'
+import { formatDate, publicSiteUrl } from '@/lib/utils'
 import { isSuperAdmin } from '@/lib/roles'
 import { ExternalLink, Globe, Loader2, Save, Users, LifeBuoy } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
+import BrandLoader from '@/components/BrandLoader'
 
 interface PortalSettings {
   is_enabled: boolean
@@ -87,7 +89,7 @@ export default function CustomerPortalAdminPage() {
         const data = await settingsRes.json()
         setSettings(data.settings)
         if (typeof window !== 'undefined') {
-          setPortalUrl(`${window.location.origin}/portal/login?slug=${encodeURIComponent(data.settings.slug)}`)
+          setPortalUrl(`${publicSiteUrl()}/portal/login?slug=${encodeURIComponent(data.settings.slug)}`)
         }
       }
       if (accessRes.ok) setAccess(await accessRes.json())
@@ -118,7 +120,7 @@ export default function CustomerPortalAdminPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to save')
       setSettings(data)
       if (typeof window !== 'undefined') {
-        setPortalUrl(`${window.location.origin}/portal/login?slug=${encodeURIComponent(data.slug)}`)
+        setPortalUrl(`${publicSiteUrl()}/portal/login?slug=${encodeURIComponent(data.slug)}`)
       }
       notifySuccess('Portal settings saved')
     } catch (err: unknown) {
@@ -171,7 +173,7 @@ export default function CustomerPortalAdminPage() {
     return (
       <DashboardLayout>
         <div className="flex justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <BrandLoader />
         </div>
       </DashboardLayout>
     )
@@ -374,7 +376,9 @@ export default function CustomerPortalAdminPage() {
         <TabsContent value="tickets" className="mt-4 space-y-4">
           {tickets.length === 0 ? (
             <Card>
-              <CardContent className="py-10 text-center text-muted-foreground">No support tickets yet</CardContent>
+              <CardContent className="p-4">
+                <PremiumEmpty icon={LifeBuoy} title="No support tickets yet" hint="Tickets opened by customers will appear here." />
+              </CardContent>
             </Card>
           ) : (
             ticketsPagination.paginatedItems.map((t) => (

@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { apiFetch } from '@/hooks/useAuth'
+import { apiFetch, useAuth } from '@/hooks/useAuth'
+import { isSuperAdmin } from '@/lib/roles'
+import { useDiscount } from '@/hooks/useDiscount'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,14 +21,21 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
-import { Plus, Search, Download, MoreVertical, Trash2 } from 'lucide-react'
+import { Plus, Search, Download, MoreVertical, Trash2, X, Banknote } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { FieldError } from '@/components/ui/field-error'
 import { useFormErrors } from '@/hooks/useFormErrors'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import { useCancelReasonDialog } from '@/hooks/useCancelReasonDialog'
+import { StatusBadge } from '@/components/ui/badge'
 import PageHeaderActions from '@/components/layout/PageHeaderActions'
-import { PAYMENT_METHODS, formatPaymentMethod } from '@/lib/paymentSplits'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useBankAccounts } from '@/hooks/useBankAccounts'
+import { usePaymentMethodMappings } from '@/hooks/usePaymentMethodMappings'
+import { RECEIPT_PAYMENT_METHODS as PAYMENT_METHODS, formatPaymentMethod, isInitialInvestmentMethod } from '@/lib/paymentSplits'
+import BrandLoader from '@/components/BrandLoader'
 
 interface PaymentOut {
   id: string
@@ -37,6 +46,8 @@ interface PaymentOut {
   date: string
   reference: string
   notes: string
+  status?: string
+  cancel_reason?: string
   purchase_bill_id?: string
   sales_return_id?: string
   credit_note_id?: string
@@ -150,6 +161,7 @@ const emptyForm = () => ({
   payment_out_discount: '0',
   payment_out_number: '',
   mode: '',
+  bank_account_id: '',
   date: new Date().toISOString().split('T')[0],
   reference: '',
   notes: '',
@@ -170,6 +182,12 @@ export default function PaymentOutsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { confirm, confirmDialog } = useConfirmDialog()
+  const { requestCancelReason, cancelReasonDialog } = useCancelReasonDialog()
+  const { user } = useAuth()
+  const canDelete = isSuperAdmin(user?.role)
+  const { isDiscountEnabled } = useDiscount()
+  const { accounts: bankAccounts, loading: bankAccountsLoading } = useBankAccounts()
+  const { getDepositHint } = usePaymentMethodMappings()
   const {
     fieldErrors,
     clearErrors,
@@ -245,6 +263,13 @@ export default function PaymentOutsPage() {
   function getNetAmount(paymentOut: PaymentOut) {
     return paymentOut.amount_paid - paymentOut.payment_out_discount
   }
+
+  // Resolved source account for the form's method + explicit selection,
+  // mirroring the backend's resolveBankAccountForPaymentMode order: explicit
+  // account → method mapping → primary account → cash in-hand.
+  const paymentOutAccountLabel = formData.bank_account_id
+    ? bankAccounts.find((a) => a.id === formData.bank_account_id)?.account_name || 'the selected account'
+    : getDepositHint(formData.mode || 'cash', bankAccounts)
 
   const buildPaymentOutParams = (targetPage: number, perPage: number) => {
     const params = new URLSearchParams()
@@ -370,6 +395,7 @@ export default function PaymentOutsPage() {
         const paid = new Set<string>()
         const refunded = new Map<string, number>()
         for (const row of rows) {
+          if (row.status === 'cancelled') continue
           if (row.sales_return_id) paid.add(row.sales_return_id)
           if (row.credit_note_id) paid.add(row.credit_note_id)
           if (row.invoice_id) {
@@ -486,12 +512,13 @@ export default function PaymentOutsPage() {
 
     setSubmitting(true)
     try {
-      const payload: Record<string, string | number> = {
+      const payload: Record<string, string | number | null> = {
         party_id: formData.party_id,
         amount_paid: amountPaid,
-        payment_out_discount: discount,
+        payment_out_discount: isDiscountEnabled ? discount : 0,
         payment_out_number: formData.payment_out_number,
         mode: formData.mode,
+        bank_account_id: formData.bank_account_id || null,
         date: new Date(formData.date).toISOString(),
         reference: formData.reference,
         notes: formData.notes,
@@ -526,6 +553,29 @@ export default function PaymentOutsPage() {
       showErrorToast('Failed to create payment out. Please try again.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleCancel = async (id: string) => {
+    const reason = await requestCancelReason({
+      title: 'Cancel payment out?',
+      description: 'The payment will be reversed and kept for reference — it will no longer count in reports or balances.',
+    })
+    if (!reason) return
+    try {
+      const res = await apiFetch(`/payment-outs/${id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
+      if (res.ok) {
+        showSuccessToast('Payment out cancelled')
+        fetchPaymentOuts()
+      } else {
+        await handleApiError(res, { toastTitle: 'Unable to cancel' })
+      }
+    } catch (err) {
+      console.error(err)
+      showErrorToast('Failed to cancel payment out. Please try again.')
     }
   }
 
@@ -786,28 +836,30 @@ export default function PaymentOutsPage() {
                       />
                       <FieldError message={fieldErrors.amount_paid} />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="payment_out_discount">Payment Out Discount</Label>
-                      <Input
-                        id="payment_out_discount"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0"
-                        value={formData.payment_out_discount}
-                        onChange={(e) => {
-                          clearFieldError('payment_out_discount')
-                          setFormData({ ...formData, payment_out_discount: e.target.value })
-                        }}
-                        onBlur={() => {
-                          if (formData.payment_out_discount === '' || Number.isNaN(parseFloat(formData.payment_out_discount))) {
-                            setFormData({ ...formData, payment_out_discount: '0' })
-                          }
-                        }}
-                        className={cn(fieldErrors.payment_out_discount && 'border-red-500')}
-                      />
-                      <FieldError message={fieldErrors.payment_out_discount} />
-                    </div>
+                    {isDiscountEnabled && (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="payment_out_discount">Payment Out Discount</Label>
+                        <Input
+                          id="payment_out_discount"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0"
+                          value={formData.payment_out_discount}
+                          onChange={(e) => {
+                            clearFieldError('payment_out_discount')
+                            setFormData({ ...formData, payment_out_discount: e.target.value })
+                          }}
+                          onBlur={() => {
+                            if (formData.payment_out_discount === '' || Number.isNaN(parseFloat(formData.payment_out_discount))) {
+                              setFormData({ ...formData, payment_out_discount: '0' })
+                            }
+                          }}
+                          className={cn(fieldErrors.payment_out_discount && 'border-red-500')}
+                        />
+                        <FieldError message={fieldErrors.payment_out_discount} />
+                      </div>
+                    )}
                     <div className="space-y-1.5">
                       <Label htmlFor="payment_out_number">Payment Out Number</Label>
                       <Input
@@ -841,6 +893,44 @@ export default function PaymentOutsPage() {
                         </SelectContent>
                       </Select>
                       <FieldError message={fieldErrors.mode} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="bank_account_id">Paid From</Label>
+                      {isInitialInvestmentMethod(formData.mode) ? (
+                        <div className="flex h-9 items-center rounded-md border border-input bg-gray-50 px-3 text-sm text-muted-foreground">
+                          Owner&apos;s Equity
+                        </div>
+                      ) : bankAccountsLoading ? (
+                        <Skeleton className="h-9" />
+                      ) : (
+                        <select
+                          id="bank_account_id"
+                          value={formData.bank_account_id}
+                          onChange={(e) => setFormData({ ...formData, bank_account_id: e.target.value })}
+                          className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                        >
+                          <option value="">
+                            {!formData.mode || formData.mode === 'cash'
+                              ? 'Cash in-hand'
+                              : `Auto — ${getDepositHint(formData.mode, bankAccounts)}`}
+                          </option>
+                          {bankAccounts
+                            .filter((a) => a.is_active || a.id === formData.bank_account_id)
+                            .map((account) => (
+                              <option key={account.id} value={account.id}>
+                                {account.account_name}
+                                {account.bank_name ? ` (${account.bank_name})` : ''}
+                                {' — '}
+                                {formatCurrency(account.balance)}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {isInitialInvestmentMethod(formData.mode)
+                          ? 'Recorded as owner\u2019s capital; does not affect cash or bank balances.'
+                          : `Amount paid is deducted from: ${paymentOutAccountLabel} (configure under Cash & Bank → Payment method accounts)`}
+                      </p>
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="date">Payment Date *</Label>
@@ -973,7 +1063,7 @@ export default function PaymentOutsPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <div className="table-scroll">
@@ -985,7 +1075,7 @@ export default function PaymentOutsPage() {
                       <th className="pb-3 font-medium">Party Name</th>
                       <th className="pb-3 font-medium">Bill #</th>
                       <th className="pb-3 font-medium">Amount Paid</th>
-                      <th className="pb-3 font-medium">Discount</th>
+                      {isDiscountEnabled && <th className="pb-3 font-medium">Discount</th>}
                       <th className="pb-3 font-medium">Net Amount</th>
                       <th className="pb-3 font-medium">Payment Mode</th>
                       <th className="pb-3 font-medium">Payment Out Number</th>
@@ -996,10 +1086,16 @@ export default function PaymentOutsPage() {
                   <tbody>
                     {paymentOuts.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="py-8 text-center text-gray-500">
-                          {hasActiveFilters
-                            ? 'No payment outs match your filters'
-                            : 'No payment outs recorded yet'}
+                        <td colSpan={isDiscountEnabled ? 11 : 10} className="px-4 py-4">
+                          {hasActiveFilters ? (
+                            <p className="py-6 text-center text-sm text-gray-500">No payment outs match your filters</p>
+                          ) : (
+                            <PremiumEmpty
+                              icon={Banknote}
+                              title="No payment outs recorded yet"
+                              hint="Payments made to suppliers will appear here."
+                            />
+                          )}
                         </td>
                       </tr>
                     ) : (
@@ -1010,12 +1106,23 @@ export default function PaymentOutsPage() {
                           <td className="py-3 font-medium text-gray-900">{getPartyName(p)}</td>
                           <td className="py-3 text-gray-600">{getDocNumber(p)}</td>
                           <td className="py-3 font-medium text-gray-900">{formatCurrency(p.amount_paid)}</td>
-                          <td className="py-3 font-medium text-gray-900">
-                            {formatCurrency(p.payment_out_discount)}
-                          </td>
+                          {isDiscountEnabled && (
+                            <td className="py-3 font-medium text-gray-900">
+                              {formatCurrency(p.payment_out_discount)}
+                            </td>
+                          )}
                           <td className="py-3 font-medium text-gray-900">{formatCurrency(getNetAmount(p))}</td>
                           <td className="py-3">{getModeIcon(p.mode)}</td>
-                          <td className="py-3 text-gray-600">{p.payment_out_number || '-'}</td>
+                          <td className="py-3 text-gray-600">
+                            <div className="flex items-center gap-2">
+                              {p.payment_out_number || '-'}
+                              {p.status === 'cancelled' && (
+                                <span title={p.cancel_reason || undefined}>
+                                  <StatusBadge status="cancelled" />
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="py-3 text-gray-600">{p.notes || '-'}</td>
                           <td className="py-3">
                             <DropdownMenu>
@@ -1025,13 +1132,21 @@ export default function PaymentOutsPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() => handleDelete(p.id)}
-                                  className="text-red-600"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
+                                {p.status !== 'cancelled' && (
+                                  <DropdownMenuItem onClick={() => handleCancel(p.id)}>
+                                    <X className="mr-2 h-4 w-4" />
+                                    Cancel
+                                  </DropdownMenuItem>
+                                )}
+                                {canDelete && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleDelete(p.id)}
+                                    className="text-red-600"
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </td>
@@ -1055,6 +1170,7 @@ export default function PaymentOutsPage() {
         </Card>
       </div>
       {confirmDialog}
+      {cancelReasonDialog}
     </DashboardLayout>
   )
 }

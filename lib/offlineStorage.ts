@@ -13,6 +13,8 @@ export const POS_META_KEYS = {
   PRINT_SETTINGS: 'print_settings',
   BUSINESS: 'business',
   LOYALTY: 'loyalty_settings',
+  LOYALTY_CARDS: 'loyalty_cards_map',
+  SALE_DISCOUNT: 'sale_discount_settings',
   PAYMENT_MAPPINGS: 'payment_mappings',
   BANK_ACCOUNTS: 'bank_accounts',
 } as const
@@ -47,6 +49,8 @@ export interface POSSaleRecord {
   additional_charges?: number
   additional_charge_items?: Array<{ label: string; amount: number }>
   loyalty_points_redeemed?: number
+  /** ₹ cashback redeemed (cash-mode loyalty). */
+  loyalty_cash_redeemed?: number
   items: Array<{
     product_id: string
     description: string

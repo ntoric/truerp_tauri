@@ -16,6 +16,7 @@ import { notifyError, notifySuccess } from '@/lib/notify'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import EstimateConvertDialog from '@/components/EstimateConvertDialog'
 import { displayAdditionalChargeRows, type AdditionalChargeItem } from '@/lib/additionalCharges'
+import BrandLoader from '@/components/BrandLoader'
 
 interface EstimateItem {
   id: string
@@ -323,7 +324,7 @@ function EstimateViewContent() {
 
 export default function ViewEstimatePage() {
   return (
-    <Suspense fallback={<div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>}>
+    <Suspense fallback={<div className="flex h-96 items-center justify-center"><BrandLoader /></div>}>
       <EstimateViewContent />
     </Suspense>
   )

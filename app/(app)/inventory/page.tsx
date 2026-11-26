@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import { useRouter } from 'next/navigation'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
@@ -16,6 +17,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
 import ExpandableTableCard from '@/components/ui/expandable-table-card'
 import { Warehouse, ArrowDownLeft, ArrowUpRight, RotateCcw, Plus, Search, Truck, AlertTriangle, Barcode, Upload, Download, CalendarRange, Check, X, Filter, IndianRupee, Package, Boxes, RefreshCw, Pencil, BarChart3 } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { accountingExportDateStamp, downloadCsv } from '@/lib/accountingExport'
 import { asArray, formatCurrency } from '@/lib/utils'
 import StatWidget from '@/components/widgets/StatWidget'
@@ -41,6 +43,12 @@ interface InventoryItemOption {
   type: string
   enable_batching?: boolean
   unit?: string
+}
+
+interface Category {
+  id: string
+  name: string
+  description?: string
 }
 
 interface StockBalance {
@@ -152,6 +160,10 @@ const STOCK_BULK_UPDATE_SAMPLE_ROW: (string | number)[] = [
   'BATCH001',
   'Bulk stock update',
 ]
+
+const BULK_ADJUST_HEADERS = ['SKU', 'Quantity']
+
+const BULK_ADJUST_SAMPLE_ROW: (string | number)[] = ['SKU001', 10]
 
 function HeaderIconAction({
   label,
@@ -288,16 +300,32 @@ export default function InventoryPage() {
   const [bulkStockUpdatedCount, setBulkStockUpdatedCount] = useState<number | null>(null)
   const [bulkStockUpdateErrors, setBulkStockUpdateErrors] = useState<string[]>([])
   const bulkStockUpdateFileRef = useRef<HTMLInputElement>(null)
+  const [showBulkAdjustDialog, setShowBulkAdjustDialog] = useState(false)
+  const [bulkAdjustFile, setBulkAdjustFile] = useState<File | null>(null)
+  const [bulkAdjustWarehouseId, setBulkAdjustWarehouseId] = useState('')
+  const [bulkAdjusting, setBulkAdjusting] = useState(false)
+  const [bulkAdjustedCount, setBulkAdjustedCount] = useState<number | null>(null)
+  const [bulkAdjustErrors, setBulkAdjustErrors] = useState<string[]>([])
+  const [bulkAdjustJob, setBulkAdjustJob] = useState<{
+    status: string
+    current_row: number
+    total_rows: number
+    imported: number
+  } | null>(null)
+  const bulkAdjustFileRef = useRef<HTMLInputElement>(null)
   const [activeTab, setActiveTab] = useState('balance')
   const [datePeriod, setDatePeriod] = useState<DatePeriod>('month')
   const [customFromDate, setCustomFromDate] = useState('')
   const [customToDate, setCustomToDate] = useState('')
   const [entryApprovalFilter, setEntryApprovalFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
+  const [entryTypeFilter, setEntryTypeFilter] = useState<string>('all')
   const [productSearchQuery, setProductSearchQuery] = useState('')
   const [debouncedProductSearch, setDebouncedProductSearch] = useState('')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [approvingEntryId, setApprovingEntryId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
-  const [showStats, setShowStats] = useState(false)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
   const [entriesPage, setEntriesPage] = useState(1)
   const [entriesTotal, setEntriesTotal] = useState(0)
   const [stocksPage, setStocksPage] = useState(1)
@@ -351,21 +379,23 @@ export default function InventoryPage() {
 
   // Inventory stocks always show current batch-level rows; date filter applies to entries/transfers only.
   const isProductSearchActive = productSearchQuery.trim().length > 0
+  const isCategoryFilterActive = categoryFilter !== 'all'
 
   // Lightweight data needed regardless of the active tab: dropdown options for
   // the dialogs, the pending-approval badge, and the stat widgets.
   useEffect(() => { if (!authLoading && user) fetchStats() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchInventoryItems() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchWarehouses() }, [authLoading, user])
+  useEffect(() => { if (!authLoading && user) fetchCategories() }, [authLoading, user])
   useEffect(() => { if (!authLoading && user) fetchPendingCount() }, [authLoading, user])
 
   // Each tab fetches its own page of data when opened and when its
   // filters/page change while it is active.
-  useEffect(() => { if (!authLoading && user && activeTab === 'balance') fetchBalance() }, [authLoading, user, activeTab, debouncedProductSearch, balancePage])
-  useEffect(() => { if (!authLoading && user && activeTab === 'entries') fetchEntries() }, [authLoading, user, activeTab, debouncedProductSearch, entryApprovalFilter, dateRange, entriesPage])
-  useEffect(() => { if (!authLoading && user && activeTab === 'stocks') fetchStocks() }, [authLoading, user, activeTab, debouncedProductSearch, stocksPage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'balance') fetchBalance() }, [authLoading, user, activeTab, debouncedProductSearch, categoryFilter, balancePage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'entries') fetchEntries() }, [authLoading, user, activeTab, debouncedProductSearch, categoryFilter, entryApprovalFilter, entryTypeFilter, dateRange, entriesPage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'stocks') fetchStocks() }, [authLoading, user, activeTab, debouncedProductSearch, categoryFilter, stocksPage])
   useEffect(() => { if (!authLoading && user && activeTab === 'transfers') fetchTransfers() }, [authLoading, user, activeTab, dateRange, transfersPage])
-  useEffect(() => { if (!authLoading && user && activeTab === 'low-stock') fetchLowStock() }, [authLoading, user, activeTab, lowStockPage])
+  useEffect(() => { if (!authLoading && user && activeTab === 'low-stock') fetchLowStock() }, [authLoading, user, activeTab, categoryFilter, lowStockPage])
 
   // Debounce the shared product search so each keystroke doesn't hit the API.
   useEffect(() => {
@@ -381,7 +411,7 @@ export default function InventoryPage() {
   useEffect(() => {
     setEntriesPage(1)
     setTransfersPage(1)
-  }, [datePeriod, customFromDate, customToDate, entryApprovalFilter])
+  }, [datePeriod, customFromDate, customToDate, entryApprovalFilter, entryTypeFilter])
 
   // In the override dialog, the opening defaults to the computed overall
   // closing stock of the previous day once a date is chosen.
@@ -466,6 +496,7 @@ export default function InventoryPage() {
     try {
       const params = new URLSearchParams()
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', String(balancePage))
       params.append('per_page', String(pageSize))
       const res = await apiFetch(`/inventory/balance?${params.toString()}`)
@@ -490,6 +521,7 @@ export default function InventoryPage() {
     setLowStockLoading(true)
     try {
       const params = new URLSearchParams()
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', String(lowStockPage))
       params.append('per_page', String(pageSize))
       const res = await apiFetch(`/inventory/alerts/low-stock?${params.toString()}`)
@@ -516,7 +548,9 @@ export default function InventoryPage() {
       if (dateRange.from) params.append('from_date', toYmd(dateRange.from))
       if (dateRange.to) params.append('to_date', toYmd(dateRange.to))
       if (entryApprovalFilter !== 'all') params.append('approval_status', entryApprovalFilter)
+      if (entryTypeFilter !== 'all') params.append('entry_type', entryTypeFilter)
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', String(entriesPage))
       params.append('per_page', String(pageSize))
       const res = await apiFetch(`/inventory/entries?${params.toString()}`)
@@ -542,6 +576,7 @@ export default function InventoryPage() {
     try {
       const params = new URLSearchParams()
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', String(stocksPage))
       params.append('per_page', String(pageSize))
       const res = await apiFetch(`/inventory/stocks?${params.toString()}`)
@@ -712,6 +747,15 @@ export default function InventoryPage() {
       const res = await apiFetch('/warehouses?is_active=true')
       if (res.ok) {
         setWarehouses(asArray(await res.json()))
+      }
+    } catch (err) { console.error(err) }
+  }
+
+  const fetchCategories = async () => {
+    try {
+      const res = await apiFetch('/categories')
+      if (res.ok) {
+        setCategories(asArray<Category>(await res.json()))
       }
     } catch (err) { console.error(err) }
   }
@@ -947,6 +991,117 @@ export default function InventoryPage() {
     }
   }
 
+  const handleDownloadBulkAdjustTemplate = () => {
+    void downloadCsv(
+      `bulk_stock_adjust_template_${accountingExportDateStamp()}.csv`,
+      [BULK_ADJUST_HEADERS, BULK_ADJUST_SAMPLE_ROW],
+      { label: 'Exporting bulk adjust template' }
+    )
+  }
+
+  const resetBulkAdjustDialog = () => {
+    setBulkAdjustFile(null)
+    setBulkAdjustWarehouseId('')
+    setBulkAdjustedCount(null)
+    setBulkAdjustErrors([])
+    setBulkAdjustJob(null)
+    if (bulkAdjustFileRef.current) bulkAdjustFileRef.current.value = ''
+  }
+
+  const handleBulkAdjustDialogChange = (open: boolean) => {
+    setShowBulkAdjustDialog(open)
+    if (!open) resetBulkAdjustDialog()
+  }
+
+  const handleBulkAdjust = async () => {
+    if (!bulkAdjustWarehouseId) {
+      notifyError('Please select a warehouse')
+      return
+    }
+    if (!bulkAdjustFile) {
+      notifyError('Please select a CSV file to upload')
+      return
+    }
+
+    setBulkAdjusting(true)
+    setBulkAdjustedCount(null)
+    setBulkAdjustErrors([])
+    setBulkAdjustJob(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', bulkAdjustFile)
+      formData.append('outlet_id', bulkAdjustWarehouseId)
+
+      // The CSV is processed in the background; this only uploads the file
+      // and returns a job id to poll.
+      const res = await apiFetch('/inventory/stocks/bulk-adjust', { method: 'POST', body: formData })
+      const data = await res.json()
+
+      if (!res.ok) {
+        notifyError(data.error || 'Bulk stock adjustment failed')
+        return
+      }
+
+      const jobID = data.job_id as string
+      const pollIntervalMs = 1000
+      // Safety cap so a stuck job doesn't poll forever.
+      const maxAttempts = 60 * 30
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const jobRes = await apiFetch(`/inventory/stocks/bulk-adjust/jobs/${jobID}`)
+        if (!jobRes.ok) {
+          const err = await jobRes.json().catch(() => ({}))
+          throw new Error(err.error || 'Failed to fetch job status')
+        }
+        const job = await jobRes.json()
+        setBulkAdjustJob(job)
+
+        if (job.status === 'failed') {
+          notifyError(job.failure_reason || 'Bulk stock adjustment failed')
+          return
+        }
+        if (job.status === 'completed') {
+          let count = job.imported ?? 0
+          if (job.result) {
+            try {
+              const r = JSON.parse(job.result)
+              if (typeof r.adjusted === 'number') count = r.adjusted
+            } catch { /* ignore malformed payload */ }
+          }
+          let errors: string[] = []
+          if (job.errors) {
+            try {
+              const arr = JSON.parse(job.errors)
+              if (Array.isArray(arr)) errors = arr.filter((x): x is string => typeof x === 'string')
+            } catch { /* ignore malformed payload */ }
+          }
+          setBulkAdjustedCount(count)
+          setBulkAdjustErrors(errors)
+
+          if (count > 0) {
+            fetchData()
+            notifySuccess(`Successfully adjusted stock for ${count} row${count === 1 ? '' : 's'}`)
+          }
+
+          if (count === 0 && errors.length > 0) {
+            notifyError('No stock rows were adjusted. Please review the errors below.')
+          } else if (errors.length > 0) {
+            notifyError(`${errors.length} row${errors.length === 1 ? '' : 's'} could not be adjusted`)
+          }
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+      }
+      notifyError('Bulk stock adjustment timed out waiting for completion')
+    } catch (err) {
+      console.error(err)
+      notifyError(err instanceof Error ? err.message : 'Bulk stock adjustment failed')
+    } finally {
+      setBulkAdjusting(false)
+    }
+  }
+
   const handleEditEntry = (entry: StockEntry) => {
     // Format dates for date input (YYYY-MM-DD)
     const formatDate = (dateStr: string | undefined) => {
@@ -1177,6 +1332,7 @@ export default function InventoryPage() {
       // per_page=0 returns every matching row for the export.
       const params = new URLSearchParams()
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', '1')
       params.append('per_page', '0')
       const res = await apiFetch(`/inventory/balance?${params.toString()}`, { timeoutMs: 30000 })
@@ -1210,7 +1366,9 @@ export default function InventoryPage() {
       if (dateRange.from) params.append('from_date', toYmd(dateRange.from))
       if (dateRange.to) params.append('to_date', toYmd(dateRange.to))
       if (entryApprovalFilter !== 'all') params.append('approval_status', entryApprovalFilter)
+      if (entryTypeFilter !== 'all') params.append('entry_type', entryTypeFilter)
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', '1')
       params.append('per_page', '0')
       const res = await apiFetch(`/inventory/entries?${params.toString()}`, { timeoutMs: 30000 })
@@ -1279,6 +1437,7 @@ export default function InventoryPage() {
       // per_page=0 returns every matching row for the export.
       const params = new URLSearchParams()
       if (debouncedProductSearch) params.append('search', debouncedProductSearch)
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
       params.append('page', '1')
       params.append('per_page', '0')
       const res = await apiFetch(`/inventory/stocks?${params.toString()}`, { timeoutMs: 30000 })
@@ -1313,7 +1472,11 @@ export default function InventoryPage() {
   const handleExportLowStock = async () => {
     try {
       // per_page=0 returns every matching row for the export.
-      const res = await apiFetch('/inventory/alerts/low-stock?page=1&per_page=0', { timeoutMs: 30000 })
+      const params = new URLSearchParams()
+      if (categoryFilter !== 'all') params.append('category', categoryFilter)
+      params.append('page', '1')
+      params.append('per_page', '0')
+      const res = await apiFetch(`/inventory/alerts/low-stock?${params.toString()}`, { timeoutMs: 30000 })
       if (!res.ok) throw new Error('Failed to fetch low stock alerts')
       const rows = asArray<LowStockAlert>(await res.json())
       await downloadCsv(
@@ -1354,6 +1517,29 @@ export default function InventoryPage() {
         aria-label="Product search"
       />
     </div>
+  )
+
+  const categorySelect = (
+    <Select
+      value={categoryFilter}
+      onValueChange={(value) => {
+        setCategoryFilter(value)
+        setBalancePage(1)
+        setEntriesPage(1)
+        setStocksPage(1)
+        setLowStockPage(1)
+      }}
+    >
+      <SelectTrigger className="w-full sm:w-[180px]" aria-label="Category filter">
+        <SelectValue placeholder="All Categories" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All Categories</SelectItem>
+        {categories.map((cat) => (
+          <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 
   if (authLoading) {
@@ -1418,6 +1604,11 @@ export default function InventoryPage() {
               label="Bulk Stock Update"
               onClick={() => setShowBulkStockUpdateDialog(true)}
               icon={<Upload className="h-4 w-4" />}
+            />
+            <HeaderIconAction
+              label="Bulk Adjust Stock"
+              onClick={() => setShowBulkAdjustDialog(true)}
+              icon={<Boxes className="h-4 w-4" />}
             />
             <Dialog open={showCreateEntryModal} onOpenChange={setShowCreateEntryModal}>
               <DialogTrigger asChild>
@@ -1664,8 +1855,9 @@ export default function InventoryPage() {
             <p className="text-sm text-gray-500">
               Declares the overall opening stock — all products and warehouses — at the
               start of the selected date. It defaults to the previous day&apos;s closing
-              stock; edit to override. Stock reports and P&L will use this value instead
-              of the computed opening.
+              stock; edit to override. Stock reports and P&L for a period starting on
+              this date will use this value as the opening stock. Closing stock is
+              always the computed figure and is not affected.
             </p>
             <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 py-2">
               <div className="space-y-2">
@@ -2001,6 +2193,11 @@ export default function InventoryPage() {
                       Product search applies to Stock Balance, Stock Entries, and Inventory Stocks.
                     </p>
                   )}
+                  {isCategoryFilterActive && (
+                    <p className="mt-1">
+                      Category filter applies to Stock Balance, Stock Entries, Inventory Stocks, and Low Stock Alerts.
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -2093,6 +2290,7 @@ export default function InventoryPage() {
               headerActions={
                 <>
                   {productSearchInput}
+                  {categorySelect}
                   {exportButton(handleExportBalance)}
                 </>
               }
@@ -2121,10 +2319,12 @@ export default function InventoryPage() {
                     <TableSkeletonRows cols={6} />
                   ) : balance.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                        {isProductSearchActive
-                          ? 'No stock balance records match your product search'
-                          : 'No stock balance records'}
+                      <TableCell colSpan={6} className="px-4 py-4">
+                        {isProductSearchActive ? (
+                          <p className="py-6 text-center text-sm text-gray-500">No stock balance records match your product search</p>
+                        ) : (
+                          <PremiumEmpty compact icon={Boxes} title="No stock balance records" hint="Stock balances across warehouses will appear here." />
+                        )}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -2176,6 +2376,26 @@ export default function InventoryPage() {
               headerActions={
                 <>
                   {productSearchInput}
+                  {categorySelect}
+                  <Select
+                    value={entryTypeFilter}
+                    onValueChange={setEntryTypeFilter}
+                  >
+                    <SelectTrigger className="w-[150px]">
+                      <SelectValue placeholder="Entry type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All types</SelectItem>
+                      <SelectItem value="purchase">Purchase</SelectItem>
+                      <SelectItem value="sale">Sale</SelectItem>
+                      <SelectItem value="adjustment">Adjustment</SelectItem>
+                      <SelectItem value="transfer">Transfer</SelectItem>
+                      <SelectItem value="opening">Opening</SelectItem>
+                      <SelectItem value="return">Return</SelectItem>
+                      <SelectItem value="reservation">Reservation</SelectItem>
+                      <SelectItem value="release">Release</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Select
                     value={entryApprovalFilter}
                     onValueChange={(v) => setEntryApprovalFilter(v as typeof entryApprovalFilter)}
@@ -2225,10 +2445,12 @@ export default function InventoryPage() {
                     <TableSkeletonRows cols={11} />
                   ) : entries.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="py-8 text-center text-gray-500">
-                        {isDateFilterActive || isProductSearchActive || entryApprovalFilter !== 'all'
-                          ? 'No stock entries found for the selected filters'
-                          : 'No stock entries found'}
+                      <TableCell colSpan={11} className="px-4 py-4">
+                        {isDateFilterActive || isProductSearchActive || entryApprovalFilter !== 'all' || entryTypeFilter !== 'all' ? (
+                          <p className="py-6 text-center text-sm text-gray-500">No stock entries found for the selected filters</p>
+                        ) : (
+                          <PremiumEmpty compact icon={Package} title="No stock entries found" hint="Stock movements in and out will appear here." />
+                        )}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -2339,10 +2561,12 @@ export default function InventoryPage() {
                     <TableSkeletonRows cols={6} />
                   ) : transfers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center text-gray-500">
-                        {isDateFilterActive
-                          ? 'No stock transfers found for the selected period'
-                          : 'No stock transfers found'}
+                      <TableCell colSpan={6} className="px-4 py-4">
+                        {isDateFilterActive ? (
+                          <p className="py-6 text-center text-sm text-gray-500">No stock transfers found for the selected period</p>
+                        ) : (
+                          <PremiumEmpty compact icon={Truck} title="No stock transfers found" hint="Transfers between warehouses will appear here." />
+                        )}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -2379,6 +2603,7 @@ export default function InventoryPage() {
               headerActions={
                 <>
                   {productSearchInput}
+                  {categorySelect}
                   {exportButton(handleExportStocks)}
                 </>
               }
@@ -2412,10 +2637,12 @@ export default function InventoryPage() {
                     <TableSkeletonRows cols={11} />
                   ) : stocks.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="py-8 text-center text-gray-500">
-                        {isProductSearchActive
-                          ? 'No inventory stock records match your product search'
-                          : 'No inventory stock records'}
+                      <TableCell colSpan={11} className="px-4 py-4">
+                        {isProductSearchActive ? (
+                          <p className="py-6 text-center text-sm text-gray-500">No inventory stock records match your product search</p>
+                        ) : (
+                          <PremiumEmpty compact icon={Warehouse} title="No inventory stock records" hint="Stock levels will appear here once items are added." />
+                        )}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -2465,7 +2692,12 @@ export default function InventoryPage() {
                   )}
                 </CardTitle>
               }
-              headerActions={exportButton(handleExportLowStock)}
+              headerActions={
+                <>
+                  {categorySelect}
+                  {exportButton(handleExportLowStock)}
+                </>
+              }
               description={
                 <p className="text-sm text-gray-500">
                   Products at or below their minimum stock level. Always shows current data.
@@ -2487,8 +2719,8 @@ export default function InventoryPage() {
                     <TableSkeletonRows cols={5} />
                   ) : lowStockAlerts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-8 text-center text-gray-500">
-                        No low stock alerts
+                      <TableCell colSpan={5} className="px-4 py-4">
+                        <PremiumEmpty compact icon={AlertTriangle} title="No low stock alerts" hint="Everything is above its reorder level." />
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -2563,7 +2795,94 @@ export default function InventoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
+
+      <Dialog open={showBulkAdjustDialog} onOpenChange={handleBulkAdjustDialogChange}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Bulk Adjust Stock</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Select a warehouse and upload a CSV file to adjust stock in bulk. Identify each product by its <strong>SKU</strong> and enter a signed <strong>Quantity</strong> — positive to add stock, negative to reduce. Each row is recorded as an adjustment with the note <strong>bulk import</strong>.
+            </p>
+            <div className="space-y-2">
+              <Label>Warehouse</Label>
+              <SearchableSelect
+                value={bulkAdjustWarehouseId}
+                onValueChange={setBulkAdjustWarehouseId}
+                options={warehouses.map((wh) => ({
+                  value: wh.id,
+                  label: `${wh.name} (${wh.code})`,
+                }))}
+                placeholder="Select warehouse"
+                searchPlaceholder="Search warehouses..."
+                emptyMessage="No warehouses found"
+              />
+            </div>
+            <Button variant="outline" onClick={handleDownloadBulkAdjustTemplate} className="gap-2 w-full sm:w-auto">
+              <Download className="h-4 w-4" />
+              Download CSV Template
+            </Button>
+            <div className="space-y-2">
+              <Label htmlFor="bulk_adjust_file">CSV file</Label>
+              <Input
+                id="bulk_adjust_file"
+                ref={bulkAdjustFileRef}
+                type="file"
+                accept=".csv"
+                onChange={(e) => setBulkAdjustFile(e.target.files?.[0] ?? null)}
+              />
+              {bulkAdjustFile && (
+                <p className="text-sm text-gray-500">Selected: {bulkAdjustFile.name}</p>
+              )}
+            </div>
+            {bulkAdjustJob && (bulkAdjustJob.status === 'queued' || bulkAdjustJob.status === 'running') && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>{bulkAdjustJob.status === 'queued' ? 'Waiting to start…' : 'Adjusting stock…'}</span>
+                  <span>
+                    {bulkAdjustJob.total_rows > 0
+                      ? `${bulkAdjustJob.current_row} / ${bulkAdjustJob.total_rows} rows`
+                      : `${bulkAdjustJob.current_row} rows`}
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-blue-600 transition-all"
+                    style={{
+                      width: `${bulkAdjustJob.total_rows > 0
+                        ? Math.min(100, Math.round((bulkAdjustJob.current_row / bulkAdjustJob.total_rows) * 100))
+                        : 100}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-gray-500">
+                  {bulkAdjustJob.imported} row{bulkAdjustJob.imported === 1 ? '' : 's'} adjusted so far
+                </p>
+              </div>
+            )}
+            {bulkAdjustedCount !== null && (
+              <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                Adjusted stock for {bulkAdjustedCount} row{bulkAdjustedCount === 1 ? '' : 's'} successfully.
+              </div>
+            )}
+            {bulkAdjustErrors.length > 0 && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 max-h-40 overflow-y-auto space-y-1">
+                {bulkAdjustErrors.map((error, index) => (
+                  <p key={`${error}-${index}`}>{error}</p>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => handleBulkAdjustDialogChange(false)}>Cancel</Button>
+            <Button onClick={handleBulkAdjust} disabled={bulkAdjusting || !bulkAdjustFile || !bulkAdjustWarehouseId}>
+              {bulkAdjusting ? 'Adjusting...' : 'Adjust Stock'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {canUseCameraBarcodeScanner && (
         <BarcodeScanner
           open={showBarcodeScanner}

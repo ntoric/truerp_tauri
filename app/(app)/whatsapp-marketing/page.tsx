@@ -14,10 +14,12 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatDate } from '@/lib/utils'
 import { Plus, Send, Calendar, Users, MessageSquare, Loader2, Clock, CheckCircle, XCircle, AlertCircle, Image, CheckCheck } from 'lucide-react'
+import PremiumEmpty from '@/components/ui/premium-empty'
 import { notifyError } from '@/lib/notify'
 import { usePagination } from '@/hooks/usePagination'
 import PaginationControls from '@/components/ui/pagination-controls'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
+import BrandLoader from '@/components/BrandLoader'
 
 interface WhatsAppCampaign {
   id: string
@@ -407,7 +409,7 @@ export default function WhatsAppMarketingPage() {
           <CardContent>
             {loading ? (
               <div className="flex h-32 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                <BrandLoader />
               </div>
             ) : (
               <div className="table-scroll">
@@ -476,8 +478,12 @@ export default function WhatsAppMarketingPage() {
                     ))}
                     {campaigns.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-gray-500">
-                          No WhatsApp campaigns created yet
+                        <td colSpan={7} className="px-4 py-4">
+                          <PremiumEmpty
+                            icon={MessageSquare}
+                            title="No WhatsApp campaigns yet"
+                            hint="Create a campaign to reach your customers on WhatsApp."
+                          />
                         </td>
                       </tr>
                     )}

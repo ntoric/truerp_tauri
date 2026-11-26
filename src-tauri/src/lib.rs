@@ -98,7 +98,8 @@ const BRIDGE_JS: &str = r#"
     APIStatus: function () { return Promise.resolve('running'); },
     AppVersion: function () { return invoke('app_version'); },
     CheckForUpdates: function () { return invoke('check_for_updates'); },
-    DownloadAndInstallUpdate: function () { return invoke('download_and_install_update'); }
+    DownloadAndInstallUpdate: function () { return invoke('download_and_install_update'); },
+    SetForceUpdate: function (enabled) { return invoke('set_force_update', { enabled: enabled === true }); }
   };
 })();
 "#;
@@ -136,6 +137,8 @@ pub fn run() {
             updater::check_for_updates,
             #[cfg(desktop)]
             updater::download_and_install_update,
+            #[cfg(desktop)]
+            updater::set_force_update,
             pos_queue::pos_queue_upsert,
             pos_queue::pos_queue_list_unsynced,
             pos_queue::pos_queue_update_status,
