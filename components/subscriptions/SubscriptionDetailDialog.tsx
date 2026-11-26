@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Ban, Loader2, Plus, Trash2 } from 'lucide-react'
+import { Ban, Download, Gift, Loader2, Plus, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -14,11 +14,15 @@ import SubscriptionCard from '@/components/subscriptions/SubscriptionCard'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import {
-  PAYMENT_BADGE,
   PAYMENT_METHODS,
+  complimentaryLabel,
+  cycleBadge,
+  isComplimentaryCycle,
   SOURCE_LABEL,
   cancelSubscription,
   deletePayment,
+  downloadInvoice,
+  downloadReceipt,
   formatMoney,
   formatPlanDate,
   getSubscription,
@@ -44,6 +48,7 @@ export default function SubscriptionDetailDialog({
   const [busy, setBusy] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
+  const [compOpen, setCompOpen] = useState(false)
 
   const load = useCallback(async () => {
     if (!subscriptionId) return
@@ -74,6 +79,34 @@ export default function SubscriptionDetailDialog({
       notifyError(e instanceof Error ? e.message : 'Failed to update')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const endComplimentary = async () => {
+    if (!sub) return
+    const ok = await confirm({
+      title: 'End complimentary access?',
+      description: `The current cycle stays free. From ${formatPlanDate(sub.current_period_end)} the store is billed ${formatMoney(sub.price, sub.currency)} per cycle${sub.auto_renew ? '' : ' if it renews'}.`,
+      confirmLabel: 'End complimentary',
+    })
+    if (!ok) return
+    try {
+      applyUpdate(await updateSubscription(sub.id, { is_complimentary: false }))
+      notifySuccess('Complimentary access ended.')
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : 'Failed to update')
+    }
+  }
+
+  const [downloading, setDownloading] = useState('')
+  const download = async (key: string, fn: () => Promise<void>) => {
+    setDownloading(key)
+    try {
+      await fn()
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : 'Download failed')
+    } finally {
+      setDownloading('')
     }
   }
 
@@ -120,8 +153,20 @@ export default function SubscriptionDetailDialog({
                   </label>
                 )}
                 <Button size="sm" onClick={() => setPayOpen(true)}>
-                  <Plus className="mr-1.5 h-4 w-4" /> {active ? 'Record payment' : 'Reactivate with payment'}
+                  <Plus className="mr-1.5 h-4 w-4" />{' '}
+                  {active ? 'Record payment' : sub.is_complimentary ? 'Reactivate' : 'Reactivate with payment'}
                 </Button>
+                {active && (
+                  <Button size="sm" variant="outline" onClick={() => setCompOpen(true)}>
+                    <Gift className="mr-1.5 h-4 w-4 text-amber-500" />
+                    {sub.is_complimentary ? 'Edit complimentary' : 'Make complimentary'}
+                  </Button>
+                )}
+                {active && sub.is_complimentary && (
+                  <Button size="sm" variant="ghost" onClick={endComplimentary}>
+                    End complimentary
+                  </Button>
+                )}
                 {active && (
                   <Button size="sm" variant="outline" onClick={() => setCancelOpen(true)}>
                     <Ban className="mr-1.5 h-4 w-4 text-rose-500" /> Cancel now
@@ -135,15 +180,32 @@ export default function SubscriptionDetailDialog({
                 </div>
               </div>
 
+              {active && sub.is_complimentary && (
+                <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-[linear-gradient(135deg,#fffbeb,#fef3c7)] p-3 text-sm text-amber-900">
+                  <Gift className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <div>
+                    <span className="font-medium">Complimentary · {complimentaryLabel(sub)}.</span>{' '}
+                    {sub.complimentary_until_cycle > 0
+                      ? `Cycles up to #${sub.complimentary_until_cycle} are free; later cycles bill ${formatMoney(sub.price, sub.currency)}.`
+                      : 'Every cycle is free until you end it.'}
+                    {sub.complimentary_reason && <span className="block text-xs text-amber-800/80">Reason: {sub.complimentary_reason}</span>}
+                    {sub.total_waived > 0 && (
+                      <span className="block text-xs text-amber-800/80">Value given so far: {formatMoney(sub.total_waived, sub.currency)}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {sub.notes && <p className="rounded-lg bg-surface-2 p-3 text-sm text-muted-foreground">{sub.notes}</p>}
 
               <section>
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Billing cycles</h4>
                 <div className="overflow-x-auto rounded-xl border border-border">
-                  <table className="w-full min-w-[600px] text-sm">
+                  <table className="w-full min-w-[760px] text-sm">
                     <thead className="bg-surface-2 text-left text-xs text-muted-foreground">
                       <tr>
                         <th className="px-3 py-2 font-medium">#</th>
+                        <th className="px-3 py-2 font-medium">Invoice</th>
                         <th className="px-3 py-2 font-medium">Period</th>
                         <th className="px-3 py-2 font-medium">Type</th>
                         <th className="px-3 py-2 text-right font-medium">Amount</th>
@@ -155,6 +217,17 @@ export default function SubscriptionDetailDialog({
                       {(sub.cycles ?? []).map((c) => (
                         <tr key={c.id} className="border-t border-border">
                           <td className="px-3 py-2 tabular-nums">{c.cycle_number}</td>
+                          <td className="whitespace-nowrap px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => download(c.id, () => downloadInvoice({ admin: true, subscriptionId: sub.id }, c))}
+                              className="inline-flex items-center gap-1.5 font-mono text-xs text-primary hover:underline"
+                              title="Download invoice PDF"
+                            >
+                              {downloading === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                              {c.invoice_number || 'Invoice'}
+                            </button>
+                          </td>
                           <td className="px-3 py-2">
                             {formatPlanDate(c.period_start)} – {formatPlanDate(c.period_end)}
                             {active && c.cycle_number === sub.current_cycle && (
@@ -165,10 +238,15 @@ export default function SubscriptionDetailDialog({
                             )}
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">{SOURCE_LABEL[c.source] ?? c.source}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{formatMoney(c.amount, sub.currency)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {c.complimentary && c.waived_amount > 0 && (
+                              <span className="mr-1.5 text-xs text-muted-foreground line-through">{formatMoney(c.waived_amount + c.amount, sub.currency)}</span>
+                            )}
+                            {formatMoney(c.amount, sub.currency)}
+                          </td>
                           <td className="px-3 py-2 text-right tabular-nums">{formatMoney(c.amount_paid, sub.currency)}</td>
                           <td className="px-3 py-2">
-                            <Badge className={PAYMENT_BADGE[c.payment_status].className}>{PAYMENT_BADGE[c.payment_status].label}</Badge>
+                            <Badge className={cycleBadge(c).className}>{cycleBadge(c).label}</Badge>
                           </td>
                         </tr>
                       ))}
@@ -183,9 +261,10 @@ export default function SubscriptionDetailDialog({
                   <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border border-border">
-                    <table className="w-full min-w-[560px] text-sm">
+                    <table className="w-full min-w-[680px] text-sm">
                       <thead className="bg-surface-2 text-left text-xs text-muted-foreground">
                         <tr>
+                          <th className="px-3 py-2 font-medium">Receipt</th>
                           <th className="px-3 py-2 font-medium">Date</th>
                           <th className="px-3 py-2 font-medium">Cycle</th>
                           <th className="px-3 py-2 font-medium">Method</th>
@@ -197,6 +276,17 @@ export default function SubscriptionDetailDialog({
                       <tbody>
                         {sub.payments!.map((p) => (
                           <tr key={p.id} className="border-t border-border">
+                            <td className="whitespace-nowrap px-3 py-2">
+                              <button
+                                type="button"
+                                onClick={() => download(p.id, () => downloadReceipt({ admin: true, subscriptionId: sub.id }, p))}
+                                className="inline-flex items-center gap-1.5 font-mono text-xs text-primary hover:underline"
+                                title="Download receipt PDF"
+                              >
+                                {downloading === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                                {p.receipt_number || 'Receipt'}
+                              </button>
+                            </td>
                             <td className="px-3 py-2">{formatPlanDate(p.payment_date)}</td>
                             <td className="px-3 py-2 tabular-nums">
                               #{sub.cycles?.find((c) => c.id === p.cycle_id)?.cycle_number ?? '—'}
@@ -236,6 +326,17 @@ export default function SubscriptionDetailDialog({
         />
       )}
       {sub && (
+        <ComplimentaryDialog
+          open={compOpen}
+          onOpenChange={setCompOpen}
+          sub={sub}
+          onSaved={(s) => {
+            applyUpdate(s)
+            setCompOpen(false)
+          }}
+        />
+      )}
+      {sub && (
         <CancelDialog
           open={cancelOpen}
           onOpenChange={setCancelOpen}
@@ -269,7 +370,11 @@ function PaymentDialog({
   const targets = useMemo<Target[]>(() => {
     const list: Target[] = []
     if (sub.status !== 'active') {
-      list.push({ key: 'reactivate', label: `Reactivate from today (new ${sub.billing_cycle} cycle)`, apply_to: 'reactivate', due: sub.price })
+      list.push(
+        sub.is_complimentary
+          ? { key: 'reactivate', label: 'Reactivate from today (complimentary — no charge)', apply_to: 'reactivate', due: 0 }
+          : { key: 'reactivate', label: `Reactivate from today (new ${sub.billing_cycle} cycle)`, apply_to: 'reactivate', due: sub.price }
+      )
       return list
     }
     const cycles = [...(sub.cycles ?? [])].sort((a, b) => a.cycle_number - b.cycle_number)
@@ -283,7 +388,7 @@ function PaymentDialog({
         due: Math.round((c.amount - c.amount_paid) * 100) / 100,
       })
     }
-    if (!cycles.some((c) => c.cycle_number === sub.current_cycle + 1)) {
+    if (!cycles.some((c) => c.cycle_number === sub.current_cycle + 1) && !isComplimentaryCycle(sub, sub.current_cycle + 1)) {
       list.push({
         key: 'next',
         label: `Next cycle — renew in advance from ${formatPlanDate(sub.current_period_end)}`,
@@ -323,7 +428,8 @@ function PaymentDialog({
     const t = targets.find((x) => x.key === targetKey)
     const amt = Number(amount)
     if (!t) return notifyError('Choose what this payment is for')
-    if (!amt || amt <= 0) return notifyError('Enter a valid amount')
+    const freeReactivation = t.apply_to === 'reactivate' && sub.is_complimentary
+    if (!freeReactivation && (!amt || amt <= 0)) return notifyError('Enter a valid amount')
     setSaving(true)
     try {
       const res = await recordPayment(sub.id, {
@@ -354,6 +460,11 @@ function PaymentDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
+          {targets.length === 0 && (
+            <p className="rounded-lg bg-surface-2 p-3 text-sm text-muted-foreground">
+              Nothing is due — every cycle is paid or complimentary.
+            </p>
+          )}
           <div className="space-y-1.5">
             <Label>Apply to</Label>
             <Select value={targetKey} onValueChange={chooseTarget}>
@@ -410,6 +521,109 @@ function PaymentDialog({
           <Button onClick={save} disabled={saving || targets.length === 0}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save payment
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ComplimentaryDialog({
+  open,
+  onOpenChange,
+  sub,
+  onSaved,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  sub: StoreSubscription
+  onSaved: (s: StoreSubscription) => void
+}) {
+  const [forever, setForever] = useState(true)
+  const [cycles, setCycles] = useState('3')
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const left = sub.is_complimentary ? sub.complimentary_cycles_left : -1
+    setForever(left < 0)
+    setCycles(left > 0 ? String(left) : '3')
+    setReason(sub.complimentary_reason || '')
+  }, [open, sub])
+
+  const unit = sub.billing_cycle === 'annual' ? 'year' : 'month'
+  const owed = (() => {
+    const cur = sub.cycles?.find((c) => c.cycle_number === sub.current_cycle)
+    return cur && !cur.complimentary ? Math.max(0, cur.amount - cur.amount_paid) : 0
+  })()
+
+  const save = async () => {
+    const n = Math.floor(Number(cycles))
+    if (!forever && (!n || n < 1)) return notifyError('Enter how many cycles are free')
+    setSaving(true)
+    try {
+      onSaved(
+        await updateSubscription(sub.id, {
+          is_complimentary: true,
+          complimentary_cycles: forever ? 0 : n,
+          complimentary_reason: reason.trim(),
+        })
+      )
+      notifySuccess(sub.is_complimentary ? 'Complimentary terms updated.' : `${sub.store_name} is now complimentary.`)
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : 'Failed to update')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Gift className="h-5 w-5 text-amber-500" />
+            {sub.is_complimentary ? 'Edit complimentary access' : 'Make complimentary'}
+          </DialogTitle>
+          <DialogDescription>
+            Counted from the current cycle (#{sub.current_cycle}). After the free cycles end, renewals bill{' '}
+            {formatMoney(sub.price, sub.currency)}/{unit}.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" size="sm" variant={forever ? 'default' : 'outline'} onClick={() => setForever(true)}>
+              No end date
+            </Button>
+            <Button type="button" size="sm" variant={!forever ? 'default' : 'outline'} onClick={() => setForever(false)}>
+              Limited
+            </Button>
+            {!forever && (
+              <span className="flex items-center gap-2 text-sm">
+                <Input type="number" min={1} className="h-9 w-20" value={cycles} onChange={(e) => setCycles(e.target.value)} aria-label="Free cycles" />
+                {unit}
+                {Number(cycles) === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="comp-reason">Reason (shown to the store)</Label>
+            <Input id="comp-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Launch partner" />
+          </div>
+          {!sub.is_complimentary && owed > 0 && (
+            <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+              The {formatMoney(owed, sub.currency)} still owed for the current cycle will be waived. Earlier unpaid cycles stay due.
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save
           </Button>
         </DialogFooter>
       </DialogContent>

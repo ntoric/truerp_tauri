@@ -49,7 +49,10 @@ export const AUDIENCE_TYPES: { value: AudienceType; label: string }[] = [
   { value: 'all_parties', label: 'All parties' },
 ]
 
-export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'partial' | 'failed'
+export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'partial' | 'failed' | 'completed'
+
+/** '' = one-time. yearly_occasion follows the occasion's date, which moves every year for lunar festivals. */
+export type Recurrence = '' | 'yearly_occasion' | 'yearly' | 'monthly' | 'weekly'
 
 export interface MarketingCampaign {
   id: string
@@ -72,6 +75,14 @@ export interface MarketingCampaign {
   audience_type: AudienceType
   audience_category: string
   audience_party_ids: string // JSON array
+  occasion_key: string
+  occasion_name: string
+  occasion_date: string
+  recurrence: Recurrence
+  recurrence_until: string
+  series_start: string | null
+  run_count: number
+  parent_id?: string | null
   status: CampaignStatus
   scheduled_at: string | null
   sent_at: string | null
@@ -104,6 +115,12 @@ export interface CampaignForm {
   audience_type: AudienceType
   audience_category: string
   audience_party_ids: string[]
+  occasion_key: string
+  /** Display only (the server sets the name from the key). */
+  occasion_name: string
+  occasion_date: string
+  recurrence: Recurrence
+  recurrence_until: string
 }
 
 export const emptyCampaignForm = (): CampaignForm => ({
@@ -126,6 +143,11 @@ export const emptyCampaignForm = (): CampaignForm => ({
   audience_type: 'all_customers',
   audience_category: '',
   audience_party_ids: [],
+  occasion_key: '',
+  occasion_name: '',
+  occasion_date: '',
+  recurrence: '',
+  recurrence_until: '',
 })
 
 function parseJSONArray<T>(raw: string | null | undefined): T[] {
@@ -162,7 +184,100 @@ export function campaignToForm(c: MarketingCampaign): CampaignForm {
     audience_type: c.audience_type || 'all_customers',
     audience_category: c.audience_category || '',
     audience_party_ids: parseJSONArray<string>(c.audience_party_ids),
+    occasion_key: c.occasion_key || '',
+    occasion_name: c.occasion_name || '',
+    occasion_date: c.occasion_date || '',
+    recurrence: c.recurrence || '',
+    recurrence_until: c.recurrence_until || '',
   }
+}
+
+/** "Every year on Diwali", "Every month"… ('' for one-time campaigns). */
+export function recurrenceLabel(r: Recurrence | undefined, occasionName?: string): string {
+  switch (r) {
+    case 'yearly_occasion':
+      return `Every year on ${occasionName || 'the occasion'}`
+    case 'yearly':
+      return 'Every year'
+    case 'monthly':
+      return 'Every month'
+    case 'weekly':
+      return 'Every week'
+    default:
+      return ''
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Calendar (festivals, special days) — backend controllers/marketing_calendar.go
+// ---------------------------------------------------------------------------
+
+export type OccasionRegion = 'india' | 'international'
+export type OccasionCategory = 'festival' | 'national' | 'shopping' | 'celebration' | 'awareness'
+
+export interface Occasion {
+  key: string
+  name: string
+  date: string // YYYY-MM-DD
+  region: OccasionRegion
+  category: OccasionCategory
+  emoji: string
+  description: string
+  campaign_type: CampaignType
+  /** Date moves every year (lunar festival). */
+  lunar: boolean
+}
+
+export interface CalendarEvent {
+  campaign_id: string
+  series_id?: string
+  name: string
+  status: CampaignStatus
+  at: string
+  /** A future run of a repeating campaign (not created yet). */
+  projected: boolean
+  recurrence?: Recurrence
+  repeat?: string
+  occasion_name?: string
+  channels: string
+}
+
+export interface CalendarResponse {
+  from: string
+  to: string
+  occasions: Occasion[]
+  events: CalendarEvent[]
+  lunar_years: { from: number; to: number }
+}
+
+export const OCCASION_CATEGORIES: { value: OccasionCategory; label: string; chip: string }[] = [
+  { value: 'festival', label: 'Festivals', chip: 'bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200' },
+  { value: 'national', label: 'National days', chip: 'bg-orange-100 text-orange-900 dark:bg-orange-500/20 dark:text-orange-200' },
+  { value: 'shopping', label: 'Shopping days', chip: 'bg-rose-100 text-rose-900 dark:bg-rose-500/20 dark:text-rose-200' },
+  { value: 'celebration', label: 'Celebrations', chip: 'bg-violet-100 text-violet-900 dark:bg-violet-500/20 dark:text-violet-200' },
+  { value: 'awareness', label: 'Awareness days', chip: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-500/20 dark:text-emerald-200' },
+]
+
+export const occasionChipClass = (c: OccasionCategory) => OCCASION_CATEGORIES.find((x) => x.value === c)?.chip ?? 'bg-muted'
+
+/** Local calendar date as YYYY-MM-DD (no UTC shift). */
+export function ymd(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** Parses YYYY-MM-DD as a local date. */
+export function parseYMD(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(y, (m || 1) - 1, d || 1)
+}
+
+/** Text for campaigns created from a calendar occasion ({{occasion}} = its name). */
+export const OCCASION_PRESET = {
+  message:
+    'Hi {{first_name}}, {{store_name}} wishes you a wonderful {{occasion}}! 🎉\n\nCelebrate with {{discount}} on your purchase. Use code {{offer_code}} at billing.\nOffer valid till {{valid_until}}.',
+  sms: '{{occasion}} offer from {{store_name}}: {{discount}} with code {{offer_code}} till {{valid_until}}.',
+  subject: '{{occasion}} offer: {{discount}} at {{store_name}}',
 }
 
 export interface ChannelStatus {
@@ -258,6 +373,10 @@ export const marketingApi = {
     return call<DeliveriesResponse>(`/campaigns/${id}/deliveries?${p.toString()}`)
   },
   preview: (form: CampaignForm) => call<AudiencePreview>('/audience/preview', json('POST', form)),
+  calendar: (from: string, to: string, region?: OccasionRegion | '') =>
+    call<CalendarResponse>(`/calendar?from=${from}&to=${to}${region ? `&region=${region}` : ''}`),
+  occasions: (from: string, to: string, key?: string) =>
+    call<Occasion[]>(`/occasions?from=${from}&to=${to}${key ? `&key=${encodeURIComponent(key)}` : ''}`),
   test: (form: CampaignForm, channel: MarketingChannel, to: string) =>
     call<{ message: string }>('/test', json('POST', { ...form, channel, to })),
 }
@@ -275,6 +394,7 @@ export const SAMPLE_VALUES: Record<string, string> = {
   link: 'https://yourstore.in',
   loyalty_points: '120',
   loyalty_cash: '50.00',
+  occasion: 'Diwali',
 }
 
 export function renderPreview(text: string, values: Record<string, string>): string {
@@ -296,6 +416,7 @@ export function previewValues(form: CampaignForm, storeName?: string): Record<st
     ...(form.discount ? { discount: form.discount } : {}),
     ...(form.valid_until ? { valid_until: formatYMD(form.valid_until) } : {}),
     ...(form.link ? { link: form.link } : {}),
+    ...(form.occasion_name ? { occasion: form.occasion_name } : {}),
   }
 }
 
@@ -623,4 +744,56 @@ export async function copyText(text: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+// ---------------------------------------------------------------------------
+// Campaign templates (New campaign → "Start from a template")
+// ---------------------------------------------------------------------------
+
+export interface CampaignTemplate {
+  id: string
+  title: string
+  description: string
+  type: CampaignType
+  /** Suggested campaign name (only used when the name is still empty). */
+  name: string
+  /** Matching WhatsApp sample (WHATSAPP_TEMPLATE_SAMPLES id), if any. */
+  waSampleId?: string
+}
+
+export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
+  { id: 'festival', title: 'Festival sale', description: 'Festive wishes with a discount code and expiry date.', type: 'festival', name: 'Festival Sale', waSampleId: 'festival_offer' },
+  { id: 'offer', title: 'Discount coupon', description: 'An exclusive coupon code to redeem at billing.', type: 'offer', name: 'Special Coupon Offer', waSampleId: 'discount_coupon' },
+  { id: 'promotion', title: 'General promotion', description: 'Weekend or clearance sale on selected items.', type: 'promotion', name: 'Weekend Sale', waSampleId: 'weekend_sale' },
+  { id: 'new_arrival', title: 'New arrivals', description: 'Announce fresh stock or a new collection.', type: 'new_arrival', name: 'New Arrivals', waSampleId: 'new_arrivals' },
+  { id: 'loyalty', title: 'Loyalty points reminder', description: 'Remind members of their points balance.', type: 'loyalty', name: 'Loyalty Points Reminder', waSampleId: 'loyalty_points_reminder' },
+  { id: 'reengagement', title: 'We miss you (win-back)', description: 'Bring back customers with a comeback code.', type: 'reengagement', name: 'We Miss You', waSampleId: 'we_miss_you' },
+  { id: 'announcement', title: 'Store announcement', description: 'New branch, holiday timings or other news.', type: 'announcement', name: 'Store Announcement', waSampleId: 'store_announcement' },
+]
+
+/**
+ * Applies a campaign template: sets the type, the name (if empty) and the
+ * Telegram / email / SMS text. With `withWhatsApp`, also fills the matching
+ * WhatsApp template name, language and variables.
+ */
+export function applyCampaignTemplate(form: CampaignForm, t: CampaignTemplate, withWhatsApp: boolean): CampaignForm {
+  const preset = MESSAGE_PRESETS[t.type]
+  let next: CampaignForm = {
+    ...form,
+    type: t.type,
+    name: form.name.trim() ? form.name : t.name,
+    message: preset.message,
+    sms_message: preset.sms,
+    email_subject: preset.subject,
+  }
+  const wa = withWhatsApp && t.waSampleId ? WHATSAPP_TEMPLATE_SAMPLES.find((s) => s.id === t.waSampleId) : undefined
+  if (wa) {
+    next = {
+      ...next,
+      wa_template_name: wa.name,
+      wa_language: wa.language,
+      wa_variables: wa.variables.map((v) => v.placeholder),
+    }
+  }
+  return next
 }

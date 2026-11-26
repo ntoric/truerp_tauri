@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CalendarClock, Check, Crown, IndianRupee, Layers, Pencil, Plus, Store, Trash2, TrendingUp, Wallet } from 'lucide-react'
+import { AlertCircle, CalendarClock, Check, Crown, FileText, Gift, IndianRupee, Layers, Pencil, Plus, Store, Trash2, TrendingUp, Wallet } from 'lucide-react'
 import { useAuth, apiFetch } from '@/hooks/useAuth'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageHeader from '@/components/layout/PageHeader'
@@ -16,11 +16,13 @@ import PremiumEmpty from '@/components/ui/premium-empty'
 import PlanDialog from '@/components/subscriptions/PlanDialog'
 import AssignSubscriptionDialog, { type StoreOption } from '@/components/subscriptions/AssignSubscriptionDialog'
 import SubscriptionDetailDialog from '@/components/subscriptions/SubscriptionDetailDialog'
+import BillingSettingsPanel from '@/components/subscriptions/BillingSettingsPanel'
 import { useConfirmDialog } from '@/hooks/useConfirmDialog'
 import { isSuperAdmin } from '@/lib/roles'
 import { notifyError, notifySuccess } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import {
+  COMPLIMENTARY_BADGE,
   PAYMENT_BADGE,
   cycleLabel,
   cyclePer,
@@ -41,14 +43,14 @@ export default function SubscriptionsAdminPage() {
   const isAdmin = isSuperAdmin(user?.role)
   const { confirm, confirmDialog } = useConfirmDialog()
 
-  const [tab, setTab] = useState<'subscriptions' | 'plans'>('subscriptions')
+  const [tab, setTab] = useState<'subscriptions' | 'plans' | 'documents'>('subscriptions')
   const [overview, setOverview] = useState<SubscriptionOverview | null>(null)
   const [plans, setPlans] = useState<SubscriptionPlan[]>([])
   const [subs, setSubs] = useState<StoreSubscription[]>([])
   const [stores, setStores] = useState<StoreOption[]>([])
   const [loading, setLoading] = useState(true)
 
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'cancelled'>('active')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'complimentary' | 'cancelled'>('active')
   const [storeFilter, setStoreFilter] = useState('all')
 
   const [planDialog, setPlanDialog] = useState<{ open: boolean; plan: SubscriptionPlan | null }>({ open: false, plan: null })
@@ -82,7 +84,10 @@ export default function SubscriptionsAdminPage() {
   const filtered = useMemo(
     () =>
       subs.filter(
-        (s) => (statusFilter === 'all' || s.status === statusFilter) && (storeFilter === 'all' || s.store_id === storeFilter)
+        (s) =>
+          (statusFilter === 'all' ||
+            (statusFilter === 'complimentary' ? s.status === 'active' && s.current_complimentary : s.status === statusFilter)) &&
+          (storeFilter === 'all' || s.store_id === storeFilter)
       ),
     [subs, statusFilter, storeFilter]
   )
@@ -162,12 +167,22 @@ export default function SubscriptionsAdminPage() {
 
         {overview && (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat icon={<TrendingUp />} label="Monthly recurring" value={formatMoney(overview.mrr)} hint="Annual plans counted /12" tone="violet" />
+            <Stat
+              icon={<TrendingUp />}
+              label="Monthly recurring"
+              value={formatMoney(overview.mrr)}
+              hint={
+                overview.complimentary > 0
+                  ? `Excl. ${formatMoney(overview.complimentary_value)}/mo given free`
+                  : 'Annual plans counted /12'
+              }
+              tone="violet"
+            />
             <Stat
               icon={<Crown />}
               label="Active subscriptions"
               value={String(overview.active_subscriptions)}
-              hint={`${overview.stores_without_plan} of ${overview.stores} stores without a plan`}
+              hint={`${overview.complimentary} complimentary · ${overview.stores_without_plan} of ${overview.stores} stores without a plan`}
               tone="amber"
             />
             <Stat
@@ -195,6 +210,9 @@ export default function SubscriptionsAdminPage() {
             <TabsTrigger value="plans">
               <Layers /> Plans ({plans.length})
             </TabsTrigger>
+            <TabsTrigger value="documents">
+              <FileText /> Invoices & receipts
+            </TabsTrigger>
           </TabsList>
 
           {/* ---------------- Subscriptions ---------------- */}
@@ -206,6 +224,7 @@ export default function SubscriptionsAdminPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="complimentary">Complimentary</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                   <SelectItem value="all">All statuses</SelectItem>
                 </SelectContent>
@@ -273,10 +292,20 @@ export default function SubscriptionsAdminPage() {
                               <div className="text-xs text-muted-foreground">{s.store_code}</div>
                             </td>
                             <td className="px-4 py-3">
-                              <div className="font-medium">{s.plan_name}</div>
+                              <div className="flex items-center gap-1.5 font-medium">
+                                {s.plan_name}
+                                {active && s.current_complimentary && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-[linear-gradient(90deg,#fde68a,#f59e0b)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-950">
+                                    <Gift className="h-3 w-3" /> Free
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-xs text-muted-foreground">
-                                {formatMoney(s.price, s.currency)}
-                                {cyclePer(s.billing_cycle)} · cycle #{s.current_cycle}
+                                <span className={active && s.current_complimentary ? 'line-through' : ''}>
+                                  {formatMoney(s.price, s.currency)}
+                                  {cyclePer(s.billing_cycle)}
+                                </span>{' '}
+                                · cycle #{s.current_cycle}
                               </div>
                             </td>
                             <td className="px-4 py-3">
@@ -307,7 +336,9 @@ export default function SubscriptionsAdminPage() {
                               )}
                             </td>
                             <td className="px-4 py-3">
-                              {active ? (
+                              {active && s.current_complimentary ? (
+                                <Badge className={COMPLIMENTARY_BADGE.className}>{COMPLIMENTARY_BADGE.label}</Badge>
+                              ) : active ? (
                                 <Badge className={PAYMENT_BADGE[pay].className}>{PAYMENT_BADGE[pay].label}</Badge>
                               ) : (
                                 <span className="text-muted-foreground">—</span>
@@ -329,6 +360,11 @@ export default function SubscriptionsAdminPage() {
                 </div>
               </Card>
             )}
+          </TabsContent>
+
+          {/* ---------------- Invoice & receipt customization ---------------- */}
+          <TabsContent value="documents" className="mt-4">
+            {tab === 'documents' && <BillingSettingsPanel />}
           </TabsContent>
 
           {/* ---------------- Plans ---------------- */}

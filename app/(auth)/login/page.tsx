@@ -31,6 +31,7 @@ export default function LoginPage() {
   const [needs2fa, setNeeds2fa] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -44,6 +45,8 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const result = await login(email.trim(), password, needs2fa ? totpCode.trim() : undefined)
+      // Keep the spinner up while the browser loads the next page.
+      setRedirecting(true)
       if (result.requiresPasswordChange) {
         window.location.href = '/change-password-required'
         return
@@ -60,7 +63,6 @@ export default function LoginPage() {
         setError(err.message)
         showErrorToast(err.message)
       }
-    } finally {
       setLoading(false)
     }
   }
@@ -178,7 +180,7 @@ export default function LoginPage() {
           disabled={loading}
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-          {loading ? 'Signing in…' : needs2fa ? 'Verify and sign in' : 'Sign in'}
+          {redirecting ? 'Opening your workspace…' : loading ? 'Signing in…' : needs2fa ? 'Verify and sign in' : 'Sign in'}
           {!loading && <ArrowRight className="h-[18px] w-[18px]" aria-hidden="true" />}
         </Button>
       </form>

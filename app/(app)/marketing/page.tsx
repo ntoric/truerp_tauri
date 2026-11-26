@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
   CalendarClock,
+  CalendarDays,
   Copy,
   Eye,
   EyeOff,
@@ -27,6 +28,7 @@ import {
   Pencil,
   Plug,
   Plus,
+  Repeat,
   Search,
   Send,
   Trash2,
@@ -39,17 +41,19 @@ import { formatDate } from '@/lib/utils'
 import WhatsAppTemplateLibrary from '@/components/marketing/WhatsAppTemplateLibrary'
 import ChannelStatusPanel, { CHANNEL_ICONS } from '@/components/marketing/ChannelStatusPanel'
 import CampaignDetailsDialog from '@/components/marketing/CampaignDetailsDialog'
+import CampaignCalendar from '@/components/marketing/CampaignCalendar'
 import {
   campaignChannels,
   campaignTypeLabel,
   marketingApi,
+  recurrenceLabel,
   MarketingApiError,
   type ChannelsResponse,
   type MarketingCampaign,
   type MarketingStats,
 } from '@/lib/marketing'
 
-const TABS = ['campaigns', 'templates', 'channels'] as const
+const TABS = ['campaigns', 'calendar', 'templates', 'channels'] as const
 type Tab = (typeof TABS)[number]
 
 function MarketingHub() {
@@ -61,7 +65,9 @@ function MarketingHub() {
   const { isPageEnabled } = usePageFeatures()
   const templatesEnabled = isPageEnabled('/marketing/whatsapp-templates')
   const channelsEnabled = isPageEnabled('/marketing/channels')
-  const tabEnabled = (t: string) => (t === 'templates' ? templatesEnabled : t === 'channels' ? channelsEnabled : true)
+  const calendarEnabled = isPageEnabled('/marketing/calendar')
+  const tabEnabled = (t: string) =>
+    t === 'templates' ? templatesEnabled : t === 'channels' ? channelsEnabled : t === 'calendar' ? calendarEnabled : true
   const tab: Tab = (TABS as readonly string[]).includes(rawTab ?? '') && tabEnabled(rawTab!) ? (rawTab as Tab) : 'campaigns'
   const setTab = (t: string) => router.replace(`${pathname}?tab=${t}`, { scroll: false })
 
@@ -130,7 +136,9 @@ function MarketingHub() {
   const sendNow = async (c: MarketingCampaign) => {
     const ok = await confirm({
       title: `Send "${c.name}" now?`,
-      description: `It goes to the whole audience on ${campaignChannels(c).length} channel(s). Messages can't be recalled.`,
+      description:
+        `It goes to the whole audience on ${campaignChannels(c).length} channel(s). Messages can't be recalled.` +
+        (c.recurrence ? ' This is an extra run; the repeat schedule is not changed.' : ''),
       confirmLabel: 'Send now',
     })
     if (ok) run(c.id, () => marketingApi.send(c.id), 'Campaign is sending. Results appear as messages go out.')
@@ -199,6 +207,11 @@ function MarketingHub() {
           <TabsTrigger value="campaigns" className="gap-1.5">
             <Megaphone className="h-4 w-4" /> Campaigns
           </TabsTrigger>
+          {calendarEnabled && (
+            <TabsTrigger value="calendar" className="gap-1.5">
+              <CalendarDays className="h-4 w-4 text-sky-600" /> Calendar
+            </TabsTrigger>
+          )}
           {templatesEnabled && (
             <TabsTrigger value="templates" className="gap-1.5">
               <MessageCircle className="h-4 w-4 text-green-600" /> WhatsApp templates
@@ -225,6 +238,11 @@ function MarketingHub() {
                       <Plus className="mr-1.5 h-4 w-4" /> New campaign
                     </Link>
                   </Button>
+                  {calendarEnabled && (
+                    <Button variant="outline" onClick={() => setTab('calendar')}>
+                      <CalendarDays className="mr-1.5 h-4 w-4" /> Plan from the festival calendar
+                    </Button>
+                  )}
                   {templatesEnabled && (
                     <Button variant="outline" onClick={() => setTab('templates')}>
                       Browse WhatsApp templates
@@ -246,7 +264,7 @@ function MarketingHub() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All statuses</SelectItem>
-                    {['draft', 'scheduled', 'sending', 'sent', 'partial', 'failed'].map((s) => (
+                    {['draft', 'scheduled', 'sending', 'sent', 'partial', 'failed', 'completed'].map((s) => (
                       <SelectItem key={s} value={s} className="capitalize">
                         {s}
                       </SelectItem>
@@ -273,13 +291,36 @@ function MarketingHub() {
                           </div>
                           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                             <span>{campaignTypeLabel(c.type)}</span>
+                            {c.occasion_name && <span>· {c.occasion_name}</span>}
+                            {c.recurrence && (
+                              <span className="flex items-center gap-1 font-medium text-sky-700 dark:text-sky-300">
+                                <Repeat className="h-3 w-3" /> {recurrenceLabel(c.recurrence, c.occasion_name)}
+                                {c.recurrence_until ? ` until ${formatDate(c.recurrence_until)}` : ''}
+                                {c.run_count > 0 ? ` · ${c.run_count} run${c.run_count === 1 ? '' : 's'}` : ''}
+                              </span>
+                            )}
+                            {c.parent_id && (
+                              <span className="flex items-center gap-1">
+                                <Repeat className="h-3 w-3" /> Run of a repeating campaign
+                              </span>
+                            )}
                             <span className="flex items-center gap-1">
                               {chs.map((ch) => {
                                 const Icon = CHANNEL_ICONS[ch]?.icon
                                 return Icon ? <Icon key={ch} className={`h-3.5 w-3.5 ${CHANNEL_ICONS[ch].color}`} /> : null
                               })}
                             </span>
-                            {c.status === 'scheduled' && c.scheduled_at && <span>Sends {new Date(c.scheduled_at).toLocaleString()}</span>}
+                            {c.status === 'scheduled' && c.scheduled_at && (
+                              <span>
+                                {c.recurrence ? 'Next run' : 'Sends'} {new Date(c.scheduled_at).toLocaleString()}
+                              </span>
+                            )}
+                            {c.status === 'completed' && <span>Repeats finished</span>}
+                            {c.last_error && c.recurrence && c.status === 'scheduled' && (
+                              <span className="text-amber-700" title={c.last_error}>
+                                ⚠ {c.last_error}
+                              </span>
+                            )}
                             {c.sent_at && <span>Sent {formatDate(c.sent_at)}</span>}
                             {!c.sent_at && c.status === 'draft' && <span>Created {formatDate(c.created_at)}</span>}
                           </div>
@@ -349,6 +390,12 @@ function MarketingHub() {
             </>
           )}
         </TabsContent>
+
+        {calendarEnabled && (
+          <TabsContent value="calendar" className="mt-0">
+            <CampaignCalendar />
+          </TabsContent>
+        )}
 
         {templatesEnabled && (
           <TabsContent value="templates" className="mt-0">

@@ -1,8 +1,9 @@
 'use client'
 
-import { CalendarClock, Crown, RefreshCw, ShieldOff, Sparkles } from 'lucide-react'
+import { CalendarClock, Crown, Gift, RefreshCw, ShieldOff, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
+  complimentaryLabel,
   cycleLabel,
   cyclePer,
   formatMoney,
@@ -76,6 +77,7 @@ export default function SubscriptionCard({
   const active = sub.status === 'active'
   const due = active && sub.amount_due > 0
   const endingSoon = active && !sub.auto_renew && !sub.next_cycle_paid
+  const free = active && sub.current_complimentary
 
   return (
     <div
@@ -117,6 +119,12 @@ export default function SubscriptionCard({
             <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80 ring-1 ring-white/15">
               {cycleLabel(sub.billing_cycle)}
             </span>
+            {free && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[linear-gradient(90deg,#fde68a,#f59e0b)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-amber-950 shadow-[0_6px_16px_-6px_rgba(245,158,11,0.8)]">
+                <Gift className="h-3.5 w-3.5" />
+                Complimentary
+              </span>
+            )}
             {due && (
               <span className="rounded-full bg-rose-400/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-100 ring-1 ring-rose-300/30">
                 Payment due
@@ -133,10 +141,25 @@ export default function SubscriptionCard({
             )}
           </div>
 
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-semibold tabular-nums">{formatMoney(sub.price, sub.currency)}</span>
-            <span className="text-sm text-white/55">{cyclePer(sub.billing_cycle)}</span>
-          </div>
+          {free ? (
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+              <span className="bg-[linear-gradient(90deg,#fde68a,#fbbf24)] bg-clip-text text-2xl font-bold text-transparent">Free</span>
+              {sub.price > 0 && (
+                <span className="text-sm text-white/45 line-through decoration-white/40">
+                  {formatMoney(sub.price, sub.currency)}
+                  {cyclePer(sub.billing_cycle)}
+                </span>
+              )}
+              {sub.complimentary_reason && !compact && (
+                <span className="text-xs text-amber-100/70">· {sub.complimentary_reason}</span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-2xl font-semibold tabular-nums">{formatMoney(sub.price, sub.currency)}</span>
+              <span className="text-sm text-white/55">{cyclePer(sub.billing_cycle)}</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:flex sm:flex-wrap">
             {active ? (
@@ -151,6 +174,9 @@ export default function SubscriptionCard({
                   label="Auto-renew"
                   value={sub.auto_renew ? 'On' : 'Off'}
                 />
+                {free && (
+                  <Fact icon={<Gift className="h-4 w-4" />} label="Complimentary" value={complimentaryLabel(sub)} />
+                )}
                 <Fact
                   className="col-span-2"
                   icon={<Sparkles className="h-4 w-4" />}

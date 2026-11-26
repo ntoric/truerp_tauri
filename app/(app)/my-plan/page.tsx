@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Check, ChevronDown, Crown, History, Headset, Receipt, Sparkles, Wallet } from 'lucide-react'
+import { Check, ChevronDown, Crown, Download, Gift, History, Headset, Loader2, Receipt, Sparkles, Wallet } from 'lucide-react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import PageHeader from '@/components/layout/PageHeader'
 import { FormPageSkeleton } from '@/components/layout/PageSkeleton'
@@ -15,9 +15,12 @@ import { notifyError } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import {
   ApiError,
-  PAYMENT_BADGE,
+  cycleBadge,
+  complimentaryLabel,
   SOURCE_LABEL,
   cycleLabel,
+  downloadInvoice,
+  downloadReceipt,
   formatMoney,
   formatPlanDate,
   getMyPlan,
@@ -139,13 +142,23 @@ function PlanOverview({ sub }: { sub: StoreSubscription }) {
           tone={sub.amount_due > 0 ? 'rose' : 'emerald'}
           hint={sub.amount_due > 0 ? 'Outstanding for started cycles' : 'You are all settled'}
         />
-        <StatTile
-          icon={<Receipt className="h-5 w-5" />}
-          label="Total paid"
-          value={formatMoney(sub.total_paid, sub.currency)}
-          tone="violet"
-          hint={`Across ${sub.cycles?.length ?? 0} billing cycle${(sub.cycles?.length ?? 0) === 1 ? '' : 's'}`}
-        />
+        {sub.total_waived > 0 ? (
+          <StatTile
+            icon={<Gift className="h-5 w-5" />}
+            label="Complimentary value"
+            value={formatMoney(sub.total_waived, sub.currency)}
+            tone="amber"
+            hint={`On the house · paid ${formatMoney(sub.total_paid, sub.currency)}`}
+          />
+        ) : (
+          <StatTile
+            icon={<Receipt className="h-5 w-5" />}
+            label="Total paid"
+            value={formatMoney(sub.total_paid, sub.currency)}
+            tone="violet"
+            hint={`Across ${sub.cycles?.length ?? 0} billing cycle${(sub.cycles?.length ?? 0) === 1 ? '' : 's'}`}
+          />
+        )}
         <StatTile
           icon={<Sparkles className="h-5 w-5" />}
           label="Member since"
@@ -183,11 +196,7 @@ function PlanOverview({ sub }: { sub: StoreSubscription }) {
           <CardContent className="space-y-4 p-5">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-heading">Current billing period</h3>
-              {current && (
-                <Badge className={PAYMENT_BADGE[current.payment_status].className}>
-                  {PAYMENT_BADGE[current.payment_status].label}
-                </Badge>
-              )}
+              {current && <Badge className={cycleBadge(current).className}>{cycleBadge(current).label}</Badge>}
             </div>
             {active ? (
               <>
@@ -208,9 +217,34 @@ function PlanOverview({ sub }: { sub: StoreSubscription }) {
                 </div>
                 {current && (
                   <dl className="space-y-2 text-sm">
-                    <Row label="Cycle amount" value={formatMoney(current.amount, sub.currency)} />
-                    <Row label="Paid" value={formatMoney(current.amount_paid, sub.currency)} />
+                    {current.complimentary ? (
+                      <>
+                        <Row label="Regular price" value={formatMoney(current.amount + current.waived_amount, sub.currency)} />
+                        <Row label="Paid" value={formatMoney(current.amount_paid, sub.currency)} />
+                      </>
+                    ) : (
+                      <>
+                        <Row label="Cycle amount" value={formatMoney(current.amount, sub.currency)} />
+                        <Row label="Paid" value={formatMoney(current.amount_paid, sub.currency)} />
+                      </>
+                    )}
                   </dl>
+                )}
+                {sub.is_complimentary && (
+                  <p className="flex items-start gap-2 rounded-xl bg-[linear-gradient(135deg,#fffbeb,#fef3c7)] p-3 text-xs text-amber-900 ring-1 ring-amber-200">
+                    <Gift className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                    <span>
+                      Complimentary plan · {complimentaryLabel(sub)}.
+                      {sub.complimentary_cycles_left > 0 &&
+                        ` Afterwards it continues at ${formatMoney(sub.price, sub.currency)}${sub.billing_cycle === 'annual' ? '/year' : '/month'}.`}
+                    </span>
+                  </p>
+                )}
+                {current?.invoice_number && (
+                  <div className="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm">
+                    <span className="text-muted-foreground">Invoice</span>
+                    <DocLink label={current.invoice_number} onDownload={() => downloadInvoice({ admin: false }, current)} />
+                  </div>
                 )}
                 <p className="rounded-xl bg-surface-2 p-3 text-xs text-muted-foreground">
                   {sub.next_cycle_paid
@@ -343,6 +377,11 @@ function HistoryItem({ sub, defaultOpen }: { sub: StoreSubscription; defaultOpen
               <Badge className={active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}>
                 {active ? 'Active' : 'Cancelled'}
               </Badge>
+              {(sub.total_waived > 0 || sub.is_complimentary) && (
+                <Badge className="bg-amber-100 text-amber-800">
+                  <Gift className="mr-1 h-3 w-3" /> Complimentary
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {formatPlanDate(first?.period_start ?? sub.anchor_date)} → {endLabel} ·{' '}
@@ -362,10 +401,11 @@ function HistoryItem({ sub, defaultOpen }: { sub: StoreSubscription; defaultOpen
             <div>
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Billing cycles</h4>
               <div className="overflow-x-auto rounded-xl border border-border bg-card">
-                <table className="w-full min-w-[560px] text-sm">
+                <table className="w-full min-w-[720px] text-sm">
                   <thead className="bg-surface-2 text-left text-xs text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 font-medium">#</th>
+                      <th className="px-3 py-2 font-medium">Invoice</th>
                       <th className="px-3 py-2 font-medium">Period</th>
                       <th className="px-3 py-2 font-medium">Type</th>
                       <th className="px-3 py-2 text-right font-medium">Amount</th>
@@ -378,16 +418,24 @@ function HistoryItem({ sub, defaultOpen }: { sub: StoreSubscription; defaultOpen
                       <tr key={c.id} className="border-t border-border">
                         <td className="px-3 py-2 tabular-nums">{c.cycle_number}</td>
                         <td className="px-3 py-2">
+                          <DocLink label={c.invoice_number || 'Invoice'} onDownload={() => downloadInvoice({ admin: false }, c)} />
+                        </td>
+                        <td className="px-3 py-2">
                           {formatPlanDate(c.period_start)} – {formatPlanDate(c.period_end)}
                           {active && c.cycle_number === sub.current_cycle && (
                             <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700">Current</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-muted-foreground">{SOURCE_LABEL[c.source] ?? c.source}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{formatMoney(c.amount, sub.currency)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {c.complimentary && c.waived_amount > 0 && (
+                            <span className="mr-1.5 text-xs text-muted-foreground line-through">{formatMoney(c.amount + c.waived_amount, sub.currency)}</span>
+                          )}
+                          {formatMoney(c.amount, sub.currency)}
+                        </td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatMoney(c.amount_paid, sub.currency)}</td>
                         <td className="px-3 py-2">
-                          <Badge className={PAYMENT_BADGE[c.payment_status].className}>{PAYMENT_BADGE[c.payment_status].label}</Badge>
+                          <Badge className={cycleBadge(c).className}>{cycleBadge(c).label}</Badge>
                         </td>
                       </tr>
                     ))}
@@ -402,9 +450,10 @@ function HistoryItem({ sub, defaultOpen }: { sub: StoreSubscription; defaultOpen
                 <p className="text-sm text-muted-foreground">No payments recorded.</p>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-border bg-card">
-                  <table className="w-full min-w-[480px] text-sm">
+                  <table className="w-full min-w-[600px] text-sm">
                     <thead className="bg-surface-2 text-left text-xs text-muted-foreground">
                       <tr>
+                        <th className="px-3 py-2 font-medium">Receipt</th>
                         <th className="px-3 py-2 font-medium">Date</th>
                         <th className="px-3 py-2 font-medium">Method</th>
                         <th className="px-3 py-2 font-medium">Reference</th>
@@ -414,6 +463,9 @@ function HistoryItem({ sub, defaultOpen }: { sub: StoreSubscription; defaultOpen
                     <tbody>
                       {sub.payments!.map((p) => (
                         <tr key={p.id} className="border-t border-border">
+                          <td className="px-3 py-2">
+                            <DocLink label={p.receipt_number || 'Receipt'} onDownload={() => downloadReceipt({ admin: false }, p)} />
+                          </td>
                           <td className="px-3 py-2">{formatPlanDate(p.payment_date)}</td>
                           <td className="px-3 py-2">{methodLabel(p.method)}</td>
                           <td className="px-3 py-2 text-muted-foreground">{p.reference || '—'}</td>
@@ -429,5 +481,31 @@ function HistoryItem({ sub, defaultOpen }: { sub: StoreSubscription; defaultOpen
         )}
       </Card>
     </li>
+  )
+}
+
+/** Inline download link for an invoice or receipt PDF. */
+function DocLink({ label, onDownload }: { label: string; onDownload: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true)
+        try {
+          await onDownload()
+        } catch (e) {
+          notifyError(e instanceof Error ? e.message : 'Download failed')
+        } finally {
+          setBusy(false)
+        }
+      }}
+      className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-xs text-primary hover:underline disabled:opacity-60"
+      title={`Download ${label}`}
+    >
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+      {label}
+    </button>
   )
 }

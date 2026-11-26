@@ -1,4 +1,5 @@
 import { apiFetch } from '@/hooks/useAuth'
+import { downloadBlob } from '@/lib/accountingExport'
 
 /** Subscription plans (super admin) and the store-facing My Plan API. */
 
@@ -56,6 +57,11 @@ export interface SubscriptionCycle {
   payment_status: CyclePaymentStatus
   paid_at?: string | null
   source: 'initial' | 'auto_renewal' | 'prepaid' | 'reactivation'
+  /** Free cycle; waived_amount is the regular price not charged. */
+  complimentary: boolean
+  waived_amount: number
+  invoice_number: string
+  invoice_date: string
   created_at: string
 }
 
@@ -68,6 +74,7 @@ export interface SubscriptionPayment {
   method: PaymentMethod
   reference: string
   notes: string
+  receipt_number: string
   created_at: string
 }
 
@@ -83,6 +90,10 @@ export interface StoreSubscription {
   feature_list: string[]
   status: SubscriptionStatus
   auto_renew: boolean
+  is_complimentary: boolean
+  /** Last free cycle number; 0 = no end date. */
+  complimentary_until_cycle: number
+  complimentary_reason: string
   anchor_date: string
   current_cycle: number
   current_period_start: string
@@ -101,6 +112,10 @@ export interface StoreSubscription {
   amount_due: number
   next_cycle_paid: boolean
   total_paid: number
+  current_complimentary: boolean
+  /** Free cycles left including the current one; -1 = no end date. */
+  complimentary_cycles_left: number
+  total_waived: number
   cycles?: SubscriptionCycle[]
   payments?: SubscriptionPayment[]
 }
@@ -112,6 +127,9 @@ export interface SubscriptionOverview {
   mrr: number
   renewing_in_7_days: number
   auto_renew_off: number
+  complimentary: number
+  /** Monthly value of plans currently given free. */
+  complimentary_value: number
   outstanding: number
   collected_this_month: number
 }
@@ -133,6 +151,19 @@ export interface CreateSubscriptionPayload {
   notes: string
   replace_existing?: boolean
   initial_payment?: PaymentPayload
+  is_complimentary?: boolean
+  /** Number of free cycles; 0 = no end date. */
+  complimentary_cycles?: number
+  complimentary_reason?: string
+}
+
+export interface UpdateSubscriptionPayload {
+  auto_renew?: boolean
+  notes?: string
+  is_complimentary?: boolean
+  /** Free cycles counted from the current one; 0 = no end date. */
+  complimentary_cycles?: number
+  complimentary_reason?: string
 }
 
 export class ApiError extends Error {
@@ -185,7 +216,7 @@ export const getSubscription = (id: string) =>
 export const createSubscription = (p: CreateSubscriptionPayload) =>
   request<StoreSubscription>('/admin/subscriptions', json('POST', p), 'Failed to create subscription')
 
-export const updateSubscription = (id: string, p: { auto_renew?: boolean; notes?: string }) =>
+export const updateSubscription = (id: string, p: UpdateSubscriptionPayload) =>
   request<StoreSubscription>(`/admin/subscriptions/${id}`, json('PATCH', p), 'Failed to update subscription')
 
 export const cancelSubscription = (id: string, reason: string) =>
@@ -195,7 +226,7 @@ export const recordPayment = (
   id: string,
   p: PaymentPayload & { apply_to: 'cycle' | 'next' | 'reactivate'; cycle_id?: string }
 ) =>
-  request<{ payment: SubscriptionPayment; subscription: StoreSubscription }>(
+  request<{ payment?: SubscriptionPayment; subscription: StoreSubscription }>(
     `/admin/subscriptions/${id}/payments`,
     json('POST', p),
     'Failed to record payment'
@@ -251,9 +282,114 @@ export const PAYMENT_BADGE: Record<CyclePaymentStatus, { label: string; classNam
   unpaid: { label: 'Payment due', className: 'bg-rose-100 text-rose-700' },
 }
 
+export const COMPLIMENTARY_BADGE = { label: 'Complimentary', className: 'bg-amber-100 text-amber-800 ring-1 ring-amber-300/60' }
+
+/** Status badge for a cycle: complimentary cycles read as such, not "Paid". */
+export function cycleBadge(c: Pick<SubscriptionCycle, 'complimentary' | 'payment_status'>) {
+  return c.complimentary ? COMPLIMENTARY_BADGE : PAYMENT_BADGE[c.payment_status]
+}
+
+/** Whether cycle n of a subscription will be free under its current terms. */
+export function isComplimentaryCycle(sub: StoreSubscription, n: number): boolean {
+  return sub.is_complimentary && (sub.complimentary_until_cycle <= 0 || n <= sub.complimentary_until_cycle)
+}
+
+/** "Complimentary · no end date" / "Complimentary · 2 cycles left". */
+export function complimentaryLabel(sub: StoreSubscription): string {
+  if (sub.complimentary_cycles_left < 0) return 'No end date'
+  const n = sub.complimentary_cycles_left
+  return `${n} cycle${n === 1 ? '' : 's'} left`
+}
+
 export const SOURCE_LABEL: Record<SubscriptionCycle['source'], string> = {
   initial: 'First cycle',
   auto_renewal: 'Auto-renewed',
   prepaid: 'Paid in advance',
   reactivation: 'Reactivated',
+}
+
+// ---- Invoices & receipts ----
+
+export interface BillingSettings {
+  issuer_name: string
+  address: string
+  city: string
+  state: string
+  state_code: string
+  pincode: string
+  gstin: string
+  pan: string
+  email: string
+  phone: string
+  website: string
+  logo_data: string
+  accent_color: string
+  highlight_color: string
+  invoice_prefix: string
+  receipt_prefix: string
+  number_padding: number
+  tax_rate: number
+  tax_label: string
+  sac_code: string
+  invoice_title: string
+  show_amount_in_words: boolean
+  show_payment_history: boolean
+  show_bank_details: boolean
+  bank_name: string
+  account_name: string
+  account_number: string
+  ifsc: string
+  upi_id: string
+  invoice_notes: string
+  invoice_terms: string
+  receipt_title: string
+  show_receipt_balance: boolean
+  receipt_notes: string
+  show_signature: boolean
+  signatory_name: string
+  footer_text: string
+}
+
+export interface BillingSettingsResponse {
+  settings: BillingSettings
+  next_numbers: { invoice: string; receipt: string }
+}
+
+export const getBillingSettings = () =>
+  request<BillingSettingsResponse>('/admin/subscriptions/billing-settings', undefined, 'Failed to load invoice settings')
+
+export const saveBillingSettings = (s: BillingSettings) =>
+  request<BillingSettingsResponse>('/admin/subscriptions/billing-settings', json('PUT', s), 'Failed to save invoice settings')
+
+async function pdfBlob(path: string, init?: RequestInit, fallback = 'Failed to load PDF'): Promise<Blob> {
+  const res = await apiFetch(path, { ...init, timeoutMs: 30000 })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { error?: string }).error || fallback)
+  }
+  const blob = await res.blob()
+  if (!blob.size) throw new Error('PDF was empty')
+  return blob
+}
+
+/** Sample invoice or receipt rendered from unsaved settings. */
+export const previewBillingDocument = (s: BillingSettings, doc: 'invoice' | 'receipt') =>
+  pdfBlob(`/admin/subscriptions/billing-settings/preview?doc=${doc}`, json('POST', s), 'Failed to render preview')
+
+type DocScope = { admin: true; subscriptionId: string } | { admin: false }
+
+export async function downloadInvoice(scope: DocScope, cycle: Pick<SubscriptionCycle, 'id' | 'invoice_number'>) {
+  const path = scope.admin
+    ? `/admin/subscriptions/${scope.subscriptionId}/cycles/${cycle.id}/invoice`
+    : `/my-plan/invoices/${cycle.id}`
+  const blob = await pdfBlob(path, undefined, 'Failed to download invoice')
+  await downloadBlob(`${cycle.invoice_number || 'invoice'}.pdf`, blob, { label: 'Downloading invoice' })
+}
+
+export async function downloadReceipt(scope: DocScope, payment: Pick<SubscriptionPayment, 'id' | 'receipt_number'>) {
+  const path = scope.admin
+    ? `/admin/subscriptions/${scope.subscriptionId}/payments/${payment.id}/receipt`
+    : `/my-plan/receipts/${payment.id}`
+  const blob = await pdfBlob(path, undefined, 'Failed to download receipt')
+  await downloadBlob(`${payment.receipt_number || 'receipt'}.pdf`, blob, { label: 'Downloading receipt' })
 }

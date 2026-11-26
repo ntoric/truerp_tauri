@@ -48,6 +48,7 @@ export const TOGGLEABLE_PAGES: ToggleablePage[] = [
   { key: '/marketing', label: 'Campaigns', group: 'Marketing' },
   { key: '/marketing/whatsapp-templates', label: 'Campaigns > WhatsApp Templates', group: 'Marketing' },
   { key: '/marketing/channels', label: 'Campaigns > Channels', group: 'Marketing' },
+  { key: '/marketing/calendar', label: 'Campaigns > Calendar', group: 'Marketing' },
   { key: '/sms-marketing', label: 'SMS Marketing', group: 'Marketing' },
   { key: '/email-marketing', label: 'Email Marketing', group: 'Marketing' },
   { key: '/whatsapp-marketing', label: 'WhatsApp Marketing', group: 'Marketing' },

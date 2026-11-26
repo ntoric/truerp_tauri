@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Gift, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -58,6 +58,10 @@ export default function AssignSubscriptionDialog({
   const [payMethod, setPayMethod] = useState<PaymentMethod>('bank_transfer')
   const [payRef, setPayRef] = useState('')
   const [payDate, setPayDate] = useState(todayYmd())
+  const [complimentary, setComplimentary] = useState(false)
+  const [compForever, setCompForever] = useState(true)
+  const [compCycles, setCompCycles] = useState('3')
+  const [compReason, setCompReason] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -74,6 +78,10 @@ export default function AssignSubscriptionDialog({
     setWithPayment(true)
     setPayMethod('bank_transfer')
     setPayRef('')
+    setComplimentary(false)
+    setCompForever(true)
+    setCompCycles('3')
+    setCompReason('')
   }, [open, defaultStoreId, activePlans])
 
   const plan = activePlans.find((p) => p.id === planId)
@@ -93,7 +101,10 @@ export default function AssignSubscriptionDialog({
     const priceNum = Number(price)
     if (price === '' || Number.isNaN(priceNum) || priceNum < 0) return notifyError('Enter a valid price')
     const payNum = Number(payAmount)
-    if (withPayment && priceNum > 0 && (!payNum || payNum <= 0)) return notifyError('Enter the payment amount')
+    const collectPayment = withPayment && priceNum > 0 && !complimentary
+    if (collectPayment && (!payNum || payNum <= 0)) return notifyError('Enter the payment amount')
+    const cyclesNum = Math.floor(Number(compCycles))
+    if (complimentary && !compForever && (!cyclesNum || cyclesNum < 1)) return notifyError('Enter how many cycles are free')
 
     setSaving(true)
     try {
@@ -105,12 +116,14 @@ export default function AssignSubscriptionDialog({
         price: priceNum,
         notes: notes.trim(),
         replace_existing: replace,
-        initial_payment:
-          withPayment && priceNum > 0
-            ? { amount: payNum, method: payMethod, reference: payRef.trim(), payment_date: payDate, notes: '' }
-            : undefined,
+        initial_payment: collectPayment
+          ? { amount: payNum, method: payMethod, reference: payRef.trim(), payment_date: payDate, notes: '' }
+          : undefined,
+        is_complimentary: complimentary,
+        complimentary_cycles: complimentary && !compForever ? cyclesNum : 0,
+        complimentary_reason: complimentary ? compReason.trim() : '',
       })
-      notifySuccess(`${plan.name} assigned to ${sub.store_name}.`)
+      notifySuccess(`${plan.name} assigned to ${sub.store_name}${complimentary ? ' as complimentary' : ''}.`)
       onOpenChange(false)
       onSaved(sub.id)
     } catch (e) {
@@ -186,10 +199,19 @@ export default function AssignSubscriptionDialog({
                   <Input id="sub-start" type="date" max={todayYmd()} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="sub-price">Price per cycle ({plan?.currency ?? 'INR'})</Label>
+                  <Label htmlFor="sub-price">
+                    {complimentary ? 'Regular price' : 'Price per cycle'} ({plan?.currency ?? 'INR'})
+                  </Label>
                   <Input id="sub-price" type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} />
-                  {plan && Number(price) !== plan.price && (
-                    <p className="text-xs text-muted-foreground">Custom price — plan list price is {formatMoney(plan.price, plan.currency)}</p>
+                  {complimentary ? (
+                    <p className="text-xs text-muted-foreground">
+                      {compForever ? 'Shown as the value given free.' : 'Billed once the free cycles end.'}
+                    </p>
+                  ) : (
+                    plan &&
+                    Number(price) !== plan.price && (
+                      <p className="text-xs text-muted-foreground">Custom price — plan list price is {formatMoney(plan.price, plan.currency)}</p>
+                    )
                   )}
                 </div>
               </div>
@@ -205,7 +227,55 @@ export default function AssignSubscriptionDialog({
                 <Switch checked={autoRenew} onCheckedChange={setAutoRenew} />
               </label>
 
-              {Number(price) > 0 && (
+              <div
+                className={
+                  complimentary
+                    ? 'space-y-3 rounded-lg border border-amber-300/70 bg-[linear-gradient(135deg,#fffbeb,#fef3c7)] p-3'
+                    : 'space-y-3 rounded-lg border border-border p-3'
+                }
+              >
+                <label className="flex items-center justify-between gap-3">
+                  <span className="flex items-start gap-2.5">
+                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[linear-gradient(135deg,#fde68a,#f59e0b)] text-amber-950">
+                      <Gift className="h-4 w-4" />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-medium">Complimentary</span>
+                      <span className="block text-xs text-muted-foreground">Give this plan to the store free of charge.</span>
+                    </span>
+                  </span>
+                  <Switch checked={complimentary} onCheckedChange={setComplimentary} />
+                </label>
+                {complimentary && (
+                  <div className="space-y-3 pl-9">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" size="sm" variant={compForever ? 'default' : 'outline'} onClick={() => setCompForever(true)}>
+                        No end date
+                      </Button>
+                      <Button type="button" size="sm" variant={!compForever ? 'default' : 'outline'} onClick={() => setCompForever(false)}>
+                        Limited
+                      </Button>
+                      {!compForever && (
+                        <span className="flex items-center gap-2 text-sm">
+                          <Input
+                            type="number"
+                            min={1}
+                            className="h-9 w-20"
+                            value={compCycles}
+                            onChange={(e) => setCompCycles(e.target.value)}
+                            aria-label="Free cycles"
+                          />
+                          free {plan?.billing_cycle === 'annual' ? 'year' : 'month'}
+                          {Number(compCycles) === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </div>
+                    <Input value={compReason} onChange={(e) => setCompReason(e.target.value)} placeholder="Reason (optional), e.g. Launch partner" />
+                  </div>
+                )}
+              </div>
+
+              {Number(price) > 0 && !complimentary && (
                 <div className="space-y-3 rounded-lg border border-border p-3">
                   <label className="flex items-center justify-between gap-3">
                     <span className="text-sm font-medium">Record payment for the first cycle</span>

@@ -20,12 +20,14 @@ import {
   FlaskConical,
   Loader2,
   Plus,
+  Repeat,
   Save,
   Send,
   Sparkles,
   Trash2,
   Users,
   Wand2,
+  X,
 } from 'lucide-react'
 import { apiFetch } from '@/hooks/useAuth'
 import { usePageFeatures } from '@/hooks/usePageFeatures'
@@ -34,20 +36,27 @@ import PlaceholderTextarea from '@/components/marketing/PlaceholderTextarea'
 import { CHANNEL_ICONS } from '@/components/marketing/ChannelStatusPanel'
 import {
   AUDIENCE_TYPES,
+  CAMPAIGN_TEMPLATES,
   CAMPAIGN_TYPES,
   MARKETING_CHANNELS,
   MESSAGE_PRESETS,
+  OCCASION_PRESET,
   WHATSAPP_TEMPLATE_SAMPLES,
+  applyCampaignTemplate,
   campaignToForm,
   emptyCampaignForm,
   marketingApi,
   MarketingApiError,
+  parseYMD,
   previewValues,
+  ymd,
   renderPreview,
   type AudiencePreview,
   type CampaignForm,
   type ChannelsResponse,
   type MarketingChannel,
+  type Occasion,
+  type Recurrence,
   type WATemplateSample,
 } from '@/lib/marketing'
 
@@ -77,6 +86,27 @@ function localDateTimeValue(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+/** Default send time for a calendar date: 9:00 that day, or an hour from now if that has passed. */
+function defaultScheduleFor(date: string): string {
+  const d = parseYMD(date)
+  d.setHours(9, 0, 0, 0)
+  if (d.getTime() < Date.now() + 5 * 60 * 1000) {
+    const soon = new Date(Date.now() + 60 * 60 * 1000)
+    soon.setMinutes(0, 0, 0)
+    return localDateTimeValue(soon)
+  }
+  return localDateTimeValue(d)
+}
+
+function addMonthsClamped(d: Date, months: number): Date {
+  const first = new Date(d.getFullYear(), d.getMonth() + months, 1, d.getHours(), d.getMinutes())
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
+  first.setDate(Math.min(d.getDate(), last))
+  return first
+}
+
+const fmtRun = (d: Date) => d.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
 function applyTemplateSample(form: CampaignForm, t: WATemplateSample): CampaignForm {
   const preset = MESSAGE_PRESETS[t.campaignType]
   return {
@@ -97,6 +127,8 @@ function CampaignEditor() {
   const params = useSearchParams()
   const editId = params.get('id')
   const templateId = params.get('template')
+  const dateParam = params.get('date')
+  const occasionParam = params.get('occasion')
   const { isPageEnabled } = usePageFeatures()
   const templatesEnabled = isPageEnabled('/marketing/whatsapp-templates')
 
@@ -114,6 +146,9 @@ function CampaignEditor() {
   const [testChannel, setTestChannel] = useState<MarketingChannel | ''>('')
   const [testTo, setTestTo] = useState('')
   const [testing, setTesting] = useState(false)
+  // Future dates of the campaign's occasion (for the yearly-on-occasion preview).
+  const [occasionDates, setOccasionDates] = useState<string[]>([])
+  const [templateChoice, setTemplateChoice] = useState('')
 
   const set = <K extends keyof CampaignForm>(key: K, value: CampaignForm[K]) => setForm((f) => ({ ...f, [key]: value }))
 
@@ -146,8 +181,33 @@ function CampaignEditor() {
         } else {
           const ready = ch.channels.filter((c) => c.ready).map((c) => c.key)
           const sample = templateId ? WHATSAPP_TEMPLATE_SAMPLES.find((t) => t.id === templateId) : undefined
+          // From Marketing → Calendar: schedule on the picked date, for the picked occasion.
+          let occasion: Occasion | undefined
+          const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : null
+          if (date && occasionParam) {
+            occasion = (await marketingApi.occasions(date, date, occasionParam).catch(() => []))[0]
+            if (cancelled) return
+          }
+          if (date) {
+            setMode('schedule')
+            setScheduleAt(defaultScheduleFor(date))
+          }
           setForm((f) => {
             let next: CampaignForm = { ...f, channels: ready }
+            if (occasion) {
+              next = {
+                ...next,
+                name: `${occasion.name} ${occasion.date.slice(0, 4)}`,
+                type: occasion.campaign_type,
+                occasion_key: occasion.key,
+                occasion_name: occasion.name,
+                occasion_date: occasion.date,
+                valid_until: occasion.date,
+                message: OCCASION_PRESET.message,
+                sms_message: OCCASION_PRESET.sms,
+                email_subject: OCCASION_PRESET.subject,
+              }
+            }
             if (sample) next = applyTemplateSample({ ...next, name: sample.title }, sample)
             return next
           })
@@ -161,7 +221,59 @@ function CampaignEditor() {
     return () => {
       cancelled = true
     }
-  }, [editId, templateId, router])
+  }, [editId, templateId, dateParam, occasionParam, router])
+
+  // Upcoming dates of the occasion, to preview a yearly-on-occasion series.
+  useEffect(() => {
+    if (!form.occasion_key || !form.occasion_date) return setOccasionDates([])
+    const from = form.occasion_date
+    const to = `${Number(from.slice(0, 4)) + 1}-${from.slice(5)}`
+    marketingApi
+      .occasions(from, to, form.occasion_key)
+      .then((list) => setOccasionDates(list.map((o) => o.date)))
+      .catch(() => setOccasionDates([]))
+  }, [form.occasion_key, form.occasion_date])
+
+  /** The first few send times of the series as configured. */
+  const upcomingRuns = useMemo(() => {
+    if (!form.recurrence) return []
+    const start = new Date(scheduleAt)
+    if (isNaN(start.getTime())) return []
+    const until = form.recurrence_until ? parseYMD(form.recurrence_until) : null
+    const runs: Date[] = []
+    for (let n = 0; runs.length < 4 && n < 8; n++) {
+      let d: Date | null = null
+      if (form.recurrence === 'weekly') d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7 * n, start.getHours(), start.getMinutes())
+      else if (form.recurrence === 'monthly') d = addMonthsClamped(start, n)
+      else if (form.recurrence === 'yearly') d = addMonthsClamped(start, 12 * n)
+      else if (form.recurrence === 'yearly_occasion' && form.occasion_date) {
+        const occ = occasionDates[n]
+        if (!occ) break
+        const shift = Math.round((parseYMD(occ).getTime() - parseYMD(form.occasion_date).getTime()) / 86400000)
+        d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + shift, start.getHours(), start.getMinutes())
+      }
+      if (!d || (until && parseYMD(ymd(d)) > until)) break
+      runs.push(d)
+    }
+    return runs
+  }, [form.recurrence, form.recurrence_until, form.occasion_date, scheduleAt, occasionDates])
+
+  /** Days between the send date and the occasion (negative = before). */
+  const occasionOffset = useMemo(() => {
+    if (!form.occasion_date) return null
+    const d = new Date(scheduleAt)
+    if (isNaN(d.getTime())) return null
+    return Math.round((parseYMD(ymd(d)).getTime() - parseYMD(form.occasion_date).getTime()) / 86400000)
+  }, [form.occasion_date, scheduleAt])
+
+  const clearOccasion = () =>
+    setForm((f) => ({
+      ...f,
+      occasion_key: '',
+      occasion_name: '',
+      occasion_date: '',
+      recurrence: f.recurrence === 'yearly_occasion' ? '' : f.recurrence,
+    }))
 
   // Audience reach preview (debounced).
   const audienceKey = `${form.audience_type}|${form.audience_category}|${form.audience_party_ids.join(',')}`
@@ -194,6 +306,14 @@ function CampaignEditor() {
     notifySuccess('Sample text added for Telegram, email and SMS. Edit it as you like.')
   }
 
+  const pickTemplate = (id: string) => {
+    const t = CAMPAIGN_TEMPLATES.find((x) => x.id === id)
+    if (!t) return
+    setTemplateChoice(id)
+    setForm((f) => applyCampaignTemplate(f, t, templatesEnabled && f.channels.includes('whatsapp')))
+    notifySuccess(`"${t.title}" template applied. Fill in the offer details and edit the text as you like.`)
+  }
+
   const filteredParties = useMemo(() => {
     const q = partySearch.trim().toLowerCase()
     const list = q ? parties.filter((p) => [p.name, p.phone, p.email].some((s) => (s || '').toLowerCase().includes(q))) : parties
@@ -207,6 +327,8 @@ function CampaignEditor() {
     setErrors([])
     if (!form.name.trim()) return setErrors(['Campaign name is required'])
     if (form.channels.length === 0) return setErrors(['Pick at least one channel'])
+    // "Send now" is a one-time send; repeats only apply to scheduled campaigns.
+    const body: CampaignForm = how === 'now' ? { ...form, recurrence: '', recurrence_until: '' } : form
     let scheduledISO: string | null = null
     if (how === 'schedule') {
       const d = new Date(scheduleAt)
@@ -215,7 +337,7 @@ function CampaignEditor() {
     }
     setSaving(how)
     try {
-      const saved = editId ? await marketingApi.update(editId, form, scheduledISO) : await marketingApi.create(form, scheduledISO)
+      const saved = editId ? await marketingApi.update(editId, body, scheduledISO) : await marketingApi.create(body, scheduledISO)
       if (how === 'now') {
         await marketingApi.send(saved.id).catch(async (e) => {
           // Keep the saved draft editable; show what blocks sending.
@@ -224,7 +346,11 @@ function CampaignEditor() {
         })
         notifySuccess('Campaign is sending. Results appear in the delivery report.')
       } else {
-        notifySuccess(how === 'schedule' ? `Scheduled for ${new Date(scheduleAt).toLocaleString()}` : 'Draft saved')
+        notifySuccess(
+          how === 'schedule'
+            ? `${form.recurrence ? 'Repeating campaign scheduled; first run' : 'Scheduled for'} ${new Date(scheduleAt).toLocaleString()}`
+            : 'Draft saved'
+        )
       }
       router.push('/marketing')
     } catch (e) {
@@ -303,6 +429,29 @@ function CampaignEditor() {
               <CardTitle className="text-base">1. Campaign &amp; offer</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
+              {!editId && (
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label className="flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" /> Template
+                  </Label>
+                  <Select value={templateChoice} onValueChange={pickTemplate}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Start from a template (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CAMPAIGN_TEMPLATES.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          <span className="font-medium">{t.title}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">{t.description}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Sets the type and fills in the message text for every channel. This replaces any text you have already written.
+                  </p>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="name">Campaign name *</Label>
                 <Input id="name" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Diwali Sale 2026" />
@@ -677,8 +826,94 @@ function CampaignEditor() {
                     </Button>
                   ))}
                 </div>
+                {form.occasion_key && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                    <span>
+                      For <b>{form.occasion_name || form.occasion_key}</b>
+                      {form.occasion_date && ` on ${parseYMD(form.occasion_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                      {mode === 'schedule' && occasionOffset != null && occasionOffset !== 0 && (
+                        <span className="text-amber-800/80 dark:text-amber-200/80">
+                          {' '}
+                          · sends {Math.abs(occasionOffset)} day{Math.abs(occasionOffset) === 1 ? '' : 's'} {occasionOffset < 0 ? 'before' : 'after'}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-xs text-amber-800/80 dark:text-amber-200/80">
+                      Use <code className="font-mono">{'{{occasion}}'}</code> in messages for its name.
+                    </span>
+                    <button type="button" onClick={clearOccasion} className="ml-auto rounded p-0.5 hover:bg-amber-100 dark:hover:bg-amber-500/20" aria-label="Remove occasion">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
                 {mode === 'schedule' && (
                   <Input type="datetime-local" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} className="max-w-xs" />
+                )}
+                {mode !== 'now' && (
+                  <div className="space-y-2 rounded-md border p-3">
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="space-y-1">
+                        <Label className="flex items-center gap-1.5 text-xs">
+                          <Repeat className="h-3.5 w-3.5" /> Repeat
+                        </Label>
+                        <Select value={form.recurrence || 'none'} onValueChange={(v) => set('recurrence', (v === 'none' ? '' : v) as Recurrence)}>
+                          <SelectTrigger className="w-64">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Does not repeat (one-time)</SelectItem>
+                            {form.occasion_key && form.occasion_date && (
+                              <SelectItem value="yearly_occasion">Every year on {form.occasion_name}</SelectItem>
+                            )}
+                            <SelectItem value="yearly">Every year on this date</SelectItem>
+                            <SelectItem value="monthly">Every month on this day</SelectItem>
+                            <SelectItem value="weekly">Every week on this weekday</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {form.recurrence && (
+                        <div className="space-y-1">
+                          <Label className="text-xs">Ends (optional)</Label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="date"
+                              value={form.recurrence_until}
+                              onChange={(e) => set('recurrence_until', e.target.value)}
+                              className="w-44"
+                              min={scheduleAt.slice(0, 10)}
+                            />
+                            {form.recurrence_until && (
+                              <Button type="button" variant="ghost" size="icon" onClick={() => set('recurrence_until', '')} aria-label="Never ends">
+                                <X className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {form.recurrence && mode === 'schedule' && (
+                      <div className="text-xs text-muted-foreground">
+                        {upcomingRuns.length > 0 && (
+                          <>
+                            <div className="font-medium text-foreground">Next runs</div>
+                            <ul className="mt-0.5 space-y-0.5">
+                              {upcomingRuns.map((d) => (
+                                <li key={d.getTime()}>{fmtRun(d)}</li>
+                              ))}
+                            </ul>
+                          </>
+                        )}
+                        <p className="mt-1.5">
+                          Each run is sent automatically and gets its own delivery report under Campaigns.
+                          {form.recurrence === 'yearly_occasion' &&
+                            ' The date follows the festival calendar each year; the series ends when no date is published for the next year.'}
+                        </p>
+                      </div>
+                    )}
+                    {form.recurrence && mode === 'draft' && (
+                      <p className="text-xs text-muted-foreground">The repeat is saved with the draft and starts when you schedule it.</p>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -709,7 +944,9 @@ function CampaignEditor() {
                       ? `Send to ${preview.total} ${preview.total === 1 ? 'party' : 'parties'}`
                       : 'Send now'
                     : mode === 'schedule'
-                      ? 'Schedule campaign'
+                      ? form.recurrence
+                        ? 'Schedule repeating campaign'
+                        : 'Schedule campaign'
                       : 'Save draft'}
                 </Button>
               </div>
