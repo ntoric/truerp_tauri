@@ -1088,6 +1088,13 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     setSelectedLineIndices(new Set())
   }
 
+  // A line with zero/negative quantity must never be saved: the backend would
+  // persist it as 1 (column default), so the PDF and stock would disagree with
+  // the 0 total. Shown live under each quantity field and enforced on save.
+  const zeroQtyLineIndexes = items
+    .map((item, index) => (parseItemNumber(item.quantity) > 0 ? -1 : index))
+    .filter((index) => index >= 0)
+  const zeroQtyMessage = 'Quantity must be greater than 0'
   const subTotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
   const discountTotal = isDiscountEnabled
     ? items.reduce((sum, item) => sum + (item.quantity * item.unit_price * (item.discount / 100)), 0)
@@ -1443,6 +1450,12 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       showErrorToast('Please fill all item details')
       return
     }
+    if (zeroQtyLineIndexes.length > 0) {
+      const lineNos = zeroQtyLineIndexes.map((i) => i + 1).join(', ')
+      showErrorToast(`${zeroQtyMessage} (line ${lineNos})`)
+      setFocusTarget({ lineIndex: zeroQtyLineIndexes[0], field: 'quantity' })
+      return
+    }
     if (discountLimitError) {
       showErrorToast(discountLimitError)
       return
@@ -1543,6 +1556,12 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     if (items.some(i => !i.description)) {
       setError('items', 'Please fill all item details')
       showErrorToast('Please fill all item details')
+      return
+    }
+    if (zeroQtyLineIndexes.length > 0) {
+      const lineNos = zeroQtyLineIndexes.map((i) => i + 1).join(', ')
+      showErrorToast(`${zeroQtyMessage} (line ${lineNos})`)
+      setFocusTarget({ lineIndex: zeroQtyLineIndexes[0], field: 'quantity' })
       return
     }
     if (discountLimitError) {
@@ -2045,7 +2064,8 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                                     setFocusTarget({ lineIndex: index, field: 'unit_price' })
                                   }
                                 }}
-                                className="h-8 w-full min-w-0 text-right"
+                                className={cn('h-8 w-full min-w-0 text-right', zeroQtyLineIndexes.includes(index) && 'border-red-500 focus-visible:ring-red-500')}
+                                aria-invalid={zeroQtyLineIndexes.includes(index)}
                                 required
                               />
                               {isWeightBasedUnit(item.unit) && scaleSettings.enabled && (
@@ -2061,6 +2081,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                                 </Button>
                               )}
                             </div>
+                            {zeroQtyLineIndexes.includes(index) && (
+                              <p className="mt-1 text-right text-xs text-red-600">{zeroQtyMessage}</p>
+                            )}
                           </td>
                           <td className="px-1 py-2">
                             <Input
@@ -2191,7 +2214,8 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                                 value={item.quantity}
                                 onChange={(e) => updateItem(index, 'quantity', e.target.value)}
                                 onFocus={() => setActiveWeightLineIndex(index)}
-                                className="h-8 w-full text-right"
+                                className={cn('h-8 w-full text-right', zeroQtyLineIndexes.includes(index) && 'border-red-500 focus-visible:ring-red-500')}
+                                aria-invalid={zeroQtyLineIndexes.includes(index)}
                               />
                               {isWeightBasedUnit(item.unit) && scaleSettings.enabled && (
                                 <Button
@@ -2206,6 +2230,9 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                                 </Button>
                               )}
                             </div>
+                            {zeroQtyLineIndexes.includes(index) && (
+                              <p className="text-xs text-red-600">{zeroQtyMessage}</p>
+                            )}
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs text-gray-500">Unit Price</Label>

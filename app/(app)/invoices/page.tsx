@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import Link from 'next/link'
 import { apiFetch, useAuth } from '@/hooks/useAuth'
-import { isSuperAdmin } from '@/lib/roles'
+import { isStoreAdmin, isSuperAdmin } from '@/lib/roles'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
 import PageHeader from '@/components/layout/PageHeader'
@@ -125,6 +125,8 @@ export default function InvoicesPage() {
   const { user } = useAuth()
   const { requestCancelReason, cancelReasonDialog } = useCancelReasonDialog()
   const canDelete = isSuperAdmin(user?.role)
+  // Paid invoices can be cancelled by super admins and by store admins/staff.
+  const canCancelPaid = canDelete || isStoreAdmin(user?.role) || user?.role === 'staff'
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [stats, setStats] = useState<InvoiceStats>({ total_sales: 0, paid: 0, unpaid: 0, cancelled: 0 })
   const [showStats, setShowStats] = useStatsDefaultOpen()
@@ -323,6 +325,14 @@ export default function InvoicesPage() {
   }
 
   const handleCancelInvoice = async (id: string) => {
+    const invoiceNumber = invoices.find(inv => inv.id === id)?.invoice_number
+    if (!(await confirm({
+      title: 'Cancel invoice?',
+      description: `Are you sure you want to cancel ${invoiceNumber || 'this invoice'}? Its stock will be returned and its payments reversed.`,
+      confirmLabel: 'Yes, cancel invoice',
+      cancelLabel: 'No, keep it',
+      variant: 'destructive',
+    }))) return
     const reason = await requestCancelReason({
       title: 'Cancel invoice?',
       description: 'The invoice will be kept for reference but no longer counts in reports, balances or stock.',
@@ -480,30 +490,54 @@ export default function InvoicesPage() {
 
   const handleBulkCancelInvoices = async () => {
     const eligible = invoices.filter(
-      inv => selectedInvoices.has(inv.id) && inv.status !== 'cancelled' && (inv.status !== 'paid' || canDelete)
+      inv => selectedInvoices.has(inv.id) && inv.status !== 'cancelled' && (inv.status !== 'paid' || canCancelPaid)
     )
-    if (eligible.length === 0) return
+    if (eligible.length === 0) {
+      notifyError(
+        selectedInvoices.size > 0
+          ? 'The selected invoices are already cancelled or cannot be cancelled'
+          : 'Select invoices to cancel'
+      )
+      return
+    }
+    const skipped = selectedInvoices.size - eligible.length
+    if (!(await confirm({
+      title: `Cancel ${eligible.length} invoice(s)?`,
+      description: `Are you sure you want to cancel ${eligible.length} invoice(s)? Their stock will be returned and their payments reversed.${
+        skipped > 0 ? ` ${skipped} selected invoice(s) are already cancelled or can't be cancelled and will be skipped.` : ''
+      }`,
+      confirmLabel: 'Yes, cancel invoices',
+      cancelLabel: 'No, keep them',
+      variant: 'destructive',
+    }))) return
     const reason = await requestCancelReason({
       title: `Cancel ${eligible.length} invoice(s)?`,
       description: 'The invoices will be kept for reference but no longer count in reports, balances or stock.',
     })
     if (!reason) return
-    try {
-      await Promise.all(
-        eligible.map(inv =>
-          apiFetch(`/invoices/${inv.id}/status`, {
+    const results = await Promise.all(
+      eligible.map(async inv => {
+        try {
+          const res = await apiFetch(`/invoices/${inv.id}/status`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'cancelled', note: reason })
           })
-        )
-      )
-      setSelectedInvoices(new Set())
-      fetchInvoices()
-      fetchStats()
-    } catch (err) {
-      console.error(err)
-    }
+          if (res.ok) return { ok: true as const }
+          const data = await res.json().catch(() => ({}))
+          return { ok: false as const, error: `${inv.invoice_number}: ${data.error || 'Failed to cancel'}` }
+        } catch (err) {
+          return { ok: false as const, error: `${inv.invoice_number}: ${err instanceof Error ? err.message : 'Failed to cancel'}` }
+        }
+      })
+    )
+    const failed = results.filter(r => !r.ok) as { ok: false; error: string }[]
+    const cancelledCount = results.length - failed.length
+    if (cancelledCount > 0) notifySuccess(`${cancelledCount} invoice(s) cancelled`)
+    if (failed.length > 0) notifyError(failed.map(f => f.error).join('\n'))
+    setSelectedInvoices(new Set())
+    fetchInvoices()
+    fetchStats()
   }
 
   const handleBulkDeleteInvoices = async () => {
@@ -661,8 +695,8 @@ export default function InvoicesPage() {
                         Download Invoices
                         <Badge variant="secondary" className="ml-1">{selectedInvoices.size}</Badge>
                       </Button>
-                      <Button variant="outline" size="sm" onClick={handleBulkCancelInvoices}>
-                        Cancel
+                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50 hover:text-red-700" onClick={handleBulkCancelInvoices}>
+                        <X className="mr-1 h-3.5 w-3.5" /> Cancel
                       </Button>
                       {canDelete && (
                         <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={handleBulkDeleteInvoices}>
@@ -760,8 +794,8 @@ export default function InvoicesPage() {
                                   Edit
                                 </Link>
                               </DropdownMenuItem>
-                              {inv.status !== 'cancelled' && (inv.status !== 'paid' || canDelete) && (
-                                <DropdownMenuItem onClick={() => handleCancelInvoice(inv.id)}>
+                              {inv.status !== 'cancelled' && (inv.status !== 'paid' || canCancelPaid) && (
+                                <DropdownMenuItem className="text-red-600 focus:bg-red-50 focus:text-red-700" onClick={() => handleCancelInvoice(inv.id)}>
                                   <X className="mr-2 h-4 w-4" />
                                   Cancel
                                 </DropdownMenuItem>
