@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import SummaryStat from '@/components/widgets/SummaryStat'
+import { useStatsDefaultOpen } from '@/hooks/useAppearance'
 import BrandLoader from '@/components/BrandLoader'
 import PremiumEmpty from '@/components/ui/premium-empty'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ import {
   CalendarClock,
   Copy,
   Eye,
+  EyeOff,
   Loader2,
   Megaphone,
   MessageCircle,
@@ -72,6 +74,7 @@ function MarketingHub() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [details, setDetails] = useState<MarketingCampaign | null>(null)
+  const [showStats, setShowStats] = useStatsDefaultOpen()
 
   const load = useCallback(async () => {
     try {
@@ -169,19 +172,27 @@ function MarketingHub() {
             email and SMS. Uses the store&apos;s existing connections.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/marketing/editor">
-            <Plus className="mr-1.5 h-4 w-4" /> New campaign
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={() => setShowStats((v) => !v)} aria-expanded={showStats}>
+            {showStats ? <EyeOff className="mr-1.5 h-4 w-4" /> : <Eye className="mr-1.5 h-4 w-4" />}
+            {showStats ? 'Hide stats' : 'Show stats'}
+          </Button>
+          <Button asChild>
+            <Link href="/marketing/editor">
+              <Plus className="mr-1.5 h-4 w-4" /> New campaign
+            </Link>
+          </Button>
+        </div>
       </div>
 
+      {showStats && (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryStat label="Campaigns" value={stats?.total_campaigns ?? 0} icon={Megaphone} />
         <SummaryStat label="Scheduled" value={stats?.scheduled_campaigns ?? 0} icon={CalendarClock} tone="warning" />
         <SummaryStat label="Messages sent" value={stats?.messages.sent ?? 0} icon={Send} tone="success" hint={`${stats?.messages.failed ?? 0} failed`} />
         <SummaryStat label="Channels ready" value={`${readyCount} / 4`} icon={Plug} tone={readyCount ? 'default' : 'danger'} />
       </div>
+      )}
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-6">
         <TabsList className="h-auto flex-wrap justify-start">
