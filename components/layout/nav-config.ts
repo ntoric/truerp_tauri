@@ -54,6 +54,8 @@ import {
   ShoppingCartSimple,
   ListChecks,
   ArrowsLeftRight,
+  Crown,
+  CreditCard,
 } from '@phosphor-icons/react'
 import { canManageUsers, isSuperAdmin } from '@/lib/roles'
 
@@ -252,6 +254,8 @@ export const navItems: NavItem[] = [
   { name: 'Support Requests', href: '/support-requests', icon: Ticket, accent: '#be123c', superAdminOnly: true },
   { name: 'Notification Center', href: '/notification-center', icon: BellRinging, accent: '#ea580c', superAdminOnly: true },
   { name: 'Announcements', href: '/announcements', icon: FlagBanner, accent: '#7c3aed', superAdminOnly: true },
+  { name: 'Subscriptions', href: '/subscriptions', icon: CreditCard, accent: '#6d28d9', superAdminOnly: true },
+  { name: 'My Plan', href: '/my-plan', icon: Crown, accent: '#d97706' },
   { name: 'Support', href: '/support', icon: Headset, accent: '#0f766e' },
   { name: 'Settings', href: '/settings', icon: GearSix, accent: '#475569' },
   { name: 'Developer Settings', href: '/developer-settings', icon: BracketsCurly, accent: '#334155', superAdminOnly: true },

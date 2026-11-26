@@ -57,6 +57,7 @@ export const TOGGLEABLE_PAGES: ToggleablePage[] = [
   { key: '/audit', label: 'Audit Trails', group: 'Security' },
   { key: '/notifications', label: 'Notifications', group: 'Other' },
   { key: '/support', label: 'Support', group: 'Other' },
+  { key: '/my-plan', label: 'My Plan', group: 'Other' },
   { key: '/support-requests', label: 'Support Requests', group: 'Security' },
   { key: '/customer-portal', label: 'Customer Portal', group: 'Other' },
   { key: '/b2b-shop', label: 'B2B Shop Manager', group: 'B2B Shop' },
