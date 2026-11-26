@@ -223,6 +223,8 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
   const [barcodeScannerEnabled, setBarcodeScannerEnabled] = useState(false)
   const [productSearch, setProductSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
+  // "<field>:<asc|desc>" understood by GET /products; '' = newest first.
+  const [modalSort, setModalSort] = useState('')
   const [debouncedProductSearch, setDebouncedProductSearch] = useState('')
   const [modalPage, setModalPage] = useState(1)
   const [modalTotal, setModalTotal] = useState(0)
@@ -331,7 +333,7 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
     if (!showProductModal) return
     fetchModalProducts(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showProductModal, debouncedProductSearch, selectedCategory])
+  }, [showProductModal, debouncedProductSearch, selectedCategory, modalSort])
 
   useEffect(() => { if (showDraftsModal) fetchDrafts() }, [showDraftsModal])
 
@@ -423,6 +425,11 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
       })
       if (debouncedProductSearch.trim()) params.set('search', debouncedProductSearch.trim())
       if (selectedCategory) params.set('category', selectedCategory)
+      if (modalSort) {
+        const [sortField, sortOrder] = modalSort.split(':')
+        params.set('sort', sortField)
+        params.set('order', sortOrder)
+      }
       const res = await apiFetch(`/products?${params.toString()}`)
       if (!res.ok || seq !== modalFetchSeqRef.current) return
       const data = await res.json()
@@ -2711,6 +2718,24 @@ export default function SaleForm({ mode = 'invoice' }: { mode?: SaleFormMode }) 
                   >
                     <option value="">All Categories</option>
                     {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                  <select
+                    value={modalSort}
+                    onChange={(e) => setModalSort(e.target.value)}
+                    aria-label="Sort products"
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">Sort: Newest first</option>
+                    <option value="name:asc">Name (A–Z)</option>
+                    <option value="name:desc">Name (Z–A)</option>
+                    <option value="plu:asc">PLU (low–high)</option>
+                    <option value="plu:desc">PLU (high–low)</option>
+                    <option value="stock:desc">Stock (high–low)</option>
+                    <option value="stock:asc">Stock (low–high)</option>
+                    <option value="sale_price:asc">Sale price (low–high)</option>
+                    <option value="sale_price:desc">Sale price (high–low)</option>
+                    <option value="purchase_price:asc">Purchase price (low–high)</option>
+                    <option value="purchase_price:desc">Purchase price (high–low)</option>
                   </select>
                 </div>
               </CardHeader>
