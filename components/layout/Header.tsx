@@ -5,7 +5,7 @@ import BrandLogo from '@/components/BrandLogo'
 import { useAuth } from '@/hooks/useAuth'
 import { useStore } from '@/hooks/useStore'
 import { useThemeMode } from '@/hooks/useThemeMode'
-import { LogOut, Moon, Palette, Settings, ShoppingCart, Store, Sun, User } from 'lucide-react'
+import { LogOut, MessageCircle, Moon, Palette, Settings, ShoppingCart, Store, Sun, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import NotificationBell from './NotificationBell'
 import {
@@ -134,6 +134,12 @@ export default function Header() {
               <Link href="/settings/appearance" className="flex items-center gap-2">
                 <Palette className="h-4 w-4" />
                 <span>Appearance</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/settings/chat-access" className="flex items-center gap-2">
+                <MessageCircle className="h-4 w-4" />
+                <span>Chat access</span>
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
