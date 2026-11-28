@@ -1,0 +1,46 @@
+name: truerp-web-staging-image
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - "**"
+      - "!src-tauri/**"
+      - "!scripts/**"
+      - "!splash/**"
+      - "!README-desktop.md"
+  manual: true
+
+cancel_previous: true
+
+env:
+  IMAGE: docker.io/ntoric/truerp-web
+
+jobs:
+  build-and-push:
+    name: Build & push web image
+    timeout: 30m
+    env:
+      DOCKERHUB_USERNAME: ntoric
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      NEXT_PUBLIC_API_URL: /api/v1
+    steps:
+      - name: Log in to Docker Hub
+        run: printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
+
+      - name: Build and push
+        retry: 1
+        run: |
+          SHORT_SHA=$(printf '%s' "$GOOSE_COMMIT" | cut -c1-7)
+          docker build . \
+            --build-arg NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" \
+            --tag "$IMAGE:staging" \
+            --tag "$IMAGE:sha-$SHORT_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/ntoric/truerp_tauri" \
+            --label "org.opencontainers.image.revision=$GOOSE_COMMIT"
+          docker push "$IMAGE:staging"
+          docker push "$IMAGE:sha-$SHORT_SHA"
+
+      - name: Log out
+        if: always()
+        run: docker logout docker.io || true

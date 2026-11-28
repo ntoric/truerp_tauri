@@ -25,7 +25,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Mail, Send, Loader2, CheckCircle, XCircle,
   Smartphone, Save, LayoutGrid, Sparkles, Clock,
-  DatabaseBackup, Upload, FileArchive, FileUp, FileDown, AlertTriangle, Store,
+  DatabaseBackup, Upload, FileArchive, FileUp, FileDown, AlertTriangle, Store, KeyRound,
   Database, Download, Trash2, CloudUpload, Palette, Plug, MessageCircle,
 } from 'lucide-react'
 import PremiumEmpty from '@/components/ui/premium-empty'
@@ -34,6 +34,7 @@ import { downloadBlob } from '@/lib/accountingExport'
 import BrandLoader from '@/components/BrandLoader'
 import WhatsAppGatewayCard from '@/components/developer-settings/WhatsAppGatewayCard'
 import AIProvidersCard from '@/components/developer-settings/AIProvidersCard'
+import OAuthClientsCard from '@/components/developer-settings/OAuthClientsCard'
 
 // -----------------------------------------------------------------------------
 // Data Migration types & config
@@ -504,7 +505,7 @@ interface MigrationJob {
 type IntegrationSection = 'email' | 'whatsapp' | 'sms' | 'ai'
 
 const INTEGRATION_SECTIONS: IntegrationSection[] = ['email', 'whatsapp', 'sms', 'ai']
-const DEVELOPER_TABS = ['general', 'integrations', 'migration', 'pages', 'maintenance']
+const DEVELOPER_TABS = ['general', 'integrations', 'oauth', 'migration', 'pages', 'maintenance']
 
 interface IntegrationStatus {
   configured: boolean
@@ -1159,7 +1160,7 @@ export default function DeveloperSettingsPage() {
               </Link>
             </Button>
             {/* WhatsApp and AI sections have their own Save buttons. */}
-            {!(activeTab === 'integrations' && (integrationSection === 'whatsapp' || integrationSection === 'ai')) && (
+            {activeTab !== 'oauth' && !(activeTab === 'integrations' && (integrationSection === 'whatsapp' || integrationSection === 'ai')) && (
               <Button onClick={handleSave} disabled={saving}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 {activeTab === 'pages'
@@ -1180,7 +1181,7 @@ export default function DeveloperSettingsPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+          <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
               General
@@ -1188,6 +1189,10 @@ export default function DeveloperSettingsPage() {
             <TabsTrigger value="integrations" className="flex items-center gap-2">
               <Plug className="h-4 w-4" />
               Integrations
+            </TabsTrigger>
+            <TabsTrigger value="oauth" className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4" />
+              OAuth Clients
             </TabsTrigger>
             <TabsTrigger value="migration" className="flex items-center gap-2">
               <DatabaseBackup className="h-4 w-4" />
@@ -1733,6 +1738,10 @@ export default function DeveloperSettingsPage() {
                 ))}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="oauth">
+            {activeTab === 'oauth' && <OAuthClientsCard />}
           </TabsContent>
 
           <TabsContent value="maintenance">
